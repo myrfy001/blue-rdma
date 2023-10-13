@@ -160,7 +160,7 @@ module mkSimDmaReadSrvAndReqRespPipeOut(DmaReadSrvAndReqRespPipeOut);
         // $display(
         //     "time=%0t: mkSimDmaReadSrvAndReqRespPipeOut acceptReq", $time,
         //     ", DMA read request, wr.id=%h, dmaReadReq.len=%0d, totalFragCnt=%0d",
-        //     dmaReadReq.wrID, dmaReadReq.len, totalFragCnt
+        //     dmaReadReq.mrID, dmaReadReq.len, totalFragCnt
         // );
     endrule
 
@@ -185,7 +185,6 @@ module mkSimDmaReadSrvAndReqRespPipeOut(DmaReadSrvAndReqRespPipeOut);
         let resp = DmaReadResp {
             initiator : curReqReg.initiator,
             sqpn      : curReqReg.sqpn,
-            wrID      : curReqReg.wrID,
             isRespErr : False,
             dataStream: dataStream
         };
@@ -200,7 +199,7 @@ module mkSimDmaReadSrvAndReqRespPipeOut(DmaReadSrvAndReqRespPipeOut);
         // $display(
         //     "time=%0t: mkSimDmaReadSrvAndReqRespPipeOut genResp", $time,
         //     ", DMA read response, wr.id=%h, remainingFragNum=%0d",
-        //     curReqReg.wrID, remainingFragNumReg,
+        //     curReqReg.mrID, remainingFragNumReg,
         //     // ", dataStream=", fshow(dataStream)
         //     ", dataStream.isFirst=", fshow(dataStream.isFirst),
         //     ", dataStream.isLast=", fshow(dataStream.isLast)
@@ -500,7 +499,8 @@ module mkTestDmaReadAndWriteSrv(Empty);
             sqpn     : getDefaultQPN,
             startAddr: dontCareValue,
             len      : pktLen,
-            psn      : psnReg
+            psn      : psnReg,
+            mrID     : dontCareValue
         };
         psnReg <= psnReg + 1;
         dmaWriteMetaDataQ.enq(dmaWriteMetaData);

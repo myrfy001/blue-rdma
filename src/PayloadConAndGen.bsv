@@ -305,7 +305,6 @@ module mkDmaReadCntrl#(
         //     "time=%0t: mkDmaReadCntrl recvDmaResp", $time,
         //     ", sqpn=%h", cntrlStatus.comm.getSQPN,
         //     ", isSQ=", fshow(cntrlStatus.isSQ),
-        //     ", wrID=%h", dmaResp.wrID,
         //     ", isFirst=", fshow(dmaResp.dataStream.isFirst),
         //     ", isLast=", fshow(dmaResp.dataStream.isLast),
         //     ", isFirstDmaReqChunk=", fshow(isFirstDmaReqChunk),
