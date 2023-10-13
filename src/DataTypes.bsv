@@ -1,9 +1,10 @@
 import ClientServer :: *;
 import PAClib :: *;
 import PrimUtils :: *;
+import PipeIn :: *;
+import Vector :: *;
 
 import Headers :: *;
-import SpecialFIFOF :: *;
 import Settings :: *;
 
 typedef 8 BYTE_WIDTH;
@@ -74,11 +75,14 @@ typedef TLog#(MAX_RNR_WAIT_CYCLES)              RNR_WAIT_CYCLE_CNT_WIDTH;
 typedef TDiv#(MAX_TIMEOUT_NS, TARGET_CYCLE_NS)  MAX_TIMEOUT_CYCLES;
 typedef TAdd#(1, TLog#(MAX_TIMEOUT_CYCLES))     TIMEOUT_CYCLE_CNT_WIDTH;
 
-typedef 48   PHYSICAL_ADDR_WIDTH; // X86 physical address width
+typedef 48                                            PHYSICAL_ADDR_WIDTH; // X86 physical address width
+typedef TLog#(PAGE_SIZE_CAP)                          PAGE_OFFSET_WIDTH;
+typedef TSub#(PHYSICAL_ADDR_WIDTH, PAGE_OFFSET_WIDTH) PAGE_NUMBER_WIDTH;   // 48-21=27
+typedef Bit#(PAGE_OFFSET_WIDTH)  PageOffset;
+typedef Bit#(PAGE_NUMBER_WIDTH)  PageNumber;
+
 typedef TExp#(14) TLB_CACHE_SIZE; // TLB cache size 16K
-typedef TLog#(PAGE_SIZE_CAP)  PAGE_OFFSET_WIDTH;
 typedef TLog#(TLB_CACHE_SIZE) TLB_CACHE_INDEX_WIDTH; // 14
-typedef TSub#(PHYSICAL_ADDR_WIDTH, PAGE_OFFSET_WIDTH) TLB_CACHE_PA_DATA_WIDTH; // 48-21=27
 typedef TSub#(TSub#(ADDR_WIDTH, TLB_CACHE_INDEX_WIDTH), PAGE_OFFSET_WIDTH) TLB_CACHE_TAG_WIDTH; // 64-14-21=29
 
 typedef TDiv#(MAX_MR, MAX_PD) MAX_MR_PER_PD;
@@ -133,32 +137,69 @@ typedef Bit#(TIMEOUT_CYCLE_CNT_WIDTH)  TimeOutCycleCnt;
 typedef Bit#(PD_HANDLE_WIDTH) HandlerPD;
 
 typedef PipeOut#(DataStream) DataStreamPipeOut;
+typedef PipeIn#(DataStream) DataStreamPipeIn;
 
-typedef ScanFIFOF#(MAX_QP_WR, PendingWorkReq) PendingWorkReqBuf;
 typedef PipeOut#(RecvReq)                     RecvReqBuf;
 
+
+typedef Bit#(TLog#(MAX_PTE_ENTRY_CNT)) PTEIndex;
+
 typedef struct {
-    Bit#(TLB_CACHE_PA_DATA_WIDTH) data;
-    Bit#(TLB_CACHE_TAG_WIDTH)     tag;
-} PayloadTLB deriving(Bits);
+    PTEIndex pgtOffset;
+    ADDR baseVA;
+    Length len;
+    FlagsType#(MemAccessTypeFlag) accFlags;
+    HandlerPD pdHandler;
+    KeyPartMR keyPart;
+} MemRegionTableEntry deriving(Bits, FShow);
 
-typedef SizeOf#(PayloadTLB) TLB_PAYLOAD_WIDTH;
+typedef struct {
+    PageNumber pn;
+} PageTableEntry deriving(Bits, FShow);
 
-typedef UInt#(MR_INDEX_WIDTH) IndexMR;
-typedef Bit#(MR_KEY_PART_WIDTH) KeyPartMR;
+typedef struct {
+    IndexMR idx;
+    Maybe#(MemRegionTableEntry) entry;
+} MrTableModifyReq deriving(Bits, FShow);
+
+typedef struct {
+    Bool success;
+} MrTableModifyResp deriving(Bits, FShow);
+
+typedef struct {
+    IndexMR idx;
+} MrTableQueryReq deriving(Bits, FShow);
+
+typedef struct {
+    PTEIndex idx;
+    PageTableEntry pte;
+} PgtModifyReq deriving(Bits, FShow);
+
+typedef struct {
+    Bool success;
+} PgtModifyResp deriving(Bits, FShow);
+
+typedef struct {
+    MemRegionTableEntry mrEntry;
+    ADDR addrToTrans;
+} PgtAddrTranslateReq deriving(Bits, FShow);
+
+
+
 
 // Common types
 
-typedef Server#(DmaReadReq, DmaReadResp)   DmaReadSrv;
-typedef Server#(DmaWriteReq, DmaWriteResp) DmaWriteSrv;
-typedef Client#(DmaReadReq, DmaReadResp)   DmaReadClt;
-typedef Client#(DmaWriteReq, DmaWriteResp) DmaWriteClt;
+typedef Server#(DmaReadReq, DmaReadResp)            DmaReadSrv;
+typedef Server#(DmaWriteReqNew, DmaWriteRespNew)    DmaWriteSrv;
+typedef Client#(DmaReadReq, DmaReadResp)            DmaReadClt;
+typedef Client#(DmaReadReqNew, DmaReadRespNew)      DmaReadNewClt;
+typedef Client#(DmaWriteReqNew, DmaWriteRespNew)    DmaWriteClt;
 
 typedef Server#(PermCheckReq, Bool) PermCheckSrv;
 typedef Client#(PermCheckReq, Bool) PermCheckClt;
 
-interface RdmaPktMetaDataAndPayloadPipeOut;
-    interface PipeOut#(RdmaPktMetaData) pktMetaData;
+interface RdmaPktMetaDataAndQpcAndPayloadPipeOut;
+    interface PipeOut#(RdmaPktMetaDataAndQPC) pktMetaData;
     interface DataStreamPipeOut payload;
 endinterface
 
@@ -223,7 +264,6 @@ typedef struct {
     PktFragNum pktFragNum;
     Bool isZeroPayloadLen;
     HeaderRDMA pktHeader;
-    HandlerPD pdHandler;
     Bool pktValid;
     PktVeriStatus pktStatus;
 } RdmaPktMetaData deriving(Bits, Bounded);
@@ -263,6 +303,14 @@ typedef struct {
 } DmaReadMetaData deriving(Bits, FShow);
 
 typedef struct {
+    DmaReqSrcType initiator;
+    QPN sqpn;
+    ADDR startAddr;
+    Length len;
+    IndexMR mrID;
+} DmaReadMetaDataNew deriving(Bits, FShow);
+
+typedef struct {
     DmaReqSrcType initiator; // TODO: remove it
     QPN sqpn; // TODO: remove it
     WorkReqID wrID; // TODO: remove it
@@ -270,6 +318,12 @@ typedef struct {
     PktLen len;
     IndexMR mrIdx;
 } DmaReadReq deriving(Bits, FShow);
+
+typedef struct {
+    ADDR startAddr;
+    PktLen len;
+    IndexMR mrIdx;
+} DmaReadReqNew deriving(Bits, FShow);
 
 typedef struct {
     DmaReqSrcType initiator; // TODO: remove it
@@ -282,22 +336,23 @@ typedef struct {
 typedef struct {
     DmaReqSrcType initiator;
     QPN sqpn;
-    ADDR startAddr;
-    PktLen len;
-    PSN psn;
-} DmaWriteMetaData deriving(Bits, Eq, FShow);
-
-typedef struct {
-    DmaWriteMetaData metaData;
-    DataStream dataStream;
-} DmaWriteReq deriving(Bits, FShow);
-
-typedef struct {
-    DmaReqSrcType initiator;
-    QPN sqpn;
-    PSN psn;
     Bool isRespErr;
-} DmaWriteResp deriving(Bits, FShow);
+    DataStream dataStream;
+} DmaReadRespNew deriving(Bits, FShow);
+
+typedef struct {
+        ADDR startAddr;
+    PktLen len;
+} DmaWriteMetaDataNew deriving(Bits, Eq, FShow);
+
+typedef struct {
+    DmaWriteMetaDataNew metaData;
+    DataStream dataStream;
+} DmaWriteReqNew deriving(Bits, FShow);
+
+typedef struct {
+        Bool isRespErr;
+} DmaWriteRespNew deriving(Bits, FShow);
 
 typedef enum {
     DMA_SRC_RQ_RD,
@@ -314,8 +369,8 @@ typedef enum {
 } DmaReqSrcType deriving(Bits, Eq, FShow); // TODO: remove it
 
 typedef struct {
-    DmaReadMetaData dmaReadMetaData;
-    // DmaReadReq dmaReadReq;
+    DmaReadMetaDataNew dmaReadMetaData;
+    // DmaReadReqNew dmaReadReq;
     // Bool segment;
     Bool          addPadding;
     PMTU          pmtu;
@@ -329,12 +384,12 @@ typedef struct {
 
 typedef union tagged {
     // void DiscardPayload;
-    DmaWriteMetaData DiscardPayloadInfo;
+    DmaWriteMetaDataNew DiscardPayloadInfo;
     struct {
-        DmaWriteMetaData atomicRespDmaWriteMetaData;
+        DmaWriteMetaDataNew atomicRespDmaWriteMetaData;
         Long atomicRespPayload;
     } AtomicRespInfoAndPayload;
-    DmaWriteMetaData SendWriteReqReadRespInfo;
+    DmaWriteMetaDataNew SendWriteReqReadRespInfo;
 } PayloadConInfo deriving(Bits, FShow);
 
 typedef struct {
@@ -343,7 +398,7 @@ typedef struct {
 } PayloadConReq deriving(Bits, FShow);
 
 typedef struct {
-    DmaWriteResp dmaWriteResp;
+    DmaWriteRespNew dmaWriteResp;
 } PayloadConResp deriving(Bits, FShow);
 
 typedef struct {
@@ -488,6 +543,22 @@ typedef enum {
 instance Flags#(QpAttrMaskFlag);
     function Bool isOneHotOrZero(QpAttrMaskFlag inputVal) = 1 >= countOnes(pack(inputVal));
 endinstance
+
+
+typedef TLog#(MAX_QP) QP_INDEX_WIDTH;
+typedef TSub#(QPN_WIDTH, QP_INDEX_WIDTH) QPN_KEY_PART_WIDTH;
+
+typedef UInt#(QP_INDEX_WIDTH)     IndexQP;
+typedef UInt#(QPN_KEY_PART_WIDTH) KeyQP;
+
+
+function IndexQP getIndexQP(QPN qpn) = unpack(truncateLSB(qpn));
+function KeyQP   getKeyQP  (QPN qpn) = unpack(truncate(qpn));
+
+function QPN genQPN(IndexQP qpIndex, KeyQP qpKey);
+    return { pack(qpIndex), pack(qpKey) };
+endfunction
+
 
 // WorkReq related
 
@@ -716,3 +787,102 @@ typedef enum {
     IBV_EVENT_GID_CHANGE,
     IBV_EVENT_WQ_FATAL
 } AsyncEventType deriving(Bits, Eq);
+
+
+// PD Related
+typedef TLog#(MAX_PD) PD_INDEX_WIDTH;
+typedef TSub#(PD_HANDLE_WIDTH, PD_INDEX_WIDTH) PD_KEY_WIDTH;
+
+typedef Bit#(PD_KEY_WIDTH)    KeyPD;
+typedef UInt#(PD_INDEX_WIDTH) IndexPD;
+
+// MR related
+typedef UInt#(MR_INDEX_WIDTH) IndexMR;
+typedef Bit#(MR_KEY_PART_WIDTH) KeyPartMR;
+
+
+// QP Context Related
+
+typedef 8 QPC_QUERY_RESP_MAX_DELAY;
+
+// TODO: Now, put all context data into one big COMMON entry. Maybe one day we should
+// split context data into common, sq only and rq only. A big BRAM is not friendly to P&R 
+typedef struct {
+    QPN  qpn;
+} ReadReqCommonQPC deriving(Bits, Eq, FShow);
+
+typedef struct {
+    QPN  qpn;
+    Maybe#(EntryCommonQPC)  ent;
+} WriteReqCommonQPC deriving(Bits, Eq, FShow);
+
+typedef struct {
+    Bool                            isError;            // 1 bit
+    KeyQP                           qpnKeyPart;         // TSub#(QPN_WIDTH, QP_INDEX_WIDTH) bits = 24-11 = 13 bits
+    HandlerPD                       pdHandler;          // 24 bits
+    TypeQP                          qpType;             // 4 bits
+    FlagsType#(MemAccessTypeFlag)   rqAccessFlags;      // 8 bits
+    PMTU                            pmtu;               // 3 bits
+} EntryCommonQPC deriving(Bits, Eq, FShow);
+
+
+typedef struct {
+    RdmaPktMetaData                 metadata;
+    EntryCommonQPC                  qpc;
+} RdmaPktMetaDataAndQPC deriving(Bits);
+
+// typedef struct {
+//     QPN  qpn;
+// } ReadReqRqQPC;
+
+// typedef struct {
+//     QPN  qpn;
+//     EntryRqQPC ent;
+// } WriteReqRqQPC;
+
+// typedef struct {
+
+// } EntryRqQpc;
+
+
+typedef struct {
+    // Fields from BTH  // total 58 bits
+    TransType trans;    // 3
+    RdmaOpCode opcode;  // 5
+    Bool solicited;     // 1
+    QPN dqpn;           // 24
+    Bool ackReq;        // 1
+    PSN psn;            // 24
+
+    // Fields from RETH // total 128 bits
+    ADDR va;            // 64
+    RKEY rkey;          // 32
+    Length dlen;        // 32
+
+    // Fields from Secondary RETH    // total 96 bits
+    ADDR secondaryVa;                // 64
+    RKEY secondaryRkey;              // 32
+
+    // Fields from AETH    // total 96 bits
+    AethCode                code;         // 2
+    AethValue               value;        // 5
+    MSN                     msn;          // 24
+    PSN                     lastRetryPSN; // 24
+
+    // Fields from ImmDT   // total 32 bits
+    IMM                     immDt;        // 32
+
+    // Fields generated by RQ logic  // total 8 bits
+    RdmaReqStatus           reqStatus;    // 8 
+    
+} C2hReportEntry deriving(Bits);
+
+typedef enum {
+    RDMA_REQ_ST_NORMAL              = 1,
+    RDMA_REQ_ST_INV_ACC_FLAG        = 2,
+    RDMA_REQ_ST_INV_OPCODE          = 3,
+    RDMA_REQ_ST_INV_MR_KEY          = 4,
+    RDMA_REQ_ST_INV_MR_REGION       = 5,
+    RDMA_REQ_ST_UNKNOWN             = 6,
+    RDMA_REQ_ST_MAX_GUARD           = 255
+} RdmaReqStatus deriving(Bits, Eq, FShow);

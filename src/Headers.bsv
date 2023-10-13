@@ -172,7 +172,7 @@ typedef TDiv#(BTH_WIDTH, 8) BTH_BYTE_WIDTH;
 
 // 4 bytes
 typedef struct {
-    ReservedZero#(1) rsvd;
+    ReservedZero#(1) rsvd1;
     AethCode code;
     AethValue value;
     MSN msn;
@@ -180,6 +180,17 @@ typedef struct {
 
 typedef SizeOf#(AETH)        AETH_WIDTH;
 typedef TDiv#(AETH_WIDTH, 8) AETH_BYTE_WIDTH;
+
+// 4 bytes
+typedef struct {
+    PSN lastRetryPSN;
+    ReservedZero#(8) rsvd1;
+} NRETH deriving(Bits, Bounded, FShow);   // NRETH = Nak Retry ETH
+
+
+
+typedef SizeOf#(NRETH)        NRETH_WIDTH;
+typedef TDiv#(NRETH_WIDTH, 8) NRETH_BYTE_WIDTH;
 
 // 16 bytes
 typedef struct {
@@ -269,7 +280,7 @@ typedef TDiv#(CNP_PAYLOAD_WIDTH, 8) CNP_PAYLOAD_BYTE_WIDTH;
 // BTH + RETH + LETH = 44 bytes
 // BTH + RETH + ImmDT = 32 bytes
 // BTH + AtomicEth = 40 bytes
-// BTH + AETH + AtomicAckEth = 24 bytes
+// BTH + 28 + AtomicAckEth = 24 bytes
 
 // XRC headers:
 // BTH + XRCETH + IETH = 24 bytes
@@ -277,11 +288,11 @@ typedef TDiv#(CNP_PAYLOAD_WIDTH, 8) CNP_PAYLOAD_BYTE_WIDTH;
 // BTH + XRCETH + RETH + LETH = 48 bytes
 // BTH + XRCETH + RETH + ImmDT = 36 bytes
 // BTH + XRCETH + AtomicEth = 44 bytes
-// BTH + AETH + AtomicAckEth = 24 bytes
+// BTH + AETH + AtomicAckEth = 28 bytes
 
 // UD headers:
 // BTH + DETH + ImmDT = 24 bytes
-// BTH + AETH = 16 bytes
+// BTH + AETH = 20 bytes
 
 function Integer calcHeaderLenByTransTypeAndRdmaOpCode(
     TransType transType, RdmaOpCode rdmaOpCode
@@ -295,24 +306,24 @@ function Integer calcHeaderLenByTransTypeAndRdmaOpCode(
         fromInteger(valueOf(RC_SEND_ONLY))                     : valueOf(BTH_BYTE_WIDTH);
         fromInteger(valueOf(RC_SEND_ONLY_WITH_IMMEDIATE))      : valueOf(BTH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH);
         fromInteger(valueOf(RC_RDMA_WRITE_FIRST))              : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
-        fromInteger(valueOf(RC_RDMA_WRITE_MIDDLE))             : valueOf(BTH_BYTE_WIDTH);
-        fromInteger(valueOf(RC_RDMA_WRITE_LAST))               : valueOf(BTH_BYTE_WIDTH);
-        fromInteger(valueOf(RC_RDMA_WRITE_LAST_WITH_IMMEDIATE)): valueOf(BTH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH);
+        fromInteger(valueOf(RC_RDMA_WRITE_MIDDLE))             : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
+        fromInteger(valueOf(RC_RDMA_WRITE_LAST))               : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
+        fromInteger(valueOf(RC_RDMA_WRITE_LAST_WITH_IMMEDIATE)): valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH);
         fromInteger(valueOf(RC_RDMA_WRITE_ONLY))               : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
         fromInteger(valueOf(RC_RDMA_WRITE_ONLY_WITH_IMMEDIATE)): valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH);
-        fromInteger(valueOf(RC_RDMA_READ_REQUEST))             : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
+        fromInteger(valueOf(RC_RDMA_READ_REQUEST))             : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
         fromInteger(valueOf(RC_COMPARE_SWAP))                  : valueOf(BTH_BYTE_WIDTH) + valueOf(ATOMIC_ETH_BYTE_WIDTH);
         fromInteger(valueOf(RC_FETCH_ADD))                     : valueOf(BTH_BYTE_WIDTH) + valueOf(ATOMIC_ETH_BYTE_WIDTH);
         fromInteger(valueOf(RC_SEND_LAST_WITH_INVALIDATE))     : valueOf(BTH_BYTE_WIDTH) + valueOf(IETH_BYTE_WIDTH);
         fromInteger(valueOf(RC_SEND_ONLY_WITH_INVALIDATE))     : valueOf(BTH_BYTE_WIDTH) + valueOf(IETH_BYTE_WIDTH);
 
         // RC and XRC responses
-        fromInteger(valueOf(RC_RDMA_READ_RESPONSE_FIRST)),  fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_FIRST)) : valueOf(BTH_BYTE_WIDTH) + valueOf(AETH_BYTE_WIDTH);
-        fromInteger(valueOf(RC_RDMA_READ_RESPONSE_MIDDLE)), fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_MIDDLE)): valueOf(BTH_BYTE_WIDTH);
-        fromInteger(valueOf(RC_RDMA_READ_RESPONSE_LAST)),   fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_LAST))  : valueOf(BTH_BYTE_WIDTH) + valueOf(AETH_BYTE_WIDTH);
-        fromInteger(valueOf(RC_RDMA_READ_RESPONSE_ONLY)),   fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_ONLY))  : valueOf(BTH_BYTE_WIDTH) + valueOf(AETH_BYTE_WIDTH);
-        fromInteger(valueOf(RC_ACKNOWLEDGE)),               fromInteger(valueOf(XRC_ACKNOWLEDGE))              : valueOf(BTH_BYTE_WIDTH) + valueOf(AETH_BYTE_WIDTH);
-        fromInteger(valueOf(RC_ATOMIC_ACKNOWLEDGE)),        fromInteger(valueOf(XRC_ATOMIC_ACKNOWLEDGE))       : valueOf(BTH_BYTE_WIDTH) + valueOf(AETH_BYTE_WIDTH) + valueOf(ATOMIC_ACK_ETH_BYTE_WIDTH);
+        fromInteger(valueOf(RC_RDMA_READ_RESPONSE_FIRST)),  fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_FIRST)) : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
+        fromInteger(valueOf(RC_RDMA_READ_RESPONSE_MIDDLE)), fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_MIDDLE)): valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
+        fromInteger(valueOf(RC_RDMA_READ_RESPONSE_LAST)),   fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_LAST))  : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
+        fromInteger(valueOf(RC_RDMA_READ_RESPONSE_ONLY)),   fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_ONLY))  : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
+        fromInteger(valueOf(RC_ACKNOWLEDGE)),               fromInteger(valueOf(XRC_ACKNOWLEDGE))              : valueOf(BTH_BYTE_WIDTH) + valueOf(AETH_BYTE_WIDTH) + valueOf(NRETH_BYTE_WIDTH);
+        fromInteger(valueOf(RC_ATOMIC_ACKNOWLEDGE)),        fromInteger(valueOf(XRC_ATOMIC_ACKNOWLEDGE))       : valueOf(BTH_BYTE_WIDTH) + valueOf(AETH_BYTE_WIDTH) + valueOf(NRETH_BYTE_WIDTH) + valueOf(ATOMIC_ACK_ETH_BYTE_WIDTH);
 
         // XRC requests
         fromInteger(valueOf(XRC_SEND_FIRST))                    : valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH);
@@ -339,7 +350,7 @@ function Integer calcHeaderLenByTransTypeAndRdmaOpCode(
 
         // CNP notification
         fromInteger(valueOf(ROCE_CNP)): valueOf(BTH_BYTE_WIDTH) + valueOf(CNP_PAYLOAD_BYTE_WIDTH);
-        default: 0;
+        default: 0; // error("invalid transType and rdmaOpCode in calcHeaderLenByTransTypeAndRdmaOpCode()");
     endcase;
 endfunction
 /*

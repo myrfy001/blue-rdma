@@ -5,16 +5,15 @@ import PAClib :: *;
 import Vector :: *;
 
 import Headers :: *;
-import Controller :: *;
 import DataTypes :: *;
 import ExtractAndPrependPipeOut :: *;
 import InputPktHandle :: *;
-import PayloadConAndGen :: *;
+import PayloadCon :: *;
 import PrimUtils :: *;
 import ReqGenSQ :: *;
 import Settings :: *;
 import SimDma :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 import Utils4Test :: *;
 
 interface RdmaReqAndSendWritePayloadAndPendingWorkReq;
@@ -701,7 +700,7 @@ module mkTestSimGenRdmaResp(Empty);
         );
 
         immAssert(
-            compareRdmaHeaderDataInSim(
+            compareHeaderRDMADataInSim(
                 rdmaHeader.headerData,
                 refHeader.headerData,
                 rdmaHeader.headerMetaData.headerLen

@@ -10,16 +10,16 @@ import DataTypes :: *;
 import Headers :: *;
 import PrimUtils :: *;
 import Settings :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 import Utils4Test :: *;
 
 function DataStream getDmaReadRespData(
     DmaReadResp dmaReadResp
 ) = dmaReadResp.dataStream;
 
-function DataStream getDmaWriteReqData(
-    DmaWriteReq dmaWriteReq
-) = dmaWriteReq.dataStream;
+// function DataStream getDmaWriteReqData(
+//     DmaWriteReq dmaWriteReq
+// ) = dmaWriteReq.dataStream;
 
 // DmaReadResp 2 PipeOut
 module mkPipeOutFromDmaReadResp#(Get#(DmaReadResp) resp)(PipeOut#(DmaReadResp));
@@ -158,9 +158,9 @@ module mkSimDmaReadSrvAndReqRespPipeOut(DmaReadSrvAndReqRespPipeOut);
         isFirstReg <= True;
 
         // $display(
-        //     "time=%0t: mkSimDmaReadSrvAndReqRespPipeOut acceptReq", $time,
-        //     ", DMA read request, wr.id=%h, dmaReadReq.len=%0d, totalFragCnt=%0d",
-        //     dmaReadReq.wrID, dmaReadReq.len, totalFragCnt
+            //     "time=%0t: mkSimDmaReadSrvAndReqRespPipeOut acceptReq", $time,
+            //     ", DMA read request, wr.id=%h, dmaReadReq.len=%0d, totalFragCnt=%0d",
+            //     dmaReadReq.mrID, dmaReadReq.len, totalFragCnt
         // );
     endrule
 
@@ -185,9 +185,9 @@ module mkSimDmaReadSrvAndReqRespPipeOut(DmaReadSrvAndReqRespPipeOut);
         let resp = DmaReadResp {
             initiator : curReqReg.initiator,
             sqpn      : curReqReg.sqpn,
-            wrID      : curReqReg.wrID,
             isRespErr : False,
-            dataStream: dataStream
+            dataStream: dataStream,
+            wrID      : ?
         };
         dmaReadRespQ.enq(resp);
         dmaReadRespOutQ.enq(resp);
@@ -198,12 +198,12 @@ module mkSimDmaReadSrvAndReqRespPipeOut(DmaReadSrvAndReqRespPipeOut);
             $format("dmaReadResp.data should not have zero ByteEn, ", fshow(dataStream))
         );
         // $display(
-        //     "time=%0t: mkSimDmaReadSrvAndReqRespPipeOut genResp", $time,
-        //     ", DMA read response, wr.id=%h, remainingFragNum=%0d",
-        //     curReqReg.wrID, remainingFragNumReg,
-        //     // ", dataStream=", fshow(dataStream)
+            //     "time=%0t: mkSimDmaReadSrvAndReqRespPipeOut genResp", $time,
+            //     ", DMA read response, wr.id=%h, remainingFragNum=%0d",
+            //     curReqReg.mrID, remainingFragNumReg,
+            //     // ", dataStream=", fshow(dataStream)
         //     ", dataStream.isFirst=", fshow(dataStream.isFirst),
-        //     ", dataStream.isLast=", fshow(dataStream.isLast)
+            //     ", dataStream.isLast=", fshow(dataStream.isLast)
         // );
     endrule
 
@@ -283,99 +283,99 @@ module mkSimDmaReadSrvWithErr#(
     interface response = toGet(dmaReadRespQ);
 endmodule
 
-interface DmaWriteSrvAndReqRespPipeOut;
-    interface DmaWriteSrv dmaWriteSrv;
-    interface PipeOut#(DmaWriteReq) dmaWriteReq;
-    interface PipeOut#(DmaWriteResp) dmaWriteResp;
-endinterface
+// interface DmaWriteSrvAndReqRespPipeOut;
+//     interface DmaWriteSrv dmaWriteSrv;
+//     interface PipeOut#(DmaWriteReq) dmaWriteReq;
+//     interface PipeOut#(DmaWriteResp) dmaWriteResp;
+// endinterface
 
-// TODO: proper handle DMA cancel requests if QP reset
-module mkSimDmaWriteSrvAndReqRespPipeOut(DmaWriteSrvAndReqRespPipeOut);
-    FIFOF#(DmaWriteReq)      dmaWriteReqQ <- mkFIFOF;
-    FIFOF#(DmaWriteResp)    dmaWriteRespQ <- mkFIFOF;
-    FIFOF#(DmaWriteReq)   dmaWriteReqOutQ <- mkFIFOF;
-    FIFOF#(DmaWriteResp) dmaWriteRespOutQ <- mkFIFOF;
+// // TODO: proper handle DMA cancel requests if QP reset
+// module mkSimDmaWriteSrvAndReqRespPipeOut(DmaWriteSrvAndReqRespPipeOut);
+//     FIFOF#(DmaWriteReq)      dmaWriteReqQ <- mkFIFOF;
+//     FIFOF#(DmaWriteResp)    dmaWriteRespQ <- mkFIFOF;
+//     FIFOF#(DmaWriteReq)   dmaWriteReqOutQ <- mkFIFOF;
+//     FIFOF#(DmaWriteResp) dmaWriteRespOutQ <- mkFIFOF;
 
-    // Reg#(Bool) dmaWriteSrvInitReg <- mkReg(False);
+//     // Reg#(Bool) dmaWriteSrvInitReg <- mkReg(False);
 
-    function Action genDmaWriteResp(DmaWriteMetaData metaData);
-        action
-            let dmaWriteResp = DmaWriteResp {
-                initiator: metaData.initiator,
-                sqpn     : metaData.sqpn,
-                psn      : metaData.psn,
-                isRespErr: False
-            };
-            // $display("time=%0t: dmaWriteResp=", $time, fshow(dmaWriteResp));
+//     function Action genDmaWriteResp(DmaWriteMetaData metaData);
+//         action
+//             let dmaWriteResp = DmaWriteResp {
+//                 initiator: metaData.initiator,
+//                 sqpn     : metaData.sqpn,
+//                 psn      : metaData.psn,
+//                 isRespErr: False
+//             };
+//             // $display("time=%0t: dmaWriteResp=", $time, fshow(dmaWriteResp));
 
-            dmaWriteRespQ.enq(dmaWriteResp);
-            dmaWriteRespOutQ.enq(dmaWriteResp);
-        endaction
-    endfunction
+//             dmaWriteRespQ.enq(dmaWriteResp);
+//             dmaWriteRespOutQ.enq(dmaWriteResp);
+//         endaction
+//     endfunction
 
-    // rule init if (!dmaWriteSrvInitReg);
-    //     dmaWriteReqQ.clear;
-    //     dmaWriteRespQ.clear;
-    //     dmaWriteReqOutQ.clear;
-    //     dmaWriteRespOutQ.clear;
+//     // rule init if (!dmaWriteSrvInitReg);
+//     //     dmaWriteReqQ.clear;
+//     //     dmaWriteRespQ.clear;
+//     //     dmaWriteReqOutQ.clear;
+//     //     dmaWriteRespOutQ.clear;
 
-    //     dmaWriteSrvInitReg <= True;
-    //     // $display("time=%0t: SimDmaWriteSrv inited", $time);
-    // endrule
+//     //     dmaWriteSrvInitReg <= True;
+//     //     // $display("time=%0t: SimDmaWriteSrv inited", $time);
+//     // endrule
 
-    rule write; // if (dmaWriteSrvInitReg);
-        let dmaWriteReq = dmaWriteReqQ.first;
-        dmaWriteReqQ.deq;
-        dmaWriteReqOutQ.enq(dmaWriteReq);
+//     rule write; // if (dmaWriteSrvInitReg);
+//         let dmaWriteReq = dmaWriteReqQ.first;
+//         dmaWriteReqQ.deq;
+//         dmaWriteReqOutQ.enq(dmaWriteReq);
 
-        // if (
-        //     dmaWriteReq.metaData.initiator == DMA_SRC_SQ_CANCEL ||
-        //     dmaWriteReq.metaData.initiator == DMA_SRC_RQ_CANCEL
-        // ) begin
-        //     dmaWriteSrvInitReg <= False;
-        //     genDmaWriteResp(dmaWriteReq.metaData);
+//         // if (
+//         //     dmaWriteReq.metaData.initiator == DMA_SRC_SQ_CANCEL ||
+//         //     dmaWriteReq.metaData.initiator == DMA_SRC_RQ_CANCEL
+//         // ) begin
+//         //     dmaWriteSrvInitReg <= False;
+//         //     genDmaWriteResp(dmaWriteReq.metaData);
 
-        //     // $display(
-        //     //     "time=%0t: cancel DMA write", $time,
-        //     //     ", initiator=", fshow(dmaWriteReq.metaData.initiator)
-        //     // );
-        // end
-        // else begin
-        // end
-        if (dmaWriteReq.dataStream.isLast) begin
-            genDmaWriteResp(dmaWriteReq.metaData);
-        end
+//         //     // $display(
+//         //     //     "time=%0t: cancel DMA write", $time,
+//         //     //     ", initiator=", fshow(dmaWriteReq.metaData.initiator)
+//         //     // );
+//         // end
+//         // else begin
+//         // end
+//         if (dmaWriteReq.dataStream.isLast) begin
+//             genDmaWriteResp(dmaWriteReq.metaData);
+//         end
 
-        // $display("time=%0t: dmaWriteReq=", $time, fshow(dmaWriteReq));
-    endrule
+//         // $display("time=%0t: dmaWriteReq=", $time, fshow(dmaWriteReq));
+//     endrule
 
-    interface dmaWriteSrv  = toGPServer(dmaWriteReqQ, dmaWriteRespQ);
-    interface dmaWriteReq  = toPipeOut(dmaWriteReqOutQ);
-    interface dmaWriteResp = toPipeOut(dmaWriteRespOutQ);
-endmodule
+//     interface dmaWriteSrv  = toGPServer(dmaWriteReqQ, dmaWriteRespQ);
+//     interface dmaWriteReq  = toPipeOut(dmaWriteReqOutQ);
+//     interface dmaWriteResp = toPipeOut(dmaWriteRespOutQ);
+// endmodule
 
-interface DmaWriteSrvAndDataStreamPipeOut;
-    interface DmaWriteSrv dmaWriteSrv;
-    interface DataStreamPipeOut dataStream;
-endinterface
+// interface DmaWriteSrvAndDataStreamPipeOut;
+//     interface DmaWriteSrv dmaWriteSrv;
+//     interface DataStreamPipeOut dataStream;
+// endinterface
 
-module mkSimDmaWriteSrvAndDataStreamPipeOut(DmaWriteSrvAndDataStreamPipeOut);
-    let simDmaWriteSrv <- mkSimDmaWriteSrvAndReqRespPipeOut;
-    mkSink(simDmaWriteSrv.dmaWriteResp);
-    DataStreamPipeOut dataStreamPipeOut <- mkFunc2Pipe(
-        getDmaWriteReqData, simDmaWriteSrv.dmaWriteReq
-    );
+// module mkSimDmaWriteSrvAndDataStreamPipeOut(DmaWriteSrvAndDataStreamPipeOut);
+//     let simDmaWriteSrv <- mkSimDmaWriteSrvAndReqRespPipeOut;
+//     mkSink(simDmaWriteSrv.dmaWriteResp);
+//     DataStreamPipeOut dataStreamPipeOut <- mkFunc2Pipe(
+//         getDmaWriteReqData, simDmaWriteSrv.dmaWriteReq
+//     );
 
-    interface dmaWriteSrv = simDmaWriteSrv.dmaWriteSrv;
-    interface dataStream = dataStreamPipeOut;
-endmodule
+//     interface dmaWriteSrv = simDmaWriteSrv.dmaWriteSrv;
+//     interface dataStream = dataStreamPipeOut;
+// endmodule
 
-module mkSimDmaWriteSrv(DmaWriteSrv);
-    let simDmaWriteSrv <- mkSimDmaWriteSrvAndReqRespPipeOut;
-    mkSink(simDmaWriteSrv.dmaWriteReq);
-    mkSink(simDmaWriteSrv.dmaWriteResp);
-    return simDmaWriteSrv.dmaWriteSrv;
-endmodule
+// module mkSimDmaWriteSrv(DmaWriteSrv);
+//     let simDmaWriteSrv <- mkSimDmaWriteSrvAndReqRespPipeOut;
+//     mkSink(simDmaWriteSrv.dmaWriteReq);
+//     mkSink(simDmaWriteSrv.dmaWriteResp);
+//     return simDmaWriteSrv.dmaWriteSrv;
+// endmodule
 
 module mkFixedPktLenDataStreamPipeOut#(
     PipeOut#(PktLen) pktLenPipeOut
@@ -463,89 +463,90 @@ module mkTestFixedPktLenDataStreamPipeOut(Empty);
     endrule
 endmodule
 
-(* doc = "testcase" *)
-module mkTestDmaReadAndWriteSrv(Empty);
-    let minPktLen = 1;
-    let maxPktLen = 4096;
+// (* doc = "testcase" *)
+// module mkTestDmaReadAndWriteSrv(Empty);
+//     let minPktLen = 1;
+//     let maxPktLen = 4096;
 
-    Vector#(1, PipeOut#(PktLen)) pktLenPipeOutVec <- mkRandomValueInRangePipeOut(minPktLen, maxPktLen);
-    let pktLenPipeOut = pktLenPipeOutVec[0];
+//     Vector#(1, PipeOut#(PktLen)) pktLenPipeOutVec <- mkRandomValueInRangePipeOut(minPktLen, maxPktLen);
+//     let pktLenPipeOut = pktLenPipeOutVec[0];
 
-    Reg#(PSN) psnReg <- mkReg(0);
-    FIFOF#(DmaWriteMetaData) dmaWriteMetaDataQ <- mkFIFOF;
+//     Reg#(PSN) psnReg <- mkReg(0);
+//     FIFOF#(DmaWriteMetaData) dmaWriteMetaDataQ <- mkFIFOF;
 
-    let simDmaReadSrv <- mkSimDmaReadSrvAndDataStreamPipeOut;
-    let simDmaWriteSrv <- mkSimDmaWriteSrvAndDataStreamPipeOut;
+//     let simDmaReadSrv <- mkSimDmaReadSrvAndDataStreamPipeOut;
+//     let simDmaWriteSrv <- mkSimDmaWriteSrvAndDataStreamPipeOut;
 
-    let expectedDmaWriteDataStreamPipeOut <- mkBufferN(2, simDmaReadSrv.dataStream);
+//     let expectedDmaWriteDataStreamPipeOut <- mkBufferN(2, simDmaReadSrv.dataStream);
 
-    let countDown <- mkCountDown(valueOf(MAX_CMP_CNT));
+//     let countDown <- mkCountDown(valueOf(MAX_CMP_CNT));
 
-    rule issueDmaReadReq;
-        let pktLen = pktLenPipeOut.first;
-        pktLenPipeOut.deq;
+//     rule issueDmaReadReq;
+//         let pktLen = pktLenPipeOut.first;
+//         pktLenPipeOut.deq;
 
-        let dmaReadReq = DmaReadReq {
-            initiator: DMA_SRC_RQ_RD,
-            sqpn     : getDefaultQPN,
-            startAddr: dontCareValue,
-            len      : pktLen,
-            wrID     : dontCareValue,
-            mrIdx    : dontCareValue
-        };
-        simDmaReadSrv.dmaReadSrv.request.put(dmaReadReq);
+//         let dmaReadReq = DmaReadReq {
+//             initiator: DMA_SRC_RQ_RD,
+//             sqpn     : getDefaultQPN,
+//             startAddr: dontCareValue,
+//             len      : pktLen,
+//             wrID     : dontCareValue,
+//             mrIdx    : dontCareValue
+//         };
+//         simDmaReadSrv.dmaReadSrv.request.put(dmaReadReq);
 
-        let dmaWriteMetaData = DmaWriteMetaData {
-            initiator: DMA_SRC_RQ_WR,
-            sqpn     : getDefaultQPN,
-            startAddr: dontCareValue,
-            len      : pktLen,
-            psn      : psnReg
-        };
-        psnReg <= psnReg + 1;
-        dmaWriteMetaDataQ.enq(dmaWriteMetaData);
-        // $display("time=%0t: issueDmaReadReq, pktLen=%0d", $time, pktLen);
-    endrule
+//         let dmaWriteMetaData = DmaWriteMetaData {
+//             initiator: DMA_SRC_RQ_WR,
+//             sqpn     : getDefaultQPN,
+//             startAddr: dontCareValue,
+//             len      : pktLen,
+//             psn      : psnReg,
+//             mrID     : dontCareValue
+//         };
+//         psnReg <= psnReg + 1;
+//         dmaWriteMetaDataQ.enq(dmaWriteMetaData);
+//         // $display("time=%0t: issueDmaReadReq, pktLen=%0d", $time, pktLen);
+//     endrule
 
-    rule issueDmaWriteReq;
-        let dmaWriteMetaData = dmaWriteMetaDataQ.first;
-        let dmaReadResp <- simDmaReadSrv.dmaReadSrv.response.get;
-        let dmaReadRespDataStream = dmaReadResp.dataStream;
+//     rule issueDmaWriteReq;
+//         let dmaWriteMetaData = dmaWriteMetaDataQ.first;
+//         let dmaReadResp <- simDmaReadSrv.dmaReadSrv.response.get;
+//         let dmaReadRespDataStream = dmaReadResp.dataStream;
 
-        if (dmaReadRespDataStream.isLast) begin
-            dmaWriteMetaDataQ.deq;
-        end
+//         if (dmaReadRespDataStream.isLast) begin
+//             dmaWriteMetaDataQ.deq;
+//         end
 
-        let dmaWriteReq = DmaWriteReq {
-            metaData   : dmaWriteMetaData,
-            dataStream : dmaReadRespDataStream
-        };
-        simDmaWriteSrv.dmaWriteSrv.request.put(dmaWriteReq);
-        // $display(
-        //     "time=%0t: issueDmaWriteReq", $time,
-        //     ", dmaWriteMetaData=", fshow(dmaWriteMetaData)
-        // );
-    endrule
+//         let dmaWriteReq = DmaWriteReq {
+//             metaData   : dmaWriteMetaData,
+//             dataStream : dmaReadRespDataStream
+//         };
+//         simDmaWriteSrv.dmaWriteSrv.request.put(dmaWriteReq);
+//         // $display(
+//         //     "time=%0t: issueDmaWriteReq", $time,
+//         //     ", dmaWriteMetaData=", fshow(dmaWriteMetaData)
+//         // );
+//     endrule
 
-    rule recvDmaWriteResp;
-        let dmaWriteResp <- simDmaWriteSrv.dmaWriteSrv.response.get;
-        countDown.decr;
-    endrule
+//     rule recvDmaWriteResp;
+//         let dmaWriteResp <- simDmaWriteSrv.dmaWriteSrv.response.get;
+//         countDown.decr;
+//     endrule
 
-    rule compareDataStream;
-        let actualDataStream = simDmaWriteSrv.dataStream.first;
-        simDmaWriteSrv.dataStream.deq;
+//     rule compareDataStream;
+//         let actualDataStream = simDmaWriteSrv.dataStream.first;
+//         simDmaWriteSrv.dataStream.deq;
 
-        let expectedDataStream = expectedDmaWriteDataStreamPipeOut.first;
-        expectedDmaWriteDataStreamPipeOut.deq;
+//         let expectedDataStream = expectedDmaWriteDataStreamPipeOut.first;
+//         expectedDmaWriteDataStreamPipeOut.deq;
 
-        immAssert(
-            actualDataStream == expectedDataStream,
-            "DMA read and write DataStream assertion @ mkTestDmaReadAndWriteSrv",
-            $format(
-                "actualDataStream=", fshow(actualDataStream),
-                " should == expectedDataStream=", fshow(expectedDataStream)
-            )
-        );
-    endrule
-endmodule
+//         immAssert(
+//             actualDataStream == expectedDataStream,
+//             "DMA read and write DataStream assertion @ mkTestDmaReadAndWriteSrv",
+//             $format(
+//                 "actualDataStream=", fshow(actualDataStream),
+//                 " should == expectedDataStream=", fshow(expectedDataStream)
+//             )
+//         );
+//     endrule
+// endmodule

@@ -3,6 +3,9 @@
 # puts $rdi::task_libraries
 # puts $rdi::ldext
 
+set_msg_config -id "Synth 8-3333" -limit 500000
+set_msg_config -id "Synth 8-3886" -limit 500000
+
 proc find_cmd {option} {
   foreach cmd [lsort [info commands *]] {
     catch {

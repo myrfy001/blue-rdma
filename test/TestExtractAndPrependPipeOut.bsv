@@ -10,7 +10,7 @@ import DataTypes :: *;
 import Settings :: *;
 import SimDma :: *;
 import PrimUtils :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 import Utils4Test :: *;
 
 function PktLen headerMetaData2PktLen(HeaderMetaData hmd) = zeroExtend(hmd.headerLen);

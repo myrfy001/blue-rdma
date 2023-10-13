@@ -6,42 +6,8 @@ import PAClib :: *;
 import Vector :: *;
 
 import PrimUtils :: *;
-import Utils :: *;
-/*
-function Tuple3#(Bool, Bit#(TLog#(portSz)), Vector#(portSz, Bool)) arbitrate(
-    Vector#(portSz, Bool) priorityVec, Vector#(portSz, Bool) requestVec
-);
-    function Bool isTrue(Bool inputVal) = inputVal;
+import RdmaUtils :: *;
 
-    let portNum = valueOf(portSz);
-
-    Vector#(portSz, Bool) grantVec = replicate(False);
-    Bit#(TLog#(portSz))   grantIdx = 0;
-
-    Bool found   = True;
-    Bool granted = False;
-    for (Integer x = 0; x < (2 * portNum); x = x + 1) begin
-        Integer y = (x % portNum);
-
-        let hasReq = requestVec[y];
-        let hasPriority = priorityVec[y];
-
-        if (hasPriority) begin
-            found = False;
-        end
-
-        if (!found && hasReq) begin
-            grantVec[y] = True;
-            grantIdx    = fromInteger(y);
-            found   = True;
-            granted = True;
-        end
-    end
-
-    let nextPriorityVec = granted ? rotateR(grantVec) : priorityVec;
-    return tuple3(granted, grantIdx, nextPriorityVec);
-endfunction
-*/
 module mkServerArbiter#(
     Server#(reqType, respType) srv,
     function Bool isReqFinished(reqType request),
@@ -245,36 +211,7 @@ module mkBinaryPipeOutArbiter#(
     Reg#(Bool)    grantReg <- mkReg(False);
 
     let shouldGrantPipeIn2 = (priorityReg && pipeIn2.notEmpty) || (!pipeIn1.notEmpty && pipeIn2.notEmpty);
-/*
-    rule debug;
-        Bit#(TLog#(TWO)) curGrantIdx = pack(grantReg);
-        if (needArbitrationReg) begin
-            curGrantIdx = pack(shouldGrantPipeIn2);
-        end
 
-        if (pipeIn1.notEmpty) begin
-            $display(
-                "time=%0t:", $time,
-                " pipeIn1.notEmpty=", fshow(pipeIn1.notEmpty),
-                ", shouldGrantPipeIn2=", fshow(shouldGrantPipeIn2),
-                ", needArbitrationReg=", fshow(needArbitrationReg),
-                ", curGrantIdx=%0d, grantReg=%h, priorityReg=%h",
-                curGrantIdx, grantReg, priorityReg
-            );
-        end
-
-        if (pipeIn2.notEmpty) begin
-            $display(
-                "time=%0t:", $time,
-                " pipeIn2.notEmpty=", fshow(pipeIn2.notEmpty),
-                ", shouldGrantPipeIn2=", fshow(shouldGrantPipeIn2),
-                ", needArbitrationReg=", fshow(needArbitrationReg),
-                ", curGrantIdx=%0d, grantReg=%h, priorityReg=%h",
-                curGrantIdx, grantReg, priorityReg
-            );
-        end
-    endrule
-*/
     (* fire_when_enabled *)
     rule binaryArbitrate;
         Bit#(TLog#(TWO)) curGrantIdx = pack(grantReg);
@@ -375,71 +312,10 @@ module mkPipeOutArbiter#(
     let resultPipeOut <- mkBinaryPipeOutArbiterTree(
         leafArbiterVec, isPipePayloadFinished
     );
-/*
-    rule debug;
-        for (Integer idx = 0; idx < valueOf(portSz); idx = idx + 1) begin
-            let pipeHasOutput = inputPipeOutVec[idx].notEmpty;
-            $display(
-                "time=%0t: mkPipeOutArbiter", $time,
-                " inputPipeOutVec[idx=%0d].notEmpty=",
-                idx, fshow(pipeHasOutput)
-            );
-            if (pipeHasOutput) begin
-                $display(
-                    "time=%0t: mkPipeOutArbiter", $time,
-                    " inputPipeOutVec[idx=%0d].first=",
-                    idx, fshow(inputPipeOutVec[idx].first)
-                );
-            end
-        end
-    endrule
-*/
+
     return resultPipeOut;
 endmodule
-/*
-// pipeIn1 has priority over pipeIn2
-module mkFixedBinaryPipeOutArbiter#(
-    PipeOut#(anytype) pipeIn1, PipeOut#(anytype) pipeIn2
-)(PipeOut#(anytype));
-    let isNotEmpty = pipeIn1.notEmpty || pipeIn2.notEmpty;
 
-    Reg#(Bool) deqPipeIn1Reg[2] <- mkCReg(2, False);
-    Reg#(Bool) deqPipeIn2Reg[2] <- mkCReg(2, False);
-    rule debug if (deqPipeIn1Reg[1] || deqPipeIn2Reg[1]);
-        $display(
-            "time=%0t: mkFixedBinaryPipeOutArbiter debug", $time,
-            ", pipeIn1.notEmpty=", fshow(pipeIn1.notEmpty),
-            ", pipeIn1.deq=", fshow(deqPipeIn1Reg[1]),
-            ", pipeIn2.notEmpty=", fshow(pipeIn2.notEmpty),
-            ", pipeIn2.deq=", fshow(deqPipeIn2Reg[1])
-        );
-        deqPipeIn1Reg[1] <= False;
-        deqPipeIn2Reg[1] <= False;
-    endrule
-
-    method anytype first() if (isNotEmpty);
-        if (pipeIn1.notEmpty) begin
-            return pipeIn1.first;
-        end
-        else begin
-            return pipeIn2.first;
-        end
-    endmethod
-
-    method Action deq() if (isNotEmpty);
-        if (pipeIn1.notEmpty) begin
-            pipeIn1.deq;
-            deqPipeIn1Reg[0] <= True;
-        end
-        else begin
-            pipeIn2.deq;
-            deqPipeIn2Reg[0] <= True;
-        end
-    endmethod
-
-    method Bool notEmpty() = isNotEmpty;
-endmodule
-*/
 interface ServerProxy#(type reqType, type respType);
     interface Server#(reqType, respType) srvPort;
     interface Client#(reqType, respType) cltPort;

@@ -11,7 +11,7 @@ import DataTypes :: *;
 import Headers :: *;
 import PrimUtils :: *;
 import Settings :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 
 typedef Bit#(32)  AddrIPv4;
 typedef Bit#(128) AddrIPv6;
@@ -375,6 +375,7 @@ function DataStream leftShiftAndMergeFragData(
     resultFrag.data   = truncateLSB({ preFrag.data,   curFrag.data   } << leftShiftBitNum);
     return resultFrag;
 endfunction
+// TODO: Remove not used one
 // the output DataStream keeps isFirst and isLast from preFrag
 function DataStream leftShiftMergeFragData(
     DataStream preFrag,
@@ -779,6 +780,8 @@ module mkDmaReadCntrl#(
             totalLen = totalLenReg + sge.len;
             sgeNum = sgeNumReg + 1;
         end
+
+        // TODO: make sure segnum will be optmized out by backend tool?
         totalLenReg <= totalLen;
         sgeNumReg <= sgeNum;
 
@@ -1623,6 +1626,7 @@ module mkMergePayloadAllSGE#(
     return toPipeOut(pktPayloadOutQ);
 endmodule
 
+// TODO: remove it 
 interface PayloadSegment;
     interface PipeOut#(PktLen) pktLenPipeOut;
     interface DataStreamPipeOut pktPayloadPipeOut;

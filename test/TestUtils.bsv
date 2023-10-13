@@ -9,7 +9,7 @@ import DataTypes :: *;
 import PrimUtils :: *;
 import Settings :: *;
 import SimDma :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 import Utils4Test :: *;
 /*
 module mkTestSegmentDataStream(Empty);

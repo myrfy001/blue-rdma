@@ -6,17 +6,13 @@ import GetPut :: *;
 import PAClib :: *;
 import Randomizable :: *;
 import Vector :: *;
-
-import Controller :: *;
 import DataTypes :: *;
 import Headers :: *;
 import InputPktHandle :: *;
 import MetaData :: *;
 import PrimUtils :: *;
-import QueuePair :: *;
-import RetryHandleSQ :: *;
 import Settings :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 
 typedef 0 DEFAULT_QPN;
 typedef 0 DEFAULT_QP_IDX;
@@ -79,7 +75,7 @@ function Tuple2#(HeaderByteNum, HeaderBitNum) calcHeaderInvalidByteAndBitNum(
     return tuple2(headerInvalidByteNum, headerInvalidBitNum);
 endfunction
 
-function Bool compareRdmaHeaderDataInSim(
+function Bool compareHeaderRDMADataInSim(
     HeaderData headerData, HeaderData refHeaderData, HeaderByteNum headerLen
 );
     let { headerInvalidByteNum, headerInvalidBitNum } =
@@ -964,59 +960,59 @@ module mkExpandAggregatedPipeOut#(
     return expandedPipeOut;
 endmodule
 */
-module mkExistingPendingWorkReqPipeOut#(
-    CntrlQP cntrl,
-    PipeOut#(WorkReq) workReqPipeIn
-)(Vector#(vSz, PipeOut#(PendingWorkReq)));
-    FIFOF#(PendingWorkReq) pendingWorkReqOutQ <- mkFIFOF;
-    let pendingWorkReqPipeOut = toPipeOut(pendingWorkReqOutQ);
-    let cntrlStatus = cntrl.contextSQ.statusSQ;
+// module mkExistingPendingWorkReqPipeOut#(
+//     CntrlQP cntrl,
+//     PipeOut#(WorkReq) workReqPipeIn
+// )(Vector#(vSz, PipeOut#(PendingWorkReq)));
+//     FIFOF#(PendingWorkReq) pendingWorkReqOutQ <- mkFIFOF;
+//     let pendingWorkReqPipeOut = toPipeOut(pendingWorkReqOutQ);
+//     let cntrlStatus = cntrl.contextSQ.statusSQ;
 
-    rule checkExpectedPSN if (cntrlStatus.comm.isRTR2RTS);
-        immAssert(
-            cntrl.contextRQ.getEPSN == cntrl.contextSQ.getNPSN,
-            "ePSN == nPSN assertion @ mkExistingPendingWorkReqPipeOut",
-            $format(
-                "cntrl.contextRQ.getEPSN=%h should == cntrl.contextSQ.getNPSN=%h",
-                cntrl.contextRQ.getEPSN, cntrl.contextSQ.getNPSN,
-                " which is required by mkExistingPendingWorkReqPipeOut"
-            )
-        );
-    endrule
+//     rule checkExpectedPSN if (cntrlStatus.comm.isRTR2RTS);
+//         immAssert(
+//             cntrl.contextRQ.getEPSN == cntrl.contextSQ.getNPSN,
+//             "ePSN == nPSN assertion @ mkExistingPendingWorkReqPipeOut",
+//             $format(
+//                 "cntrl.contextRQ.getEPSN=%h should == cntrl.contextSQ.getNPSN=%h",
+//                 cntrl.contextRQ.getEPSN, cntrl.contextSQ.getNPSN,
+//                 " which is required by mkExistingPendingWorkReqPipeOut"
+//             )
+//         );
+//     endrule
 
-    rule genExistingPendingWorkReq if (cntrlStatus.comm.isRTS);
-        let wr = workReqPipeIn.first;
-        workReqPipeIn.deq;
+//     rule genExistingPendingWorkReq if (cntrlStatus.comm.isRTS);
+//         let wr = workReqPipeIn.first;
+//         workReqPipeIn.deq;
 
-        let startPktSeqNum = cntrl.contextSQ.getNPSN;
-        let { isOnlyPkt, totalPktNum, nextPktSeqNum, endPktSeqNum } =
-            calcPktNumNextAndEndPSN(
-                startPktSeqNum,
-                wr.len,
-                cntrlStatus.comm.getPMTU
-            );
+//         let startPktSeqNum = cntrl.contextSQ.getNPSN;
+//         let { isOnlyPkt, totalPktNum, nextPktSeqNum, endPktSeqNum } =
+//             calcPktNumNextAndEndPSN(
+//                 startPktSeqNum,
+//                 wr.len,
+//                 cntrlStatus.comm.getPMTU
+//             );
 
-        cntrl.contextSQ.setNPSN(nextPktSeqNum);
-        let isOnlyReqPkt = isOnlyPkt || isReadWorkReq(wr.opcode);
+//         cntrl.contextSQ.setNPSN(nextPktSeqNum);
+//         let isOnlyReqPkt = isOnlyPkt || isReadWorkReq(wr.opcode);
 
-        let pendingWR = PendingWorkReq {
-            wr: wr,
-            startPSN: tagged Valid startPktSeqNum,
-            endPSN: tagged Valid endPktSeqNum,
-            pktNum: tagged Valid totalPktNum,
-            isOnlyReqPkt: tagged Valid isOnlyReqPkt
-        };
-        pendingWorkReqOutQ.enq(pendingWR);
+//         let pendingWR = PendingWorkReq {
+//             wr: wr,
+//             startPSN: tagged Valid startPktSeqNum,
+//             endPSN: tagged Valid endPktSeqNum,
+//             pktNum: tagged Valid totalPktNum,
+//             isOnlyReqPkt: tagged Valid isOnlyReqPkt
+//         };
+//         pendingWorkReqOutQ.enq(pendingWR);
 
-        // $display(
-        //     "time=%0t: generates pendingWR=", $time, fshow(pendingWR)
-        // );
-    endrule
+//         // $display(
+//         //     "time=%0t: generates pendingWR=", $time, fshow(pendingWR)
+//         // );
+//     endrule
 
-    Vector#(vSz, PipeOut#(PendingWorkReq)) resultPipeOutVec <-
-        mkForkVector(pendingWorkReqPipeOut);
-    return resultPipeOutVec;
-endmodule
+//     Vector#(vSz, PipeOut#(PendingWorkReq)) resultPipeOutVec <-
+//         mkForkVector(pendingWorkReqPipeOut);
+//     return resultPipeOutVec;
+// endmodule
 
 function PipeOut#(PendingWorkReq) genNewPendingWorkReqPipeOut(
     PipeOut#(WorkReq) workReqPipeIn
@@ -1180,334 +1176,334 @@ typedef enum {
     SIM_CNTRL_WAIT_RESET
 } SimCntrlState deriving(Bits, Eq);
 
-module mkCntrlStateCycle#(
-    SrvPortQP cntrlSrvPort,
-    CntrlStatus cntrlStatus,
-    QPN qpn,
-    TypeQP qpType,
-    PMTU pmtu,
-    Bool setExpectedPsnAsNextPSN,
-    Bool setZero2ExpectedPsnAndNextPSN,
-    Bool qpDestroyWhenErr
-)(Empty);
-    let qpInitAttr = QpInitAttr {
-        qpType  : qpType,
-        sqSigAll: False
-    };
-    let qpAttrPipeOut <- mkSimQpAttrPipeOut(
-        pmtu, setExpectedPsnAsNextPSN, setZero2ExpectedPsnAndNextPSN
-    );
-    Reg#(SimCntrlState) simCntrlStateReg <- mkReg(SIM_CNTRL_CREATE_QP);
+// module mkCntrlStateCycle#(
+//     SrvPortQP cntrlSrvPort,
+//     CntrlStatus cntrlStatus,
+//     QPN qpn,
+//     TypeQP qpType,
+//     PMTU pmtu,
+//     Bool setExpectedPsnAsNextPSN,
+//     Bool setZero2ExpectedPsnAndNextPSN,
+//     Bool qpDestroyWhenErr
+// )(Empty);
+//     let qpInitAttr = QpInitAttr {
+//         qpType  : qpType,
+//         sqSigAll: False
+//     };
+//     let qpAttrPipeOut <- mkSimQpAttrPipeOut(
+//         pmtu, setExpectedPsnAsNextPSN, setZero2ExpectedPsnAndNextPSN
+//     );
+//     Reg#(SimCntrlState) simCntrlStateReg <- mkReg(SIM_CNTRL_CREATE_QP);
 
-    rule createQP if (simCntrlStateReg == SIM_CNTRL_CREATE_QP);
-        immAssert(
-            cntrlStatus.comm.isReset,
-            "cntrlStatus state assertion @ mkCntrlStateCycle",
-            $format(
-                "cntrlStatus.comm.isReset=", fshow(cntrlStatus.comm.isReset),
-                " should be true"
-            )
-        );
+//     rule createQP if (simCntrlStateReg == SIM_CNTRL_CREATE_QP);
+//         immAssert(
+//             cntrlStatus.comm.isReset,
+//             "cntrlStatus state assertion @ mkCntrlStateCycle",
+//             $format(
+//                 "cntrlStatus.comm.isReset=", fshow(cntrlStatus.comm.isReset),
+//                 " should be true"
+//             )
+//         );
 
-        let qpCreateReq = ReqQP {
-            qpReqType : REQ_QP_CREATE,
-            pdHandler : dontCareValue,
-            qpn       : qpn,
-            qpAttrMask: dontCareValue,
-            qpAttr    : dontCareValue,
-            qpInitAttr: qpInitAttr
-        };
+//         let qpCreateReq = ReqQP {
+//             qpReqType : REQ_QP_CREATE,
+//             pdHandler : dontCareValue,
+//             qpn       : qpn,
+//             qpAttrMask: dontCareValue,
+//             qpAttr    : dontCareValue,
+//             qpInitAttr: qpInitAttr
+//         };
 
-        cntrlSrvPort.request.put(qpCreateReq);
-        simCntrlStateReg <= SIM_CNTRL_INIT_QP;
-    endrule
+//         cntrlSrvPort.request.put(qpCreateReq);
+//         simCntrlStateReg <= SIM_CNTRL_INIT_QP;
+//     endrule
 
-    rule initQP if (simCntrlStateReg == SIM_CNTRL_INIT_QP);
-        let qpCreateResp <- cntrlSrvPort.response.get;
-        immAssert(
-            qpCreateResp.successOrNot,
-            "qpCreateResp.successOrNot assertion @ mkCntrlStateCycle",
-            $format(
-                "qpCreateResp.successOrNot=", fshow(qpCreateResp.successOrNot),
-                " should be true when create QP"
-            )
-        );
+//     rule initQP if (simCntrlStateReg == SIM_CNTRL_INIT_QP);
+//         let qpCreateResp <- cntrlSrvPort.response.get;
+//         immAssert(
+//             qpCreateResp.successOrNot,
+//             "qpCreateResp.successOrNot assertion @ mkCntrlStateCycle",
+//             $format(
+//                 "qpCreateResp.successOrNot=", fshow(qpCreateResp.successOrNot),
+//                 " should be true when create QP"
+//             )
+//         );
 
-        let qpAttr = qpAttrPipeOut.first;
-        qpAttr.qpState = IBV_QPS_INIT;
+//         let qpAttr = qpAttrPipeOut.first;
+//         qpAttr.qpState = IBV_QPS_INIT;
 
-        let qpInitReq = ReqQP {
-            qpReqType : REQ_QP_MODIFY,
-            pdHandler : dontCareValue,
-            qpn       : qpn,
-            qpAttrMask: getReset2InitRequiredAttr,
-            qpAttr    : qpAttr,
-            qpInitAttr: qpInitAttr
-        };
+//         let qpInitReq = ReqQP {
+//             qpReqType : REQ_QP_MODIFY,
+//             pdHandler : dontCareValue,
+//             qpn       : qpn,
+//             qpAttrMask: getReset2InitRequiredAttr,
+//             qpAttr    : qpAttr,
+//             qpInitAttr: qpInitAttr
+//         };
 
-        cntrlSrvPort.request.put(qpInitReq);
-        simCntrlStateReg <= SIM_CNTRL_SET_QP_RTR;
-        // $display(
-        //     "time=%0t: qpCreateResp=", $time, fshow(qpCreateResp),
-        //     " should be success, and qpCreateResp.qpn=%h",
-        //     qpCreateResp.qpn
-        // );
-    endrule
+//         cntrlSrvPort.request.put(qpInitReq);
+//         simCntrlStateReg <= SIM_CNTRL_SET_QP_RTR;
+//         // $display(
+//         //     "time=%0t: qpCreateResp=", $time, fshow(qpCreateResp),
+//         //     " should be success, and qpCreateResp.qpn=%h",
+//         //     qpCreateResp.qpn
+//         // );
+//     endrule
 
-    rule setRTR if (simCntrlStateReg == SIM_CNTRL_SET_QP_RTR);
-        let qpInitResp <- cntrlSrvPort.response.get;
+//     rule setRTR if (simCntrlStateReg == SIM_CNTRL_SET_QP_RTR);
+//         let qpInitResp <- cntrlSrvPort.response.get;
 
-        immAssert(
-            qpInitResp.successOrNot,
-            "qpInitResp.successOrNot assertion @ mkCntrlStateCycle",
-            $format(
-                "qpInitResp.successOrNot=", fshow(qpInitResp.successOrNot),
-                " should be true when qpInitResp=", fshow(qpInitResp)
-            )
-        );
+//         immAssert(
+//             qpInitResp.successOrNot,
+//             "qpInitResp.successOrNot assertion @ mkCntrlStateCycle",
+//             $format(
+//                 "qpInitResp.successOrNot=", fshow(qpInitResp.successOrNot),
+//                 " should be true when qpInitResp=", fshow(qpInitResp)
+//             )
+//         );
 
-        let qpAttr = qpAttrPipeOut.first;
+//         let qpAttr = qpAttrPipeOut.first;
 
-        qpAttr.qpState = IBV_QPS_RTR;
-        let qpModifyReq = ReqQP {
-            qpReqType : REQ_QP_MODIFY,
-            pdHandler : dontCareValue,
-            qpn       : qpn,
-            qpAttrMask: getInit2RtrRequiredAttr,
-            qpAttr    : qpAttr,
-            qpInitAttr: qpInitAttr
-        };
+//         qpAttr.qpState = IBV_QPS_RTR;
+//         let qpModifyReq = ReqQP {
+//             qpReqType : REQ_QP_MODIFY,
+//             pdHandler : dontCareValue,
+//             qpn       : qpn,
+//             qpAttrMask: getInit2RtrRequiredAttr,
+//             qpAttr    : qpAttr,
+//             qpInitAttr: qpInitAttr
+//         };
 
-        cntrlSrvPort.request.put(qpModifyReq);
-        simCntrlStateReg <= SIM_CNTRL_SET_QP_RTS;
-        // $display(
-        //     "time=%0t: qpInitResp=", $time, fshow(qpInitResp),
-        //     " should be success, and qpInitResp.qpn=%h",
-        //     qpInitResp.qpn
-        // );
-    endrule
+//         cntrlSrvPort.request.put(qpModifyReq);
+//         simCntrlStateReg <= SIM_CNTRL_SET_QP_RTS;
+//         // $display(
+//         //     "time=%0t: qpInitResp=", $time, fshow(qpInitResp),
+//         //     " should be success, and qpInitResp.qpn=%h",
+//         //     qpInitResp.qpn
+//         // );
+//     endrule
 
-    rule setRTS if (simCntrlStateReg == SIM_CNTRL_SET_QP_RTS);
-        let qpRtrResp <- cntrlSrvPort.response.get;
+//     rule setRTS if (simCntrlStateReg == SIM_CNTRL_SET_QP_RTS);
+//         let qpRtrResp <- cntrlSrvPort.response.get;
 
-        immAssert(
-            qpRtrResp.successOrNot,
-            "qpRtrResp.successOrNot assertion @ mkCntrlStateCycle",
-            $format(
-                "qpRtrResp.successOrNot=", fshow(qpRtrResp.successOrNot),
-                " should be true when qpRtrResp=", fshow(qpRtrResp)
-            )
-        );
+//         immAssert(
+//             qpRtrResp.successOrNot,
+//             "qpRtrResp.successOrNot assertion @ mkCntrlStateCycle",
+//             $format(
+//                 "qpRtrResp.successOrNot=", fshow(qpRtrResp.successOrNot),
+//                 " should be true when qpRtrResp=", fshow(qpRtrResp)
+//             )
+//         );
 
-        let qpAttr = qpAttrPipeOut.first;
-        // qpAttrPipeOut.deq;
+//         let qpAttr = qpAttrPipeOut.first;
+//         // qpAttrPipeOut.deq;
 
-        qpAttr.qpState = IBV_QPS_RTS;
-        let qpModifyReq = ReqQP {
-            qpReqType : REQ_QP_MODIFY,
-            pdHandler : dontCareValue,
-            qpn       : qpn,
-            qpAttrMask: getRtr2RtsRequiredAttr,
-            qpAttr    : qpAttr,
-            qpInitAttr: qpInitAttr
-        };
+//         qpAttr.qpState = IBV_QPS_RTS;
+//         let qpModifyReq = ReqQP {
+//             qpReqType : REQ_QP_MODIFY,
+//             pdHandler : dontCareValue,
+//             qpn       : qpn,
+//             qpAttrMask: getRtr2RtsRequiredAttr,
+//             qpAttr    : qpAttr,
+//             qpInitAttr: qpInitAttr
+//         };
 
-        cntrlSrvPort.request.put(qpModifyReq);
-        simCntrlStateReg <= SIM_CNTRL_CHECK_RTS_RESP;
-        // $display(
-        //     "time=%0t: qpRtrResp=", $time, fshow(qpRtrResp),
-        //     " should be success, and qpRtrResp.qpn=%h",
-        //     qpRtrResp.qpn
-        // );
-    endrule
+//         cntrlSrvPort.request.put(qpModifyReq);
+//         simCntrlStateReg <= SIM_CNTRL_CHECK_RTS_RESP;
+//         // $display(
+//         //     "time=%0t: qpRtrResp=", $time, fshow(qpRtrResp),
+//         //     " should be success, and qpRtrResp.qpn=%h",
+//         //     qpRtrResp.qpn
+//         // );
+//     endrule
 
-    rule checkRtsResp if (simCntrlStateReg == SIM_CNTRL_CHECK_RTS_RESP);
-        let qpRtsResp <- cntrlSrvPort.response.get;
+//     rule checkRtsResp if (simCntrlStateReg == SIM_CNTRL_CHECK_RTS_RESP);
+//         let qpRtsResp <- cntrlSrvPort.response.get;
 
-        immAssert(
-            qpRtsResp.successOrNot,
-            "qpRtsResp.successOrNot assertion @ mkCntrlStateCycle",
-            $format(
-                "qpRtsResp.successOrNot=", fshow(qpRtsResp.successOrNot),
-                " should be true when qpRtsResp=", fshow(qpRtsResp)
-            )
-        );
+//         immAssert(
+//             qpRtsResp.successOrNot,
+//             "qpRtsResp.successOrNot assertion @ mkCntrlStateCycle",
+//             $format(
+//                 "qpRtsResp.successOrNot=", fshow(qpRtsResp.successOrNot),
+//                 " should be true when qpRtsResp=", fshow(qpRtsResp)
+//             )
+//         );
 
-        immAssert(
-            cntrlStatus.comm.isRTS,
-            "cntrlStatus.comm.isRTS assertion @ mkCntrlStateCycle",
-            $format(
-                "cntrlStatus.comm.isRTS=", fshow(cntrlStatus.comm.isRTS),
-                " should be true when qpRtsResp=", fshow(qpRtsResp)
-            )
-        );
+//         immAssert(
+//             cntrlStatus.comm.isRTS,
+//             "cntrlStatus.comm.isRTS assertion @ mkCntrlStateCycle",
+//             $format(
+//                 "cntrlStatus.comm.isRTS=", fshow(cntrlStatus.comm.isRTS),
+//                 " should be true when qpRtsResp=", fshow(qpRtsResp)
+//             )
+//         );
 
-        if (qpDestroyWhenErr) begin
-            simCntrlStateReg <= SIM_CNTRL_DESTROY_QP;
-        end
-        else begin
-            simCntrlStateReg <= SIM_CNTRL_WAIT_RESET;
-        end
-        // $display(
-        //     "time=%0t: qpRtsResp=", $time, fshow(qpRtsResp),
-        //     " should be success, and qpRtsResp.qpn=%h",
-        //     qpRtsResp.qpn
-        // );
-    endrule
+//         if (qpDestroyWhenErr) begin
+//             simCntrlStateReg <= SIM_CNTRL_DESTROY_QP;
+//         end
+//         else begin
+//             simCntrlStateReg <= SIM_CNTRL_WAIT_RESET;
+//         end
+//         // $display(
+//         //     "time=%0t: qpRtsResp=", $time, fshow(qpRtsResp),
+//         //     " should be success, and qpRtsResp.qpn=%h",
+//         //     qpRtsResp.qpn
+//         // );
+//     endrule
 
-    rule destroyQP if (
-        simCntrlStateReg == SIM_CNTRL_DESTROY_QP &&
-        cntrlStatus.comm.isERR
-    );
-        let qpAttr = qpAttrPipeOut.first;
+//     rule destroyQP if (
+//         simCntrlStateReg == SIM_CNTRL_DESTROY_QP &&
+//         cntrlStatus.comm.isERR
+//     );
+//         let qpAttr = qpAttrPipeOut.first;
 
-        let deleteReqQP = ReqQP {
-            qpReqType   : REQ_QP_DESTROY,
-            pdHandler   : dontCareValue,
-            qpn         : getDefaultQPN,
-            qpAttrMask  : dontCareValue,
-            qpAttr      : qpAttr,
-            qpInitAttr  : qpInitAttr
-        };
-        cntrlSrvPort.request.put(deleteReqQP);
-        simCntrlStateReg <= SIM_CNTRL_CHECK_DESTROY_RESP;
-    endrule
+//         let deleteReqQP = ReqQP {
+//             qpReqType   : REQ_QP_DESTROY,
+//             pdHandler   : dontCareValue,
+//             qpn         : getDefaultQPN,
+//             qpAttrMask  : dontCareValue,
+//             qpAttr      : qpAttr,
+//             qpInitAttr  : qpInitAttr
+//         };
+//         cntrlSrvPort.request.put(deleteReqQP);
+//         simCntrlStateReg <= SIM_CNTRL_CHECK_DESTROY_RESP;
+//     endrule
 
-    rule checkDestroyResp if (simCntrlStateReg == SIM_CNTRL_CHECK_DESTROY_RESP);
-        let qpDestroyResp <- cntrlSrvPort.response.get;
+//     rule checkDestroyResp if (simCntrlStateReg == SIM_CNTRL_CHECK_DESTROY_RESP);
+//         let qpDestroyResp <- cntrlSrvPort.response.get;
 
-        immAssert(
-            qpDestroyResp.successOrNot,
-            "qpDestroyResp.successOrNot assertion @ mkCntrlStateCycle",
-            $format(
-                "qpDestroyResp.successOrNot=", fshow(qpDestroyResp.successOrNot),
-                " should be true when qpDestroyResp=", fshow(qpDestroyResp)
-            )
-        );
+//         immAssert(
+//             qpDestroyResp.successOrNot,
+//             "qpDestroyResp.successOrNot assertion @ mkCntrlStateCycle",
+//             $format(
+//                 "qpDestroyResp.successOrNot=", fshow(qpDestroyResp.successOrNot),
+//                 " should be true when qpDestroyResp=", fshow(qpDestroyResp)
+//             )
+//         );
 
-        immAssert(
-            cntrlStatus.comm.isReset,
-            "cntrlStatus.comm.isReset assertion @ mkCntrlStateCycle",
-            $format(
-                "cntrlStatus.comm.isReset=", fshow(cntrlStatus.comm.isReset),
-                " should be true when qpDestroyResp=", fshow(qpDestroyResp)
-            )
-        );
+//         immAssert(
+//             cntrlStatus.comm.isReset,
+//             "cntrlStatus.comm.isReset assertion @ mkCntrlStateCycle",
+//             $format(
+//                 "cntrlStatus.comm.isReset=", fshow(cntrlStatus.comm.isReset),
+//                 " should be true when qpDestroyResp=", fshow(qpDestroyResp)
+//             )
+//         );
 
-        simCntrlStateReg <= SIM_CNTRL_CREATE_QP;
-        // $display(
-        //     "time=%0t: qpDestroyResp=", $time, fshow(qpDestroyResp),
-        //     " should be success, and qpDestroyResp.qpn=%h",
-        //     qpDestroyResp.qpn
-        // );
-    endrule
-endmodule
+//         simCntrlStateReg <= SIM_CNTRL_CREATE_QP;
+//         // $display(
+//         //     "time=%0t: qpDestroyResp=", $time, fshow(qpDestroyResp),
+//         //     " should be success, and qpDestroyResp.qpn=%h",
+//         //     qpDestroyResp.qpn
+//         // );
+//     endrule
+// endmodule
 
-module mkChangeCntrlState2RTS#(
-    SrvPortQP cntrlSrvPort,
-    CntrlStatus cntrlStatus,
-    QPN qpn,
-    TypeQP qpType,
-    PMTU pmtu
-)(Empty);
-    let setExpectedPsnAsNextPSN = True;
-    let setZero2ExpectedPsnAndNextPSN = True;
-    let qpDestroyWhenErr = False;
+// module mkChangeCntrlState2RTS#(
+//     SrvPortQP cntrlSrvPort,
+//     CntrlStatus cntrlStatus,
+//     QPN qpn,
+//     TypeQP qpType,
+//     PMTU pmtu
+// )(Empty);
+//     let setExpectedPsnAsNextPSN = True;
+//     let setZero2ExpectedPsnAndNextPSN = True;
+//     let qpDestroyWhenErr = False;
 
-    let setCntrl2RTS <- mkCntrlStateCycle(
-        cntrlSrvPort,
-        cntrlStatus,
-        qpn,
-        qpType,
-        pmtu,
-        setExpectedPsnAsNextPSN,
-        setZero2ExpectedPsnAndNextPSN,
-        qpDestroyWhenErr
-    );
-endmodule
+//     let setCntrl2RTS <- mkCntrlStateCycle(
+//         cntrlSrvPort,
+//         cntrlStatus,
+//         qpn,
+//         qpType,
+//         pmtu,
+//         setExpectedPsnAsNextPSN,
+//         setZero2ExpectedPsnAndNextPSN,
+//         qpDestroyWhenErr
+//     );
+// endmodule
 
-module mkSimCntrl#(TypeQP qpType, PMTU pmtu)(CntrlQP);
-    let cntrl <- mkCntrlQP;
+// module mkSimCntrl#(TypeQP qpType, PMTU pmtu)(CntrlQP);
+//     let cntrl <- mkCntrlQP;
 
-    let setCntrl2RTS <- mkChangeCntrlState2RTS(
-        cntrl.srvPort,
-        cntrl.contextSQ.statusSQ,
-        getDefaultQPN,
-        qpType,
-        pmtu
-    );
+//     let setCntrl2RTS <- mkChangeCntrlState2RTS(
+//         cntrl.srvPort,
+//         cntrl.contextSQ.statusSQ,
+//         getDefaultQPN,
+//         qpType,
+//         pmtu
+//     );
 
-    // let setExpectedPsnAsNextPSN = True;
-    // let setZero2ExpectedPsnAndNextPSN = False;
-    // let qpDestroyWhenErr = False;
-    // let setCntrl2RTS <- mkCntrlStateCycle(
-    //     cntrl.srvPort,
-    //     cntrl.contextSQ.statusSQ,
-    //     getDefaultQPN,
-    //     qpType,
-    //     pmtu,
-    //     setExpectedPsnAsNextPSN,
-    //     setZero2ExpectedPsnAndNextPSN,
-    //     qpDestroyWhenErr
-    // );
-    return cntrl;
-endmodule
+//     // let setExpectedPsnAsNextPSN = True;
+//     // let setZero2ExpectedPsnAndNextPSN = False;
+//     // let qpDestroyWhenErr = False;
+//     // let setCntrl2RTS <- mkCntrlStateCycle(
+//     //     cntrl.srvPort,
+//     //     cntrl.contextSQ.statusSQ,
+//     //     getDefaultQPN,
+//     //     qpType,
+//     //     pmtu,
+//     //     setExpectedPsnAsNextPSN,
+//     //     setZero2ExpectedPsnAndNextPSN,
+//     //     qpDestroyWhenErr
+//     // );
+//     return cntrl;
+// endmodule
 
-module mkSimCntrlStateCycle#(TypeQP qpType, PMTU pmtu)(CntrlQP);
-    let cntrl <- mkCntrlQP;
+// module mkSimCntrlStateCycle#(TypeQP qpType, PMTU pmtu)(CntrlQP);
+//     let cntrl <- mkCntrlQP;
 
-    let setExpectedPsnAsNextPSN = True;
-    let setZero2ExpectedPsnAndNextPSN = False;
-    let qpDestroyWhenErr = True;
+//     let setExpectedPsnAsNextPSN = True;
+//     let setZero2ExpectedPsnAndNextPSN = False;
+//     let qpDestroyWhenErr = True;
 
-    let setCntrl2RTS <- mkCntrlStateCycle(
-        cntrl.srvPort,
-        cntrl.contextSQ.statusSQ,
-        getDefaultQPN,
-        qpType,
-        pmtu,
-        setExpectedPsnAsNextPSN,
-        setZero2ExpectedPsnAndNextPSN,
-        qpDestroyWhenErr
-    );
-    return cntrl;
-endmodule
+//     let setCntrl2RTS <- mkCntrlStateCycle(
+//         cntrl.srvPort,
+//         cntrl.contextSQ.statusSQ,
+//         getDefaultQPN,
+//         qpType,
+//         pmtu,
+//         setExpectedPsnAsNextPSN,
+//         setZero2ExpectedPsnAndNextPSN,
+//         qpDestroyWhenErr
+//     );
+//     return cntrl;
+// endmodule
 
-module mkSimPermCheckSrv#(Bool mrCheckPassOrFail)(PermCheckSrv);
-    FIFOF#(PermCheckReq) checkReqQ <- mkFIFOF;
-    FIFOF#(Bool) checkRespQ <- mkFIFOF;
+// module mkSimPermCheckSrv#(Bool mrCheckPassOrFail)(PermCheckSrv);
+//     FIFOF#(PermCheckReq) checkReqQ <- mkFIFOF;
+//     FIFOF#(Bool) checkRespQ <- mkFIFOF;
 
-    rule check;
-        checkReqQ.deq;
-        checkRespQ.enq(mrCheckPassOrFail);
-    endrule
+//     rule check;
+//         checkReqQ.deq;
+//         checkRespQ.enq(mrCheckPassOrFail);
+//     endrule
 
-    return toGPServer(checkReqQ, checkRespQ);
-endmodule
+//     return toGPServer(checkReqQ, checkRespQ);
+// endmodule
 
-module mkSimMetaData4SinigleQP#(TypeQP qpType, PMTU pmtu)(MetaDataQPs);
-    let qp <- mkQP;
-    let setCntrl2RTS <- mkChangeCntrlState2RTS(
-        qp.srvPortQP,
-        qp.statusSQ,
-        getDefaultQPN,
-        qpType,
-        pmtu
-    );
+// module mkSimMetaData4SinigleQP#(TypeQP qpType, PMTU pmtu)(MetaDataQPs);
+//     let qp <- mkQP;
+//     let setCntrl2RTS <- mkChangeCntrlState2RTS(
+//         qp.srvPortQP,
+//         qp.statusSQ,
+//         getDefaultQPN,
+//         qpType,
+//         pmtu
+//     );
 
-    interface srvPort = qp.srvPortQP;
+//     interface srvPort = qp.srvPortQP;
 
-    method Bool isValidQP(QPN qpn) = qpn == getDefaultQPN;
+//     method Bool isValidQP(QPN qpn) = qpn == getDefaultQPN;
 
-    method Maybe#(HandlerPD) getPD(QPN qpn);
-        return tagged Valid dontCareValue;
-    endmethod
-    method QueuePair getQueuePairByQPN(QPN qpn) = qp;
-    method QueuePair getQueuePairByIndexQP(IndexQP qpIndex) = qp;
+//     method Maybe#(HandlerPD) getPD(QPN qpn);
+//         return tagged Valid dontCareValue;
+//     endmethod
+//     method QueuePair getQueuePairByQPN(QPN qpn) = qp;
+//     method QueuePair getQueuePairByIndexQP(IndexQP qpIndex) = qp;
 
-    method Bool notEmpty() = True;
-    method Bool notFull()  = True;
-endmodule
+//     method Bool notEmpty() = True;
+//     method Bool notFull()  = True;
+// endmodule
 
 module mkSimGenRecvReq(Vector#(vSz, PipeOut#(RecvReq)));
     FIFOF#(RecvReq) recvReqQ <- mkFIFOF;
@@ -1531,130 +1527,130 @@ module mkSimGenRecvReq(Vector#(vSz, PipeOut#(RecvReq)));
     return resultPipeOutVec;
 endmodule
 
-module mkSimRetryHandleErr#(Bool retryLimitExcOrTimeOutErr)(RetryHandleSQ);
-    FIFOF#(RetryReq)   retryReqQ <- mkFIFOF;
-    FIFOF#(RetryResp) retryRespQ <- mkFIFOF;
-    FIFOF#(TimeOutNotification) timeOutNotificationQ <- mkFIFOF;
+// module mkSimRetryHandleErr#(Bool retryLimitExcOrTimeOutErr)(RetryHandleSQ);
+//     FIFOF#(RetryReq)   retryReqQ <- mkFIFOF;
+//     FIFOF#(RetryResp) retryRespQ <- mkFIFOF;
+//     FIFOF#(TimeOutNotification) timeOutNotificationQ <- mkFIFOF;
 
-    Reg#(Bool) timeOutErrNotifiedReg <- mkReg(False);
+//     Reg#(Bool) timeOutErrNotifiedReg <- mkReg(False);
 
-    rule genRetryErr;
-        if (retryLimitExcOrTimeOutErr) begin
-            let retryReq = retryReqQ.first;
-            retryReqQ.deq;
+//     rule genRetryErr;
+//         if (retryLimitExcOrTimeOutErr) begin
+//             let retryReq = retryReqQ.first;
+//             retryReqQ.deq;
 
-            retryRespQ.enq(RETRY_HANDLER_RETRY_LIMIT_EXC);
-        end
-        else if (!timeOutErrNotifiedReg) begin
-            timeOutNotificationQ.enq(RETRY_HANDLER_TIMEOUT_ERR);
-            timeOutErrNotifiedReg <= True;
-        end
-    endrule
+//             retryRespQ.enq(RETRY_HANDLER_RETRY_LIMIT_EXC);
+//         end
+//         else if (!timeOutErrNotifiedReg) begin
+//             timeOutNotificationQ.enq(RETRY_HANDLER_TIMEOUT_ERR);
+//             timeOutErrNotifiedReg <= True;
+//         end
+//     endrule
 
-    method Bool hasRetryErr() = True;
-    method Bool isRetryDone() = False;
-    method Bool  isRetrying() = False;
+//     method Bool hasRetryErr() = True;
+//     method Bool isRetryDone() = False;
+//     method Bool  isRetrying() = False;
 
-    method Action resetRetryCntAndTimeOutBySQ(
-        ResetRetryCntAndTimeOutReq resetReq
-    ) = noAction;
+//     method Action resetRetryCntAndTimeOutBySQ(
+//         ResetRetryCntAndTimeOutReq resetReq
+//     ) = noAction;
 
-    method ActionValue#(TimeOutNotification) notifyTimeOut2SQ();
-        timeOutNotificationQ.deq;
-        return timeOutNotificationQ.first;
-    endmethod
+//     method ActionValue#(TimeOutNotification) notifyTimeOut2SQ();
+//         timeOutNotificationQ.deq;
+//         return timeOutNotificationQ.first;
+//     endmethod
 
-    interface srvPort = toGPServer(retryReqQ, retryRespQ);
-endmodule
+//     interface srvPort = toGPServer(retryReqQ, retryRespQ);
+// endmodule
 
-module mkSimInputPktBuf4SingleQP#(
-    Bool isRespPktPipeIn,
-    DataStreamPipeOut rdmaPktPipeIn,
-    MetaDataQPs qpMetaData
-)(RdmaPktMetaDataAndPayloadPipeOut);
-    let headerAndMetaDataAndPayloadPipeOut <- mkExtractHeaderFromRdmaPktPipeOut(
-        rdmaPktPipeIn
-    );
-    let inputRdmaPktBuf <- mkInputRdmaPktBufAndHeaderValidation(
-        headerAndMetaDataAndPayloadPipeOut, qpMetaData
-    );
-    let reqPktMetaDataAndPayloadPipeIn  = inputRdmaPktBuf[0].reqPktPipeOut;
-    let respPktMetaDataAndPayloadPipeIn = inputRdmaPktBuf[0].respPktPipeOut;
-    let cnpPipeIn = inputRdmaPktBuf[0].cnpPipeOut;
+// module mkSimInputPktBuf4SingleQP#(
+//     Bool isRespPktPipeIn,
+//     DataStreamPipeOut rdmaPktPipeIn,
+//     MetaDataQPs qpMetaData
+// )(RdmaPktMetaDataAndPayloadPipeOut);
+//     let headerAndMetaDataAndPayloadPipeOut <- mkExtractHeaderFromRdmaPktPipeOut(
+//         rdmaPktPipeIn
+//     );
+//     let inputRdmaPktBuf <- mkInputRdmaPktBufAndHeaderValidation(
+//         headerAndMetaDataAndPayloadPipeOut, qpMetaData
+//     );
+//     let reqPktMetaDataAndPayloadPipeIn  = inputRdmaPktBuf[0].reqPktPipeOut;
+//     let respPktMetaDataAndPayloadPipeIn = inputRdmaPktBuf[0].respPktPipeOut;
+//     let cnpPipeIn = inputRdmaPktBuf[0].cnpPipeOut;
 
-    for (Integer idx = 1; idx < valueOf(MAX_QP); idx = idx + 1) begin
-        let reqPktMetaDataPipeOutEmptyRule <- addRules(genEmptyPipeOutRule(
-            inputRdmaPktBuf[idx].reqPktPipeOut.pktMetaData,
-            "inputRdmaPktBuf[" + integerToString(idx) +
-            "].reqPktPipeOut.pktMetaData empty assertion @ mkSimInputPktBuf4SingleQP"
-        ));
-        let reqPktPayloadPipeOutEmptyRule <- addRules(genEmptyPipeOutRule(
-            inputRdmaPktBuf[idx].reqPktPipeOut.payload,
-            "inputRdmaPktBuf[" + integerToString(idx) +
-            "].reqPktPipeOut.payload empty assertion @ mkSimInputPktBuf4SingleQP"
-        ));
+//     for (Integer idx = 1; idx < valueOf(MAX_QP); idx = idx + 1) begin
+//         let reqPktMetaDataPipeOutEmptyRule <- addRules(genEmptyPipeOutRule(
+//             inputRdmaPktBuf[idx].reqPktPipeOut.pktMetaData,
+//             "inputRdmaPktBuf[" + integerToString(idx) +
+//             "].reqPktPipeOut.pktMetaData empty assertion @ mkSimInputPktBuf4SingleQP"
+//         ));
+//         let reqPktPayloadPipeOutEmptyRule <- addRules(genEmptyPipeOutRule(
+//             inputRdmaPktBuf[idx].reqPktPipeOut.payload,
+//             "inputRdmaPktBuf[" + integerToString(idx) +
+//             "].reqPktPipeOut.payload empty assertion @ mkSimInputPktBuf4SingleQP"
+//         ));
 
-        let respPktMetaDataPipeOutEmptyRule <- addRules(genEmptyPipeOutRule(
-            inputRdmaPktBuf[idx].respPktPipeOut.pktMetaData,
-            "inputRdmaPktBuf[" + integerToString(idx) +
-            "].respPktPipeOut.pktMetaData empty assertion @ mkSimInputPktBuf4SingleQP"
-        ));
-        let respPktPayloadPipeOutEmptyRule <- addRules(genEmptyPipeOutRule(
-            inputRdmaPktBuf[idx].respPktPipeOut.payload,
-            "inputRdmaPktBuf[" + integerToString(idx) +
-            "].respPktPipeOut.payload empty assertion @ mkSimInputPktBuf4SingleQP"
-        ));
+//         let respPktMetaDataPipeOutEmptyRule <- addRules(genEmptyPipeOutRule(
+//             inputRdmaPktBuf[idx].respPktPipeOut.pktMetaData,
+//             "inputRdmaPktBuf[" + integerToString(idx) +
+//             "].respPktPipeOut.pktMetaData empty assertion @ mkSimInputPktBuf4SingleQP"
+//         ));
+//         let respPktPayloadPipeOutEmptyRule <- addRules(genEmptyPipeOutRule(
+//             inputRdmaPktBuf[idx].respPktPipeOut.payload,
+//             "inputRdmaPktBuf[" + integerToString(idx) +
+//             "].respPktPipeOut.payload empty assertion @ mkSimInputPktBuf4SingleQP"
+//         ));
 
-        let cnpPipeOutEmptyRule <- addRules(genEmptyPipeOutRule(
-            inputRdmaPktBuf[idx].cnpPipeOut,
-            "inputRdmaPktBuf[" + integerToString(idx) +
-            "].cnpPipeOut empty assertion @ mkSimInputPktBuf4SingleQP"
-        ));
-    end
+//         let cnpPipeOutEmptyRule <- addRules(genEmptyPipeOutRule(
+//             inputRdmaPktBuf[idx].cnpPipeOut,
+//             "inputRdmaPktBuf[" + integerToString(idx) +
+//             "].cnpPipeOut empty assertion @ mkSimInputPktBuf4SingleQP"
+//         ));
+//     end
 
-    rule checkEmpty;
-        if (isRespPktPipeIn) begin
-            immAssert(
-                !reqPktMetaDataAndPayloadPipeIn.pktMetaData.notEmpty &&
-                !reqPktMetaDataAndPayloadPipeIn.payload.notEmpty,
-                "reqPktMetaDataAndPayloadPipeIn assertion @ mkSimInputPktBuf4SingleQP",
-                $format(
-                    "reqPktMetaDataAndPayloadPipeIn.pktMetaData.notEmpty=",
-                    fshow(reqPktMetaDataAndPayloadPipeIn.pktMetaData.notEmpty),
-                    " and reqPktMetaDataAndPayloadPipeIn.payload.notEmpty=",
-                    fshow(reqPktMetaDataAndPayloadPipeIn.payload.notEmpty),
-                    " should both be false"
-                )
-            );
-        end
-        else begin
-            immAssert(
-                !respPktMetaDataAndPayloadPipeIn.pktMetaData.notEmpty &&
-                !respPktMetaDataAndPayloadPipeIn.payload.notEmpty,
-                "respPktMetaDataAndPayloadPipeIn assertion @ mkSimInputPktBuf4SingleQP",
-                $format(
-                    "respPktMetaDataAndPayloadPipeIn.pktMetaData.notEmpty=",
-                    fshow(respPktMetaDataAndPayloadPipeIn.pktMetaData.notEmpty),
-                    " and respPktMetaDataAndPayloadPipeIn.payload.notEmpty=",
-                    fshow(respPktMetaDataAndPayloadPipeIn.payload.notEmpty),
-                    " should both be false"
-                )
-            );
-        end
+//     rule checkEmpty;
+//         if (isRespPktPipeIn) begin
+//             immAssert(
+//                 !reqPktMetaDataAndPayloadPipeIn.pktMetaData.notEmpty &&
+//                 !reqPktMetaDataAndPayloadPipeIn.payload.notEmpty,
+//                 "reqPktMetaDataAndPayloadPipeIn assertion @ mkSimInputPktBuf4SingleQP",
+//                 $format(
+//                     "reqPktMetaDataAndPayloadPipeIn.pktMetaData.notEmpty=",
+//                     fshow(reqPktMetaDataAndPayloadPipeIn.pktMetaData.notEmpty),
+//                     " and reqPktMetaDataAndPayloadPipeIn.payload.notEmpty=",
+//                     fshow(reqPktMetaDataAndPayloadPipeIn.payload.notEmpty),
+//                     " should both be false"
+//                 )
+//             );
+//         end
+//         else begin
+//             immAssert(
+//                 !respPktMetaDataAndPayloadPipeIn.pktMetaData.notEmpty &&
+//                 !respPktMetaDataAndPayloadPipeIn.payload.notEmpty,
+//                 "respPktMetaDataAndPayloadPipeIn assertion @ mkSimInputPktBuf4SingleQP",
+//                 $format(
+//                     "respPktMetaDataAndPayloadPipeIn.pktMetaData.notEmpty=",
+//                     fshow(respPktMetaDataAndPayloadPipeIn.pktMetaData.notEmpty),
+//                     " and respPktMetaDataAndPayloadPipeIn.payload.notEmpty=",
+//                     fshow(respPktMetaDataAndPayloadPipeIn.payload.notEmpty),
+//                     " should both be false"
+//                 )
+//             );
+//         end
 
-        immAssert(
-            !cnpPipeIn.notEmpty,
-            "cnpPipeIn empty assertion @ mkTestReceiveCNP",
-            $format(
-                "cnpPipeIn.notEmpty=",
-                fshow(cnpPipeIn.notEmpty),
-                " should be false"
-            )
-        );
-    endrule
+//         immAssert(
+//             !cnpPipeIn.notEmpty,
+//             "cnpPipeIn empty assertion @ mkTestReceiveCNP",
+//             $format(
+//                 "cnpPipeIn.notEmpty=",
+//                 fshow(cnpPipeIn.notEmpty),
+//                 " should be false"
+//             )
+//         );
+//     endrule
 
-    return isRespPktPipeIn ? respPktMetaDataAndPayloadPipeIn : reqPktMetaDataAndPayloadPipeIn;
-endmodule
+//     return isRespPktPipeIn ? respPktMetaDataAndPayloadPipeIn : reqPktMetaDataAndPayloadPipeIn;
+// endmodule
 
 // PipeOut related
 

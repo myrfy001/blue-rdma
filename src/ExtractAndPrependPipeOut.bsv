@@ -3,12 +3,11 @@ import GetPut :: *;
 import PAClib :: *;
 import Vector :: *;
 
-import Controller :: *;
 import DataTypes :: *;
 import Headers :: *;
 import PrimUtils :: *;
 import Settings :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 
 interface HeaderDataStreamAndMetaDataPipeOut;
     interface DataStreamPipeOut headerDataStream;
@@ -659,90 +658,3 @@ module mkExtractHeaderFromDataStreamPipeOut#(
     interface payload = toPipeOut(payloadDataStreamOutQ);
 endmodule
 
-module mkCombineHeaderAndPayload#(
-    // Bool clearAll,
-    CntrlStatus cntrlStatus,
-    PipeOut#(HeaderRDMA) headerPipeIn,
-    PipeOut#(PSN) psnPipeIn,
-    DataStreamPipeOut payloadPipeIn
-)(DataStreamPipeOut);
-    FIFOF#(DataStream) outputQ <- mkFIFOF;
-
-    let headerDataStreamAndMetaDataPipeOut <- mkHeader2DataStream(
-        cntrlStatus.comm.isReset, headerPipeIn
-    );
-    let rdmaDataStreamPipeOut <- mkPrependHeader2PipeOut(
-        // cntrlStatus,
-        cntrlStatus.comm.isReset,
-        headerDataStreamAndMetaDataPipeOut.headerDataStream,
-        headerDataStreamAndMetaDataPipeOut.headerMetaData,
-        payloadPipeIn
-    );
-
-    // rule debug;
-    // // if (!(
-    // //     rdmaDataStreamPipeOut.notEmpty &&
-    // //     psnPipeIn.notEmpty
-    // // ));
-
-    //     $display(
-    //         "time=%0t: mkCombineHeaderAndPayload debug", $time,
-    //         ", cntrlStatus.comm.isERR=", fshow(cntrlStatus.comm.isERR),
-    //         ", sqpn=%h", cntrlStatus.comm.getSQPN,
-    //         ", isSQ=", fshow(cntrlStatus.isSQ),
-    //         ", rdmaDataStreamPipeOut.notEmpty=", fshow(rdmaDataStreamPipeOut.notEmpty),
-    //         ", headerPipeIn.notEmpty=", fshow(headerPipeIn.notEmpty),
-    //         ", payloadPipeIn.notEmpty=", fshow(payloadPipeIn.notEmpty),
-    //         ", psnPipeIn.notEmpty=", fshow(psnPipeIn.notEmpty)
-    //     );
-    // endrule
-/*
-    rule connect;
-        let dataStream = rdmaDataStreamPipeOut.first;
-        rdmaDataStreamPipeOut.deq;
-        outputQ.enq(dataStream);
-
-        let curPSN = psnPipeIn.first;
-        $display(
-            "time=%0t: connect", $time,
-            ", sqpn=%h", cntrlStatus.comm.getSQPN,
-            ", curPSN=%h", curPSN,
-            ", dataStream=", fshow(dataStream)
-        );
-        if (dataStream.isFirst) begin
-           let bth = extractBTH(zeroExtendLSB(dataStream.data));
-            immAssert(
-                bth.psn == curPSN,
-                "curPSN assertion @ mkCombineHeaderAndPayload",
-                $format(
-                    "bth.psn=%h should == curPSN=%h",
-                    bth.psn, curPSN,
-                    " when bth.opcode=", fshow(bth.opcode)
-                )
-            );
-            // psnPipeIn.deq;
-        end
-        if (dataStream.isLast) begin
-            psnPipeIn.deq;
-            $display(
-                "time=%0t: connect, finished output packet", $time,
-                ", sqpn=%h", cntrlStatus.comm.getSQPN,
-                ", curPSN=%h", curPSN
-            );
-        end
-    endrule
-*/
-    function Action deqActionFunc(DataStream dataStream);
-        action
-            if (dataStream.isLast) begin
-                psnPipeIn.deq;
-            end
-        endaction
-    endfunction
-
-    mkConnectionWithAction(
-        toGet(rdmaDataStreamPipeOut), toPut(outputQ), deqActionFunc
-    );
-
-    return toPipeOut(outputQ);
-endmodule

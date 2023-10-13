@@ -1,0 +1,1 @@
+create_clock -name clk_mkTLB -period 2 [get_ports CLK]

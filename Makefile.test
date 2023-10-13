@@ -3,7 +3,7 @@ LOGDIR ?= $(abspath ../tmp)
 
 TESTBENCHS = \
             SimDma.bsv \
-            SimExtractRdmaHeaderPayload.bsv \
+            SimExtractHeaderRDMAPayload.bsv \
             SimGenRdmaReqResp.bsv \
             TestArbitration.bsv \
             TestController.bsv \
@@ -11,7 +11,7 @@ TESTBENCHS = \
             TestExtractAndPrependPipeOut.bsv \
             TestInputPktHandle.bsv \
             TestMetaData.bsv \
-            TestPayloadConAndGen.bsv \
+            TestPayloadCon.bsv \
             TestQueuePair.bsv \
             TestReqGenSQ.bsv \
             TestReqHandleRQ.bsv \
@@ -22,88 +22,10 @@ TESTBENCHS = \
             TestUtils.bsv \
             TestWorkCompGen.bsv \
             TestPayloadGen.bsv \
-            TestSendQ.bsv
+            TestSendQ.bsv \
+			TestRQ.bsv \
+			TestTop.bsv
 
-SimDma.bsv                       = mkTestFixedPktLenDataStreamPipeOut \
-                                    mkTestDmaReadAndWriteSrv
-SimExtractRdmaHeaderPayload.bsv  = mkTestSimExtractNormalHeaderPayload
-SimGenRdmaReqResp.bsv            = mkTestSimGenRdmaResp
-TestArbitration.bsv              = mkTestPipeOutArbiter \
-                                    mkTestServerArbiter \
-                                    mkTestClientArbiter
-TestController.bsv               = mkTestCntrlInVec
-TestDupReadAtomicCache.bsv       = mkTestDupReadAtomicCache \
-                                    mkTestCacheFIFO
-TestExtractAndPrependPipeOut.bsv = mkTestHeaderAndDataStreamConversion \
-                                    mkTestPrependHeaderBeforeEmptyDataStream \
-                                    mkTestExtractHeaderWithPayloadLessThanOneFrag \
-                                    mkTestExtractHeaderLongerThanDataStream \
-                                    mkTestExtractAndPrependHeader
-TestInputPktHandle.bsv           = mkTestCalculateRandomPktLen \
-                                    mkTestCalculatePktLenEqPMTU \
-                                    mkTestCalculateZeroPktLen \
-                                    mkTestReceiveCNP
-TestMetaData.bsv                 = mkTestMetaDataMRs \
-                                    mkTestMetaDataPDs \
-                                    mkTestMetaDataQPs \
-                                    mkTestPermCheckSrv \
-                                    mkTestMetaDataSrv \
-                                    mkTestBramCache \
-                                    mkTestTLB
-TestPayloadConAndGen.bsv         = mkTestPayloadConAndGenNormalCase \
-                                    mkTestPayloadGenSegmentAndPaddingCase \
-                                    mkTestDmaReadCntrlNormalCase \
-                                    mkTestDmaReadCntrlCancelCase \
-                                    mkTestDmaWriteCntrlNormalCase \
-                                    mkTestDmaWriteCntrlCancelCase \
-                                    mkTestAddrChunkSrv
-TestQueuePair.bsv                = mkTestPermCheckCltArbiter \
-                                    mkTestDmaReadCltArbiter \
-                                    mkTestQueuePairReqErrResetCase \
-                                    mkTestQueuePairRespErrResetCase \
-                                    mkTestQueuePairTimeOutErrResetCase \
-                                    mkTestQueuePairTimeOutErrCase \
-                                    mkTestQueuePairNormalCase
-TestReqGenSQ.bsv                 = mkTestReqGenNormalCase \
-                                    mkTestReqGenZeroLenCase \
-                                    mkTestReqGenDmaReadErrCase
-TestReqHandleRQ.bsv              = mkTestReqHandleNormalReqCase \
-                                    mkTestReqHandleDupReqCase \
-                                    mkTestReqHandleNoAckReqCase \
-                                    mkTestReqHandleTooManyReadAtomicReqCase \
-                                    mkTestReqHandleReqErrCase \
-                                    mkTestReqHandlePermCheckFailCase \
-                                    mkTestReqHandleDmaReadErrCase \
-                                    mkTestReqHandleRnrCase \
-                                    mkTestReqHandleSeqErrCase
-TestRespHandleSQ.bsv             = mkTestRespHandleNormalRespCase \
-                                    mkTestRespHandleDupRespCase \
-                                    mkTestRespHandleGhostRespCase \
-                                    mkTestRespHandleRespErrCase \
-                                    mkTestRespHandleRetryErrCase \
-                                    mkTestRespHandleTimeOutErrCase \
-                                    mkTestRespHandlePermCheckFailCase \
-                                    mkTestRespHandleRnrCase \
-                                    mkTestRespHandleSeqErrCase \
-                                    mkTestRespHandleNestedRetryCase
-TestRetryHandleSQ.bsv            = mkTestRetryHandleSeqErrCase \
-                                    mkTestRetryHandleImplicitRetryCase \
-                                    mkTestRetryHandleRnrCase \
-                                    mkTestRetryHandleTimeOutCase \
-                                    mkTestRetryHandleNestedRetryCase \
-                                    mkTestRetryHandleExcRetryLimitErrCase \
-                                    mkTestRetryHandleExcTimeOutLimitErrCase
-TestSpecialFIFOF.bsv             = mkTestCacheFIFO2 \
-                                    mkTestScanFIFOF \
-                                    mkTestSearchFIFOF \
-                                    mkTestVectorSearch
-TestTransportLayer.bsv           = mkTestTransportLayerNormalCase \
-                                    mkTestTransportLayerErrorCase
-TestUtils.bsv                    = mkTestPsnFunc
-TestWorkCompGen.bsv              = mkTestWorkCompGenNormalCaseRQ \
-                                    mkTestWorkCompGenErrFlushCaseRQ \
-                                    mkTestWorkCompGenNormalCaseSQ \
-                                    mkTestWorkCompGenErrFlushCaseSQ
 
 TestPayloadGen.bsv               = mkTestCalcPktNumAndPktLenByAddrAndPMTU \
                                     mkTestAddrChunkSrv \
@@ -125,10 +47,17 @@ TestSendQ.bsv                    = mkTestSendQueueRawPktCase \
                                     mkTestSendQueueNoPayloadCase \
                                     mkTestSendQueueZeroPayloadLenCase
 
-all: $(TESTBENCHS)
+all: $(TESTBENCHS) top_smoke_test
 
 %.bsv:
 	$(foreach testcase, $($@), $(shell cd $(TESTDIR) && make simulate TESTFILE=$@ TOPMODULE=$(testcase) > $(LOGDIR)/$@-$(testcase).log 2>&1))
+
+top_smoke_test:
+    $(shell \
+        cd $(TESTDIR) && \
+        make link TESTFILE=TestTop.bsv TOPMODULE=mkTestTop > $(LOGDIR)/mkTestTop.log 2>&1 && \
+        python3 run_top_smoke_test.py >> $(LOGDIR)/mkTestTop.log 2>&1 \
+    )
 
 clean:
 	rm -f $(LOGDIR)/*.log

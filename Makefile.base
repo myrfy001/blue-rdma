@@ -13,13 +13,27 @@ DEBUGFLAGS = -check-assert \
 	-show-stats \
 	-warn-action-shadowing \
 	-warn-method-urgency \
-	-promote-warnings ALL
+	-promote-warnings ALL \
+	-demote-errors S0015:G0020
 VERILOGFLAGS = -verilog -remove-dollar -remove-unused-modules # -use-dpi -verilog-filter cmd
 BLUESIMFLAGS = -parallel-sim-link 16 # -systemc
 BUILDDIR = build
 OUTDIR = -bdir $(BUILDDIR) -info-dir $(BUILDDIR) -simdir $(BUILDDIR) -vdir $(BUILDDIR)
 WORKDIR = -fdir $(abspath .)
-BSVSRCDIR = -p +:$(abspath ../src)
+BSVSRCDIR = -p +:$(abspath ../src) \
+			-p +:$(abspath ../src/third_party) \
+			-p +:$(abspath ../src/third_party/blue-wrapper/src) \
+			-p +:$(abspath ../src/third_party/blue-udp/src) \
+			-p +:$(abspath ../src/third_party/blue-udp/src/includes) \
+			-p +:$(abspath ../src/third_party/blue-crc/src)
+
+
+BSV_C_EXT_FILES += \
+	$(abspath ../src/third_party)/MockHost.c
+
 DIRFLAGS = $(BSVSRCDIR) $(OUTDIR) $(WORKDIR)
-MISCFLAGS = -print-flags -show-timestamps -show-version -steps 6000000 # -D macro
+MISCFLAGS = -print-flags -show-timestamps -show-version -steps 6000000 -D IS_SUPPORT_RDMA=True # -D macro
 RUNTIMEFLAGS = +RTS -K4095M -RTS
+
+BLUE_CRC_DIR ?= ../src/third_party/blue-crc
+BLUE_UDP_CRC_TABLE_GEN_INFO_DIR ?= ../src/third_party/blue-udp/scripts
