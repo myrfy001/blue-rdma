@@ -29,6 +29,9 @@ typedef 1 MAX_SEND_SGE;
 typedef 1 MAX_RECV_SGE;
 typedef 0 MAX_INLINE_DATA; // No inline data
 
+typedef TExp#(13)    MAX_PGT_FIRST_STAGE_ENTRY; // 8k entry TODO: this is too large, but only to make cache provosis happy.
+typedef TExp#(17)   MAX_PGT_SECOND_STAGE_ENTRY; // Max cover 256GB
+
 /*
 struct ibv_device_attr {
     char                fw_ver[64];

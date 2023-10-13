@@ -1928,11 +1928,13 @@ module mkTestTLB(Empty);
     PipeOut#(ADDR)                             virtAddrPipeOut <- mkGenericRandomPipeOut;
     PipeOut#(Bit#(TLB_CACHE_PA_DATA_WIDTH)) phyAddrDataPipeOut <- mkGenericRandomPipeOut;
 
-    FIFOF#(ADDR)                             virtAddrQ <- mkFIFOF;
+    FIFOF#(Tuple2#(ASID,ADDR))                             virtAddrQ <- mkFIFOF;
     FIFOF#(ADDR)                         virtAddrQ4Ref <- mkFIFOF;
     FIFOF#(Bit#(TLB_CACHE_PA_DATA_WIDTH)) phyAddrDataQ <- mkFIFOF;
 
     let countDown <- mkCountDown(valueOf(MAX_CMP_CNT));
+
+    Reg#(ASID) firstStageIdx <- mkReg(0);
 
     rule insert2TLB;
         let virtAddr = virtAddrPipeOut.first;
@@ -1940,11 +1942,33 @@ module mkTestTLB(Empty);
         let phyAddrData = phyAddrDataPipeOut.first;
         phyAddrDataPipeOut.deq;
 
+        firstStageIdx <= firstStageIdx + 1;
+
         let pageOffset = getPageOffset(virtAddr);
         let phyAddr = restorePA(phyAddrData, pageOffset);
 
-        dut.insert(virtAddr, phyAddr);
-        virtAddrQ.enq(virtAddr);
+        let secondStageOffset = unpack(extend(pack(firstStageIdx))) << 1;
+        let firstStageReq = tagged Req4FirstStage PgtModifyFirstStageReq{
+            asid: firstStageIdx,
+            content: PgtFirstStagePayload {
+                secondStageOffset: secondStageOffset,
+                secondStageEntryCnt: 2,
+                baseVA: getPageAlignedAddr(virtAddr) - fromInteger(valueOf(PAGE_SIZE_CAP)),
+                _padding: ?
+            }
+        };
+        dut.modify(firstStageReq);
+        
+        let secondStageReq = tagged Req4SecondStage PgtModifySecondStageReq{
+            index: secondStageOffset+1,
+            content: PgtSecondStagePayload {
+                paPart: getData4PA(phyAddr),
+                _padding: ?
+            }
+        };
+        dut.modify(secondStageReq);
+
+        virtAddrQ.enq(tuple2(firstStageIdx, virtAddr));
         phyAddrDataQ.enq(phyAddrData);
     endrule
 
@@ -1953,8 +1977,7 @@ module mkTestTLB(Empty);
         virtAddrQ.deq;
 
         dut.find.request.put(virtAddr);
-        // dut.findReq(virtAddr);
-        virtAddrQ4Ref.enq(virtAddr);
+        virtAddrQ4Ref.enq(tpl_2(virtAddr));
     endrule
 
     rule checkFindResp;
@@ -1983,13 +2006,13 @@ module mkTestTLB(Empty);
             )
         );
         countDown.decr;
-        // $display(
-        //     "time=%0t:", $time,
-        //     " foundOrNot=", fshow(foundOrNot),
-        //     ", virtAddr=%h v.s. phyAddr=%h",
-        //     virtAddrRef, phyAddr,
-        //     ", phyAddrData=%h should == phyAddrDataRef=%h",
-        //     phyAddrData, phyAddrDataRef
-        // );
+        $display(
+            "time=%0t:", $time,
+            " foundOrNot=", fshow(foundOrNot),
+            ", virtAddr=%h v.s. phyAddr=%h",
+            virtAddrRef, phyAddr,
+            ", phyAddrData=%h should == phyAddrDataRef=%h",
+            phyAddrData, phyAddrDataRef
+        );
     endrule
 endmodule

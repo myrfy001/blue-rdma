@@ -132,6 +132,59 @@ typedef struct {
 
 typedef SizeOf#(PayloadTLB) TLB_PAYLOAD_WIDTH;
 
+typedef Bit#(TLog#(MAX_PGT_FIRST_STAGE_ENTRY)) PgtFirstStageIndex;
+typedef Bit#(TLog#(MAX_PGT_SECOND_STAGE_ENTRY)) PgtSecondStageIndex;
+
+typedef struct {
+    PgtSecondStageIndex secondStageOffset;
+    PgtSecondStageIndex secondStageEntryCnt;
+    ADDR baseVA;
+    Bit#(6) _padding;  // TODO: this is to make CascadeCache happy, remove it.
+} PgtFirstStagePayload deriving(Bits);
+typedef SizeOf#(PgtFirstStagePayload) PGT_FIRST_STAGE_PAYLOAD_WIDTH;
+
+typedef struct {
+    Bit#(TLB_CACHE_PA_DATA_WIDTH) paPart;
+    Bit#(5) _padding;  // TODO: this is to make CascadeCache happy, remove it.
+} PgtSecondStagePayload deriving(Bits);
+typedef SizeOf#(PgtSecondStagePayload) PGT_SECOND_STAGE_PAYLOAD_WIDTH;
+
+// this alias make it easy if we change to a real MMU+TLB arch
+typedef PgtFirstStageIndex          ASID;  
+
+typedef struct {
+    ASID asid;
+    PgtFirstStagePayload content;
+} PgtModifyFirstStageReq deriving(Bits);
+
+typedef struct {
+    Bool success;
+} PgtModifyFirstStageResp deriving(Bits);
+
+typedef struct {
+    PgtSecondStageIndex index;
+    PgtSecondStagePayload content;
+} PgtModifySecondStageReq deriving(Bits);
+
+typedef struct {
+    Bool success;
+} PgtModifySecondStageResp deriving(Bits);
+
+
+typedef union tagged {
+    PgtModifyFirstStageReq Req4FirstStage;
+    PgtModifySecondStageReq Req4SecondStage;
+} PgtModifyReq deriving(Bits);
+
+// not used now, but the modify response maybe used in the future if we need to wait
+// DMA finish before modify the TLB.
+typedef union tagged {
+    PgtModifyFirstStageResp Resp4FirstStage;
+    PgtModifySecondStageResp Resp4SecondStage;
+} PgtModifyResp deriving(Bits);
+
+
+
 // Common types
 
 typedef Server#(DmaReadReq, DmaReadResp)   DmaReadSrv;

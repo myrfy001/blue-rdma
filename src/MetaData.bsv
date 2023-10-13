@@ -952,14 +952,13 @@ module mkCascadeCache(CascadeCache#(addrWidth, payloadWidth)) provisos(
     interface read = toGPServer(cacheReadReqQ, cacheReadRespQ);
 endmodule
 
+typedef Tuple2#(ASID, ADDR) FindReqTLB;
 typedef Tuple2#(Bool, ADDR) FindRespTLB;
-typedef Server#(ADDR, FindRespTLB) FindInTLB;
+typedef Server#(FindReqTLB, FindRespTLB) FindInTLB;
 
 interface TLB;
     interface FindInTLB find;
-    method Action insert(ADDR va, ADDR pa);
-    // TODO: implement delete method
-    // method Action delete(ADDR va);
+    method Action modify(PgtModifyReq req);
 endinterface
 
 function Bit#(PAGE_OFFSET_WIDTH) getPageOffset(ADDR addr);
@@ -976,55 +975,85 @@ function Bit#(TLB_CACHE_PA_DATA_WIDTH) getData4PA(ADDR pa);
     return truncate(pa >> valueOf(PAGE_OFFSET_WIDTH));
 endfunction
 
+function ADDR getPageAlignedAddr(ADDR addr);
+    Bit#(TLog#(PAGE_SIZE_CAP)) t = 0;
+    addr[valueOf(TLog#(PAGE_SIZE_CAP))-1:0] = t;
+    return unpack(addr);
+endfunction
+
 module mkTLB(TLB);
-    CascadeCache#(TLB_CACHE_INDEX_WIDTH, TLB_PAYLOAD_WIDTH) cache4TLB <- mkCascadeCache;
+    CascadeCache#(TLog#(MAX_PGT_FIRST_STAGE_ENTRY), PGT_FIRST_STAGE_PAYLOAD_WIDTH) firstStageCache <- mkCascadeCache;
+    CascadeCache#(TLog#(MAX_PGT_SECOND_STAGE_ENTRY), PGT_SECOND_STAGE_PAYLOAD_WIDTH) secondStageCache <- mkCascadeCache;
+
+
     FIFOF#(ADDR) vaInputQ <- mkFIFOF;
-    FIFOF#(ADDR) findReqQ <- mkFIFOF;
+    FIFOF#(Maybe#(Bit#(PAGE_OFFSET_WIDTH))) offsetInputQ <- mkFIFOF;
+    FIFOF#(FindReqTLB) findReqQ <- mkFIFOF;
     FIFOF#(FindRespTLB) findRespQ <- mkFIFOF;
 
-    function Bit#(TLB_CACHE_INDEX_WIDTH) getIndex4TLB(ADDR va);
-        return truncate(va >> valueOf(PAGE_OFFSET_WIDTH));
-    endfunction
-
-    function Bit#(TLB_CACHE_TAG_WIDTH) getTag4TLB(ADDR va);
-        return truncate(va >> valueOf(TAdd#(TLB_CACHE_INDEX_WIDTH, PAGE_OFFSET_WIDTH)));
-    endfunction
-
     rule handleFindReq;
-        let va = findReqQ.first;
+        let req = findReqQ.first;
         findReqQ.deq;
-
-        let index = getIndex4TLB(va);
-        cache4TLB.read.request.put(index);
-
-        vaInputQ.enq(va);
+        // TODO: change the underlying cache impl, since PGT_FIRST_STAGE_PAYLOAD_WIDTH is not power of 2,
+        // the current impl will waste some storage.
+        firstStageCache.read.request.put(tpl_1(req) << valueOf(TLog#(PGT_FIRST_STAGE_PAYLOAD_WIDTH)));
+        vaInputQ.enq(tpl_2(req));
     endrule
 
-    rule handleFindResp;
+    rule handleSecondStageQuery;
         let va = vaInputQ.first;
         vaInputQ.deq;
 
-        let inputTag = getTag4TLB(va);
+        let firstStageRespRaw <- firstStageCache.read.response.get;
+        PgtFirstStagePayload firstStageResp = unpack(firstStageRespRaw);
+
+        let vaOffset = va - firstStageResp.baseVA;
+        let secondStageIndexOffset = truncate(vaOffset >> valueOf(PAGE_OFFSET_WIDTH));
+
+        PgtSecondStageIndex secondStageIndex = firstStageResp.secondStageOffset + secondStageIndexOffset;
+        // TODO: the same as above
+        let addrToRead = unpack(extend(pack(secondStageIndex)) << valueOf(TLog#(PGT_SECOND_STAGE_PAYLOAD_WIDTH)));
+        secondStageCache.read.request.put(addrToRead);
+
         let pageOffset = getPageOffset(va);
 
-        let readRespData <- cache4TLB.read.response.get;
-        PayloadTLB payload = unpack(readRespData);
+        let pteValid = firstStageResp.secondStageEntryCnt != 0;
 
-        let pa = restorePA(payload.data, pageOffset);
-        let tagMatch = inputTag == payload.tag;
-
-        findRespQ.enq(tuple2(tagMatch, pa));
+        offsetInputQ.enq(pteValid ? tagged Valid pageOffset : tagged Invalid);
     endrule
 
-    method Action insert(ADDR va, ADDR pa);
-        let index = getIndex4TLB(va);
-        let inputTag = getTag4TLB(va);
-        let paData = getData4PA(pa);
-        let payload = PayloadTLB {
-            data: paData,
-            tag : inputTag
-        };
-        cache4TLB.write(index, pack(payload));
+    rule handleFindResp;
+        let pageOffset = offsetInputQ.first;
+        offsetInputQ.deq;
+
+        let secondStageRespRaw <- secondStageCache.read.response.get;
+        PgtSecondStagePayload secondStageResp = unpack(secondStageRespRaw);
+
+        if (pageOffset matches tagged Valid .offset) begin
+            let pa = restorePA(secondStageResp.paPart, offset);
+            findRespQ.enq(tuple2(True, pa));
+        end else begin
+            findRespQ.enq(tuple2(False, ?));
+        end
+        
+        
+    endrule
+
+    method Action modify(PgtModifyReq req);
+        case (req) matches
+            tagged Req4FirstStage .r: begin
+                firstStageCache.write(
+                    r.asid << valueOf(TLog#(PGT_FIRST_STAGE_PAYLOAD_WIDTH)), // TODO, same as above
+                    pack(r.content)
+                );
+            end
+            tagged Req4SecondStage .r: begin
+                secondStageCache.write(
+                    r.index << valueOf(TLog#(PGT_SECOND_STAGE_PAYLOAD_WIDTH)), // TODO, same as above
+                    pack(r.content)
+                );
+            end
+        endcase
     endmethod
 
     interface find = toGPServer(findReqQ, findRespQ);
