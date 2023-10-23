@@ -113,16 +113,14 @@ module mkTestTLB(Empty);
             content: PgtFirstStagePayload {
                 secondStageOffset: secondStageOffset,
                 secondStageEntryCnt: 2,
-                baseVA: getPageAlignedAddr(virtAddr) - fromInteger(valueOf(PAGE_SIZE_CAP)),
-                _padding: ?
+                baseVA: getPageAlignedAddr(virtAddr) - fromInteger(valueOf(PAGE_SIZE_CAP))
             }
         };
             
         let secondStageReq = tagged Req4SecondStage PgtModifySecondStageReq{
             index: secondStageOffset+1,
             content: PgtSecondStagePayload {
-                paPart: getData4PA(phyAddr),
-                _padding: ?
+                paPart: getData4PA(phyAddr)
             }
         };
         if (insertFirstOrSecond) begin

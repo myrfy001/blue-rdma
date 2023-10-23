@@ -1,0 +1,6 @@
+build
+output
+backend/verilog
+.Xil
+*.log
+*.jou

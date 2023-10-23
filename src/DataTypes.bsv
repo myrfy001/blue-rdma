@@ -139,13 +139,11 @@ typedef struct {
     PgtSecondStageIndex secondStageOffset;
     PgtSecondStageIndex secondStageEntryCnt;
     ADDR baseVA;
-    Bit#(6) _padding;  // TODO: this is to make CascadeCache happy, remove it.
 } PgtFirstStagePayload deriving(Bits);
 typedef SizeOf#(PgtFirstStagePayload) PGT_FIRST_STAGE_PAYLOAD_WIDTH;
 
 typedef struct {
     Bit#(TLB_CACHE_PA_DATA_WIDTH) paPart;
-    Bit#(5) _padding;  // TODO: this is to make CascadeCache happy, remove it.
 } PgtSecondStagePayload deriving(Bits);
 typedef SizeOf#(PgtSecondStagePayload) PGT_SECOND_STAGE_PAYLOAD_WIDTH;
 
