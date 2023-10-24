@@ -10,8 +10,8 @@ DIR_GENERATE = generate
 DIR_BSV_GENERATED = $(DIR_GENERATE)/bsv
 DIR_IP_GENERATED = $(DIR_GENERATE)/ip
 
-TARGETFILE ?= $(DIR_BSV_SRC)/simple_user_logic.bsv
-BSV_TOPMODULE ?= mkUserLogic
+TARGETFILE ?= $(DIR_BSV_SRC)/user_logic/Top.bsv
+BSV_TOPMODULE ?= mkBsvTop
 SIM_TOPMODULE ?= mkTB
 VERILOG_TOPMODULE ?= top
 TARGET_CLOCKS ?= user_clk

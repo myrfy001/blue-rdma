@@ -55,7 +55,7 @@ proc runSynthDesign {args} {
     write_xdc -force -exclude_physical $dir_output/post_synth.xdc
 
     source batch_insert_ila.tcl
-    batch_insert_ila 4096
+    batch_insert_ila 8192
 }
 
 
@@ -232,9 +232,9 @@ proc runProgramDevice {args} {
 # runSynthIP -open_checkpoint false
 addExtFiles -open_checkpoint false
 runSynthDesign -open_checkpoint false
-# runPostSynthReport -open_checkpoint false
+runPostSynthReport -open_checkpoint false
 runPlacement -open_checkpoint false
 runRoute -open_checkpoint false
-# runPostRouteReport -open_checkpoint false
+runPostRouteReport -open_checkpoint false
 runWriteBitStream -open_checkpoint false
 # runProgramDevice -open_checkpoint false

@@ -141,7 +141,7 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
 
             method XdmaDescBypCtl ctl;
                 return XdmaDescBypCtl {
-                    eop: False,
+                    eop: True,
                     _rsv: 0,
                     completed: False,
                     stop: False
