@@ -13,6 +13,7 @@ set properties [list \
   CONFIG.pl_link_cap_max_link_speed {8.0_GT/s} \
   CONFIG.pl_link_cap_max_link_width {X16} \
   CONFIG.xdma_axi_intf_mm {AXI_Stream} \
+  CONFIG.xdma_sts_ports {true} \
 ]
 
 file mkdir $dir_gen

@@ -38,14 +38,14 @@ interface XdmaDescriptorBypass;
     (* result = "dst_addr" *) method XdmaDescBypAddr  dstAddr;
     (* result = "len" *) method XdmaDescBypLength  len;
     (* result = "ctl" *) method XdmaDescBypCtl  ctl;
+    (* prefix = "" *) method Action descDone((* port = "desc_done" *) Bool done) ;
 endinterface
 
 interface XdmaChannel#(numeric type dataSz, numeric type userSz);
-    // interface RawAxiStreamMaster#(dataSz, userSz) rawAxiStreamMaster;
-    interface RawAxiStreamSlave#(dataSz, userSz) rawAxiStreamSlave;
+    interface RawAxiStreamSlave#(dataSz, userSz) rawH2cAxiStream;
+    interface RawAxiStreamMaster#(dataSz, userSz) rawC2hAxiStream;
     interface XdmaDescriptorBypass h2cDescByp;
     interface XdmaDescriptorBypass c2hDescByp;
-    // (* prefix = "", always_ready, always_enabled *) method Action status((* port = "status" *) XdmaChannelStatus stat);
 endinterface
 
 interface XdmaWrapper#(numeric type dataSz, numeric type userSz);
@@ -58,22 +58,30 @@ endinterface
 module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH));
 
     FIFOF#(AxiStream#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)) xdmaH2cStFifo <- mkFIFOF();
-    let rawSlave <- mkPipeInToRawAxiStreamSlave(convertFifoToPipeIn(xdmaH2cStFifo));
+    let rawH2cSt <- mkPipeInToRawAxiStreamSlave(convertFifoToPipeIn(xdmaH2cStFifo));
+
+    FIFOF#(AxiStream#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)) xdmaC2hStFifo <- mkFIFOF();
+    let rawC2hSt <- mkPipeOutToRawAxiStreamMaster(convertFifoToPipeOut(xdmaC2hStFifo));
 
     let dmaReadReqQ <- mkFIFOF;
     let dmaReadRespQ <- mkFIFOF;
-    let dmaWriteReqQ <- mkFIFOF;
+    FIFOF#(DmaWriteReq) dmaWriteReqQ <- mkFIFOF;
     let dmaWriteRespQ <- mkFIFOF;
 
     FIFOF#(DmaReadReq) readReqProcessingQ <- mkFIFOF;
+    FIFOF#(DmaWriteReq) writeReqProcessingQ <- mkFIFOF;
 
     Wire#(Bool) h2cDescBypRdyWire <- mkBypassWire;
-
     Reg#(Bool) h2cNextBeatIsFirst <- mkReg(True);
 
+    Wire#(Bool) c2hDescBypRdyWire <- mkBypassWire;
+    Reg#(Bool) c2hNextBeatIsFirst <- mkReg(True);
+    Wire#(Bool) c2hDescBypDoneWire <- mkBypassWire;
+    
+    Bool h2cDescHandshakeWillSuccess = h2cDescBypRdyWire && dmaReadReqQ.notEmpty;
 
-    rule handleDescBypassPortHandshake;
-        if (h2cDescBypRdyWire && dmaReadReqQ.notEmpty) begin
+    rule forwardH2cDesc;
+        if (h2cDescHandshakeWillSuccess) begin
             dmaReadReqQ.deq;
             readReqProcessingQ.enq(dmaReadReqQ.first);
         end
@@ -103,32 +111,64 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
         end
     endrule
 
+    Bool c2hDescHandshakeWillSuccess = 
+         c2hDescBypRdyWire && 
+         dmaWriteReqQ.notEmpty &&
+         dmaWriteReqQ.first.dataStream.isFirst && 
+         writeReqProcessingQ.notFull && xdmaC2hStFifo.notFull && dmaWriteRespQ.notFull;  // make sure only handshake once.
+
+    rule forwardC2hDescAndData;
+        // Invariant: The descriptor count is always less than or equal to data segement count.
+        // so only when data queue full it will block desc queue, but not vice versa
+        // since the request from user logic combine metadata(descriptor) and data in the same channel, but
+        // the xdma has two seperated channel for descriptor and data, we should split it.
+        // in fact, the handshake for descriptor channel is done in the following `c2hDescByp` interface, it is done
+        // automatically when we move (descriptor+data) into the data channel, controlled by 
+        // `c2hDescHandshakeWillSuccess` signal. 
+        // In other words, we must make sure that when c2hDescHandshakeWillSuccess is true, this rule must be also fired.
+
+        // make sure we won't lost data on descriptor channel.(in fact, this should always be true when the implicity guard is true)
+        if (c2hDescBypRdyWire == True) begin
+            dmaWriteReqQ.deq;
+
+            xdmaC2hStFifo.enq(
+                AxiStream {
+                    tData: unpack(pack(dmaWriteReqQ.first.dataStream.data)),
+                    tKeep: dmaWriteReqQ.first.dataStream.byteEn,
+                    tUser: ?,
+                    tLast: dmaWriteReqQ.first.dataStream.isLast
+                }
+            );
+
+            if (dmaWriteReqQ.first.dataStream.isFirst) begin
+                writeReqProcessingQ.enq(dmaWriteReqQ.first);
+            end
+        end else begin
+            $error("This rule should not be fired when c2hDescBypRdyWire is False\n");
+        end
+    endrule
+
 
     interface dmaReadSrv = toGPServer(dmaReadReqQ, dmaReadRespQ);
     interface dmaWriteSrv = toGPServer(dmaWriteReqQ, dmaWriteRespQ);
 
     interface XdmaChannel xdmaChannel;
 
-        interface rawAxiStreamSlave = rawSlave;
+        interface rawH2cAxiStream = rawH2cSt;
+        interface rawC2hAxiStream = rawC2hSt;
 
         interface XdmaDescriptorBypass h2cDescByp;
-
-            Bool descReadHandshakeWillSuccess = h2cDescBypRdyWire && dmaReadReqQ.notEmpty;
 
             method Action ready(Bool rdy);
                 h2cDescBypRdyWire <= rdy;
             endmethod
 
             method Bool load;
-                if (descReadHandshakeWillSuccess) begin
-                    return True;
-                end else begin
-                    return False;
-                end
+                return h2cDescHandshakeWillSuccess;
             endmethod
 
             method XdmaDescBypAddr  srcAddr;
-                return descReadHandshakeWillSuccess ? dmaReadReqQ.first.startAddr : ?;
+                return h2cDescHandshakeWillSuccess ? dmaReadReqQ.first.startAddr : ?;
             endmethod
 
             method XdmaDescBypAddr  dstAddr;
@@ -136,7 +176,7 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
             endmethod
 
             method XdmaDescBypLength len;
-                return descReadHandshakeWillSuccess ? extend(dmaReadReqQ.first.len) : ?;
+                return h2cDescHandshakeWillSuccess ? extend(dmaReadReqQ.first.len) : ?;
             endmethod
 
             method XdmaDescBypCtl ctl;
@@ -147,13 +187,19 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
                     stop: False
                 };
             endmethod
+
+            method Action descDone(Bool done);
+            endmethod
         endinterface
 
         interface XdmaDescriptorBypass c2hDescByp;
+
             method Action ready(Bool rdy);
+                c2hDescBypRdyWire <= rdy;
             endmethod
+
             method Bool load;
-                return False;
+                return c2hDescHandshakeWillSuccess;
             endmethod
 
             method XdmaDescBypAddr  srcAddr;
@@ -161,20 +207,41 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
             endmethod
 
             method XdmaDescBypAddr  dstAddr;
-                return ?;
+                return c2hDescHandshakeWillSuccess ? dmaWriteReqQ.first.metaData.startAddr : ?;
             endmethod
 
             method XdmaDescBypLength  len;
-                return ?;
+                return c2hDescHandshakeWillSuccess ? extend(dmaWriteReqQ.first.metaData.len) : ?;
             endmethod
 
             method XdmaDescBypCtl  ctl;
-                return ?;
+                return XdmaDescBypCtl {
+                    eop: True,
+                    _rsv: 0,
+                    completed: False,
+                    stop: False
+                };
+            endmethod
+
+            method Action descDone(Bool done);
+                c2hDescBypDoneWire <= done;
+                if (!writeReqProcessingQ.notEmpty) begin
+                    // $error("This rule should not be fired when writeReqProcessingQ is empty\n");
+                end else if (!dmaWriteRespQ.notFull) begin
+                    // $error("This rule should not be fired when dmaWriteRespQ is full\n");
+                end else begin
+                    writeReqProcessingQ.deq;
+                    dmaWriteRespQ.enq(DmaWriteResp{
+                        initiator: writeReqProcessingQ.first.metaData.initiator,
+                        sqpn: writeReqProcessingQ.first.metaData.sqpn,
+                        psn: writeReqProcessingQ.first.metaData.psn,
+                        isRespErr: False
+                    }); 
+                end
+
+                
             endmethod
         endinterface
 
-        // method Action status(XdmaChannelStatus stat);
-                
-        // endmethod
     endinterface
 endmodule

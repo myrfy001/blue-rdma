@@ -78,52 +78,6 @@ module top #
     reg [C_NUM_USR_IRQ-1:0] 		     usr_irq_req = 0;
     wire [C_NUM_USR_IRQ-1:0] 		     usr_irq_ack;
 
-      //-- AXI Master Write Address Channel
-     wire [C_M_AXI_ADDR_WIDTH-1:0] m_axi_awaddr;
-     wire [C_M_AXI_ID_WIDTH-1:0] m_axi_awid;
-     wire [2:0] 		 m_axi_awprot;
-     wire [1:0] 		 m_axi_awburst;
-     wire [2:0] 		 m_axi_awsize;
-     wire [3:0] 		 m_axi_awcache;
-     wire [7:0] 		 m_axi_awlen;
-     wire 			 m_axi_awlock;
-     wire 			 m_axi_awvalid;
-     wire 			 m_axi_awready;
-
-     //-- AXI Master Write Data Channel
-     wire [C_M_AXI_DATA_WIDTH-1:0]     m_axi_wdata;
-     wire [(C_M_AXI_DATA_WIDTH/8)-1:0] m_axi_wstrb;
-     wire 			       m_axi_wlast;
-     wire 			       m_axi_wvalid;
-     wire 			       m_axi_wready;
-     //-- AXI Master Write Response Channel
-     wire 			       m_axi_bvalid;
-     wire 			       m_axi_bready;
-     wire [C_M_AXI_ID_WIDTH-1 : 0]     m_axi_bid ;
-     wire [1:0]                        m_axi_bresp ;
-
-     //-- AXI Master Read Address Channel
-     wire [C_M_AXI_ID_WIDTH-1 : 0]     m_axi_arid;
-     wire [C_M_AXI_ADDR_WIDTH-1:0]     m_axi_araddr;
-     wire [7:0]                        m_axi_arlen;
-     wire [2:0]                        m_axi_arsize;
-     wire [1:0]                        m_axi_arburst;
-     wire [2:0] 		       m_axi_arprot;
-     wire 			       m_axi_arvalid;
-     wire 			       m_axi_arready;
-     wire 			       m_axi_arlock;
-     wire [3:0] 		       m_axi_arcache;
-
-     //-- AXI Master Read Data Channel
-     wire [C_M_AXI_ID_WIDTH-1 : 0]   m_axi_rid;
-     wire [C_M_AXI_DATA_WIDTH-1:0]   m_axi_rdata;
-     wire [1:0] 		     m_axi_rresp;
-     wire 			     m_axi_rvalid;
-     wire 			     m_axi_rready;
-
-
-
-
 
 //////////////////////////////////////////////////  LITE
    //-- AXI Master Write Address Channel
@@ -152,28 +106,25 @@ module top #
     wire 	m_axil_rready;
     wire [1:0]  m_axil_bresp;
 
-    wire [2:0]    msi_vector_width;
-    wire          msi_enable;
+    // wire [2:0]    msi_vector_width;
+    // wire          msi_enable;
 
       // AXI streaming ports
     (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [C_DATA_WIDTH-1:0]	m_axis_h2c_tdata_0;
     (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire 			m_axis_h2c_tlast_0;
     (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire 			m_axis_h2c_tvalid_0;
     (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire 			m_axis_h2c_tready_0;
-    wire [C_DATA_WIDTH/8-1:0]	m_axis_h2c_tkeep_0;
-    wire [C_DATA_WIDTH-1:0] s_axis_c2h_tdata_0; 
-    wire s_axis_c2h_tlast_0;
-    wire s_axis_c2h_tvalid_0;
-    wire s_axis_c2h_tready_0;
-    wire [C_DATA_WIDTH/8-1:0] s_axis_c2h_tkeep_0; 
-
-    wire [3:0]                  leds;
-
-    wire free_run_clock;
+    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [C_DATA_WIDTH/8-1:0]	m_axis_h2c_tkeep_0;
     
-  wire [5:0]                          cfg_ltssm_state;
+    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [C_DATA_WIDTH-1:0] s_axis_c2h_tdata_0; 
+    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire s_axis_c2h_tlast_0;
+    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire s_axis_c2h_tvalid_0;
+    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire s_axis_c2h_tready_0;
+    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [C_DATA_WIDTH/8-1:0] s_axis_c2h_tkeep_0; 
 
-  wire          soft_reset_n;
+    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [7:0] c2h_sts_0;
+    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [7:0] h2c_sts_0;
+
 
   // Ref clock buffer
 
@@ -218,16 +169,12 @@ module top #
 
 
       // AXI streaming ports
-      // .s_axis_c2h_tdata_0(s_axis_c2h_tdata_0),  
-      // .s_axis_c2h_tlast_0(s_axis_c2h_tlast_0),
-      // .s_axis_c2h_tvalid_0(s_axis_c2h_tvalid_0), 
-      // .s_axis_c2h_tready_0(s_axis_c2h_tready_0),
-      // .s_axis_c2h_tkeep_0(s_axis_c2h_tkeep_0),
-      .s_axis_c2h_tdata_0(0),  
-      .s_axis_c2h_tlast_0(0),
-      .s_axis_c2h_tvalid_0(0), 
+      .s_axis_c2h_tdata_0(s_axis_c2h_tdata_0),  
+      .s_axis_c2h_tlast_0(s_axis_c2h_tlast_0),
+      .s_axis_c2h_tvalid_0(s_axis_c2h_tvalid_0), 
       .s_axis_c2h_tready_0(s_axis_c2h_tready_0),
-      .s_axis_c2h_tkeep_0(0),
+      .s_axis_c2h_tkeep_0(s_axis_c2h_tkeep_0),
+
 
 
       .m_axis_h2c_tdata_0(m_axis_h2c_tdata_0),
@@ -235,6 +182,9 @@ module top #
       .m_axis_h2c_tvalid_0(m_axis_h2c_tvalid_0),
       .m_axis_h2c_tready_0(m_axis_h2c_tready_0),
       .m_axis_h2c_tkeep_0(m_axis_h2c_tkeep_0),
+
+      .c2h_sts_0(c2h_sts_0),                            // output wire [7 : 0] c2h_sts_0
+      .h2c_sts_0(h2c_sts_0),                            // output wire [7 : 0] h2c_sts_0
 
       // LITE interface   
       //-- AXI Master Write Address Channel
@@ -299,11 +249,17 @@ module top #
   mkBsvTop bsv_userlogic_top_inst(
         .CLK(user_clk),
         .RST_N(user_resetn),
-        .xdmaChannel_rawAxiStreamSlave_tvalid(m_axis_h2c_tvalid_0),
-        .xdmaChannel_rawAxiStreamSlave_tdata(m_axis_h2c_tdata_0),
-        .xdmaChannel_rawAxiStreamSlave_tkeep(m_axis_h2c_tkeep_0),
-        .xdmaChannel_rawAxiStreamSlave_tlast(m_axis_h2c_tlast_0),
-        .xdmaChannel_rawAxiStreamSlave_tready(m_axis_h2c_tready_0),
+        .xdmaChannel_rawH2cAxiStream_tvalid(m_axis_h2c_tvalid_0),
+		    .xdmaChannel_rawH2cAxiStream_tdata(m_axis_h2c_tdata_0),
+		    .xdmaChannel_rawH2cAxiStream_tkeep(m_axis_h2c_tkeep_0),
+		    .xdmaChannel_rawH2cAxiStream_tlast(m_axis_h2c_tlast_0),
+		    .xdmaChannel_rawH2cAxiStream_tready(m_axis_h2c_tready_0),
+
+        .xdmaChannel_rawC2hAxiStream_tvalid(s_axis_c2h_tvalid_0),
+        .xdmaChannel_rawC2hAxiStream_tdata(s_axis_c2h_tdata_0),
+        .xdmaChannel_rawC2hAxiStream_tkeep(s_axis_c2h_tkeep_0),
+        .xdmaChannel_rawC2hAxiStream_tlast(s_axis_c2h_tlast_0),
+        .xdmaChannel_rawC2hAxiStream_tready(s_axis_c2h_tready_0),
 
         .xdmaChannel_h2cDescByp_ready(h2c_dsc_byp_ready_0),
 
@@ -317,6 +273,8 @@ module top #
 
         .xdmaChannel_h2cDescByp_ctl(h2c_dsc_byp_ctl_0),
 
+        .xdmaChannel_h2cDescByp_desc_done(h2c_sts_0[3]),
+
         .xdmaChannel_c2hDescByp_ready(c2h_dsc_byp_ready_0),
 
         .xdmaChannel_c2hDescByp_load(c2h_dsc_byp_load_0),
@@ -328,6 +286,8 @@ module top #
         .xdmaChannel_c2hDescByp_len(c2h_dsc_byp_len_0),
 
         .xdmaChannel_c2hDescByp_ctl(c2h_dsc_byp_ctl_0),
+
+        .xdmaChannel_c2hDescByp_desc_done(c2h_sts_0[3]),
 
         .axilRegBlock_awvalid(m_axil_awvalid),
         .axilRegBlock_awaddr(m_axil_awaddr),

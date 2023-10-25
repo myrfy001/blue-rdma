@@ -21,7 +21,7 @@ module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)
 
     RegisterBlock#(CONTROL_REG_ADDR_WIDTH, CONTROL_REG_DATA_STRB_WIDTH) regBlock<- mkRegisterBlock;
 
-    rule doTestSendReq;
+    rule doTestH2cSendReq;
         let req = DmaReadReq {
             initiator: DMA_SRC_RQ_RD,
             sqpn: 1,
@@ -33,8 +33,33 @@ module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)
         xdmaWrap.dmaReadSrv.request.put(req);
     endrule
 
-    rule doTestRecvReq;
+    rule doTestH2cRecvReq;
         let _ <- xdmaWrap.dmaReadSrv.response.get;
+    endrule
+
+
+    rule doTestC2hSendReq;
+        let req = DmaWriteReq {
+            metaData: DmaWriteMetaData {
+                initiator: DMA_SRC_RQ_RD,
+                sqpn: 1,
+                startAddr: 0,
+                len: 16,
+                psn: 0
+            },
+            dataStream: DataStream {
+                data: 'h61616262,
+                byteEn: 'b1111,
+                isFirst: True,
+                isLast: True
+            }
+        };
+        
+        xdmaWrap.dmaWriteSrv.request.put(req);
+    endrule
+
+    rule doTestC2hRecvReq;
+        let _ <- xdmaWrap.dmaWriteSrv.response.get;
     endrule
 
 
