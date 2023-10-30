@@ -15,30 +15,52 @@ typedef 12 CONTROL_REG_ADDR_WIDTH;
 typedef 4 CONTROL_REG_DATA_STRB_WIDTH;
 typedef TMul#(CONTROL_REG_DATA_STRB_WIDTH, 8) CONTROL_DATA_WIDTH;
 typedef 64 HOST_ADDR_WIDTH;
-typedef 28 DESC_BYPASS_LENGTH_WIDTH;
-typedef 16 DESC_BYPASS_CONTROL_WIDTH;
-typedef 4 STREAM_FIFO_DEPTH;
 typedef 256 STREAM_DATA_WIDTH;
 typedef TDiv#(STREAM_DATA_WIDTH, 8) STREAM_KEEP_WIDTH;
 
-Integer bypass_CONTROL_FLAGS = 'h01;
 
 typedef enum {
-    CtlRegAddrH2cSourceLow = 'h0000,
-    CtlRegAddrH2cSourceHigh = 'h0004,
-    CtlRegAddrC2hSourceLow = 'h0008,
-    CtlRegAddrC2hSourceHigh = 'h00C,
-    CtlRegAddTransSize = 'h0010
+    ModifyFirstStagePgt = 0,
+    ModifySecondStagePgt = 1,
+    MaxGuard = 16'hFFFF // padding to make this enum use 8 bit
+} RdmaCsrCmdType deriving(Bits);
+
+typedef struct {
+    RdmaCsrCmdType cmdType;
+    Bit#(16) reqId;
+} RdmaCsrCmdTypeAndId deriving(Bits);
+
+typedef struct {
+    Bit#(16) finishedReqId;
+    Bit#(8)  errorCode;
+} RdmaCsrCmdExecuteResponse deriving(Bits);
+
+typedef struct {
+    Bit#(CONTROL_REG_DATA_WIDTH) ctlRegCmdSize;
+    Bit#(HOST_ADDR_WIDTH) ctlRegCmdAddr;
+    RdmaCsrCmdTypeAndId ctlRegCmdTypeAndId;
+} RdmaControlCmdEntry deriving(Bits);
+
+typedef 32 CONTROL_REG_DATA_WIDTH;
+
+typedef enum {
+    CtlRegIdCmdSize = 'h0000,
+    CtlRegIdCmdAddrLow = 'h0001,
+    CtlRegIdCmdAddrHigh = 'h0002,
+    CtlRegIdCmdTypeAndId = 'h0003,
+    CtlRegIdCmdExecuteStatus = 'h0004
 } ControlRegisterAddress deriving(Bits, Eq);
 
 
 interface RegisterBlock#(numeric type controlAddrWidth, numeric type dataStrbWidth);
     interface RawAxi4LiteSlave#(controlAddrWidth, dataStrbWidth) axilRegBlock;
+    // method ActionValue#() getPgtRequest();
+
 endinterface
 
 
 
-module mkRegisterBlock(RegisterBlock#(CONTROL_REG_ADDR_WIDTH, CONTROL_REG_DATA_STRB_WIDTH));
+module mkRegisterBlock(RegisterBlock#(CONTROL_REG_ADDR_WIDTH, CONTROL_REG_DATA_STRB_WIDTH)) ;
     FIFOF#(Axi4LiteWrAddr#(CONTROL_REG_ADDR_WIDTH)) ctrlWrAddrFifo <- mkFIFOF;
     FIFOF#(Axi4LiteWrData#(CONTROL_REG_DATA_STRB_WIDTH)) ctrlWrDataFifo <- mkFIFOF;
     FIFOF#(Axi4LiteWrResp) ctrlWrRespFifo <- mkFIFOF;
@@ -46,34 +68,39 @@ module mkRegisterBlock(RegisterBlock#(CONTROL_REG_ADDR_WIDTH, CONTROL_REG_DATA_S
     FIFOF#(Axi4LiteRdData#(CONTROL_REG_DATA_STRB_WIDTH)) ctrlRdDataFifo <- mkFIFOF;
 
 
-    Reg#(Bit#(HOST_ADDR_WIDTH)) h2cSourceAddress <- mkRegU;
-    Reg#(Bit#(HOST_ADDR_WIDTH)) c2hDestAddress <- mkRegU;
-    Reg#(Bit#(DESC_BYPASS_LENGTH_WIDTH)) transSize[2] <- mkCReg(2, 0);
+    Reg#(Bit#(CONTROL_REG_DATA_WIDTH)) ctlRegCmdSize <- mkRegU;
+    Reg#(Bit#(HOST_ADDR_WIDTH)) ctlRegCmdAddr <- mkRegU;
 
+    FIFOF#(RdmaControlCmdEntry) pendingCmdQ <- mkFIFOF;
+    FIFOF#(RdmaCsrCmdExecuteResponse) pendingCmdRespQ <- mkFIFOF;
 
     let ctlAxilSlave <- mkPipeToRawAxi4LiteSlave(
         convertFifoToPipeIn(ctrlWrAddrFifo),
         convertFifoToPipeIn(ctrlWrDataFifo),
         convertFifoToPipeOut(ctrlWrRespFifo),
-
         convertFifoToPipeIn(ctrlRdAddrFifo),
         convertFifoToPipeOut(ctrlRdDataFifo)
     );
 
-    rule readControlCmd if (ctrlWrAddrFifo.notEmpty && ctrlWrDataFifo.notEmpty && transSize[1] == 0);
+
+    rule handleRegisterWrite;
         ctrlWrAddrFifo.deq;
         ctrlWrDataFifo.deq;
-        
-        let addr_to_match = unpack(truncate(pack(ctrlWrAddrFifo.first.awAddr)));
+        let addr_to_match = unpack(truncate(pack(ctrlWrAddrFifo.first.awAddr>>2)));
+        let data_to_write = ctrlWrDataFifo.first.wData;
         case (addr_to_match) matches
-            CtlRegAddrH2cSourceLow: h2cSourceAddress[31:0] <= ctrlWrDataFifo.first.wData;
-            CtlRegAddrH2cSourceHigh: h2cSourceAddress[63:32] <= ctrlWrDataFifo.first.wData;
-            CtlRegAddrC2hSourceLow: c2hDestAddress[31:0] <= ctrlWrDataFifo.first.wData;
-            CtlRegAddrC2hSourceHigh: c2hDestAddress[63:32] <= ctrlWrDataFifo.first.wData;
-            CtlRegAddTransSize: begin
-                transSize[1] <= truncate(ctrlWrDataFifo.first.wData);
-                $display("set size");
-            end
+            CtlRegIdCmdSize: ctlRegCmdSize <= data_to_write;
+            CtlRegIdCmdAddrLow: ctlRegCmdAddr[31:0] <= data_to_write;
+            CtlRegIdCmdAddrHigh: ctlRegCmdAddr[63:32] <= data_to_write;
+            CtlRegIdCmdTypeAndId: begin
+                if (pendingCmdQ.notFull) begin
+                    pendingCmdQ.enq(RdmaControlCmdEntry{
+                        ctlRegCmdSize: ctlRegCmdSize,
+                        ctlRegCmdAddr: ctlRegCmdAddr,
+                        ctlRegCmdTypeAndId: unpack(data_to_write)
+                    });
+                end
+            end 
             default: begin 
                 $display("unknown addr");
             end
@@ -82,9 +109,27 @@ module mkRegisterBlock(RegisterBlock#(CONTROL_REG_ADDR_WIDTH, CONTROL_REG_DATA_S
         ctrlWrRespFifo.enq(0);
     endrule
 
-    rule respondToControlCmdRead;
+    rule handleRegisterRead;
         ctrlRdAddrFifo.deq;
-        ctrlRdDataFifo.enq(Axi4LiteRdData{rResp: 'h0, rData: 'hABCD4321});
+        let addr_to_match = unpack(truncate(pack(ctrlRdAddrFifo.first.arAddr>>2)));
+        Bit#(CONTROL_REG_DATA_WIDTH) outData = 32'hFFFFFFFF;
+        case (addr_to_match) matches
+            CtlRegIdCmdExecuteStatus: begin
+                Bool hasResp = False;
+                if (pendingCmdRespQ.notEmpty) begin
+                    pendingCmdRespQ.deq;
+                    hasResp = True;
+                end
+
+                Bool cmdQFull = !pendingCmdQ.notFull;
+                outData = {pack(cmdQFull), pack(hasResp), 6'h0 ,pendingCmdRespQ.first.errorCode, pendingCmdRespQ.first.finishedReqId};
+            end
+            default: begin 
+                $display("unknown addr");
+            end
+        endcase
+
+        ctrlRdDataFifo.enq(Axi4LiteRdData{rResp: 'h0, rData: outData});
     endrule
     
     interface axilRegBlock = ctlAxilSlave;

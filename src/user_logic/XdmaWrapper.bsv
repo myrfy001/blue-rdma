@@ -245,3 +245,108 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
 
     endinterface
 endmodule
+
+interface DmaRouter;
+    // interface to connect to XDMA wrapper
+    interface DmaReadClt xdmaReadClt;
+    interface DmaWriteClt dmaWriteClt;
+
+    // interface to connect DMA users
+    interface DmaReadSrv dmaDataPathReadSrv;
+    interface DmaWriteSrv dmaDataPathWriteSrv;
+    interface DmaReadSrv dmaCtrlPathReadSrv;
+    interface DmaWriteSrv dmaCtrlPathWriteSrv;
+endinterface
+
+module mkDmaRouter(DmaRouter);
+    FIFOF#(DmaReadReq) xdmaReadReqQ <- mkFIFOF;
+    FIFOF#(DmaReadResp) xdmaReadRespQ <- mkFIFOF;
+    FIFOF#(DmaWriteReq) xdmaWriteReqQ <- mkFIFOF;
+    FIFOF#(DmaWriteResp) xdmaWriteRespQ <- mkFIFOF;
+
+    FIFOF#(DmaReadReq) ctrlPathReadReqQ <- mkFIFOF;
+    FIFOF#(DmaReadResp) ctrlPathReadRespQ <- mkFIFOF;
+    FIFOF#(DmaWriteReq) ctrlPathWriteReqQ <- mkFIFOF;
+    FIFOF#(DmaWriteResp) ctrlPathWriteRespQ <- mkFIFOF;
+
+    FIFOF#(DmaReadReq) dataPathReadReqQ <- mkFIFOF;
+    FIFOF#(DmaReadResp) dataPathReadRespQ <- mkFIFOF;
+    FIFOF#(DmaWriteReq) dataPathWriteReqQ <- mkFIFOF;
+    FIFOF#(DmaWriteResp) dataPathWriteRespQ <- mkFIFOF;
+
+    Reg#(Bool) roundRobinFlag <- mkRegU;
+
+    rule forwardToDmaController;
+        roundRobinFlag <= !roundRobinFlag;
+
+        if (roundRobinFlag) begin
+            // Read Channel
+            if (ctrlPathReadReqQ.notEmpty) begin
+                xdmaReadReqQ.enq(ctrlPathReadReqQ.first);
+                ctrlPathReadReqQ.deq;
+            end else if (dataPathReadReqQ.notEmpty) begin
+                xdmaReadReqQ.enq(dataPathReadReqQ.first);
+                dataPathReadReqQ.deq;
+            end
+            // Write Channel
+            if (ctrlPathWriteReqQ.notEmpty) begin
+                xdmaWriteReqQ.enq(ctrlPathWriteReqQ.first);
+                ctrlPathWriteReqQ.deq;
+            end else if (dataPathWriteReqQ.notEmpty) begin
+                xdmaWriteReqQ.enq(dataPathWriteReqQ.first);
+                dataPathWriteReqQ.deq;
+            end
+        end else begin
+            // Read Channel
+            if (dataPathReadReqQ.notEmpty) begin
+                xdmaReadReqQ.enq(dataPathReadReqQ.first);
+                dataPathReadReqQ.deq;
+            end else if (ctrlPathReadReqQ.notEmpty) begin
+                xdmaReadReqQ.enq(ctrlPathReadReqQ.first);
+                ctrlPathReadReqQ.deq;
+            end
+            // Write Channel
+            if (dataPathWriteReqQ.notEmpty) begin
+                xdmaWriteReqQ.enq(dataPathWriteReqQ.first);
+                dataPathWriteReqQ.deq;
+            end else if (ctrlPathWriteReqQ.notEmpty) begin
+                xdmaWriteReqQ.enq(ctrlPathWriteReqQ.first);
+                ctrlPathWriteReqQ.deq;
+            end
+        end
+    endrule
+
+    rule forwardToDmaClients;
+        // Read Channel
+        if (xdmaReadRespQ.notEmpty) begin
+            xdmaReadRespQ.deq;
+            if (xdmaReadRespQ.first.initiator == DMA_SRC_CONTROL_PATH_LOGIC) begin
+                ctrlPathReadRespQ.enq(xdmaReadRespQ.first);
+            end else begin
+                dataPathReadRespQ.enq(xdmaReadRespQ.first);
+            end
+        end
+
+        // write Channel
+        if (xdmaWriteRespQ.notEmpty) begin
+            xdmaWriteRespQ.deq;
+            if (xdmaWriteRespQ.first.initiator == DMA_SRC_CONTROL_PATH_LOGIC) begin
+                ctrlPathWriteRespQ.enq(xdmaWriteRespQ.first);
+            end else begin
+                dataPathWriteRespQ.enq(xdmaWriteRespQ.first);
+            end
+        end
+    endrule
+
+
+    interface DmaReadClt xdmaReadClt = toGPClient(xdmaReadReqQ, xdmaReadRespQ);
+    interface DmaWriteClt dmaWriteClt = toGPClient(xdmaWriteReqQ, xdmaWriteRespQ);
+
+    
+    interface DmaReadSrv dmaDataPathReadSrv = toGPServer(dataPathReadReqQ, dataPathReadRespQ);
+    interface DmaWriteSrv dmaDataPathWriteSrv = toGPServer(dataPathWriteReqQ, dataPathWriteRespQ);
+    interface DmaReadSrv dmaCtrlPathReadSrv = toGPServer(ctrlPathReadReqQ, ctrlPathReadRespQ);
+    interface DmaWriteSrv dmaCtrlPathWriteSrv = toGPServer(ctrlPathWriteReqQ, ctrlPathWriteRespQ);
+
+
+endmodule
