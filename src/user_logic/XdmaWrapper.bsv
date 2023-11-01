@@ -54,7 +54,6 @@ interface XdmaWrapper#(numeric type dataSz, numeric type userSz);
     interface XdmaChannel#(dataSz, userSz) xdmaChannel;
 endinterface
 
-(* synthesize *)
 module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH));
 
     FIFOF#(AxiStream#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)) xdmaH2cStFifo <- mkFIFOF();
@@ -249,7 +248,7 @@ endmodule
 interface DmaRouter;
     // interface to connect to XDMA wrapper
     interface DmaReadClt xdmaReadClt;
-    interface DmaWriteClt dmaWriteClt;
+    interface DmaWriteClt xdmaWriteClt;
 
     // interface to connect DMA users
     interface DmaReadSrv dmaDataPathReadSrv;
@@ -340,7 +339,7 @@ module mkDmaRouter(DmaRouter);
 
 
     interface DmaReadClt xdmaReadClt = toGPClient(xdmaReadReqQ, xdmaReadRespQ);
-    interface DmaWriteClt dmaWriteClt = toGPClient(xdmaWriteReqQ, xdmaWriteRespQ);
+    interface DmaWriteClt xdmaWriteClt = toGPClient(xdmaWriteReqQ, xdmaWriteRespQ);
 
     
     interface DmaReadSrv dmaDataPathReadSrv = toGPServer(dataPathReadReqQ, dataPathReadRespQ);

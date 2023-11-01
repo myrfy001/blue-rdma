@@ -1,47 +1,19 @@
 import FIFOF :: *;
 import Connectable :: *;
 import GetPut :: *;
-import StmtFSM :: *;
 
 import BusConversion :: *;
 import SemiFifo :: *;
 import AxiStreamTypes :: *;
 import Axi4LiteTypes :: *;
 import Axi4Types :: *;
+import UserLogicTypes :: *;
 
 
 
-typedef 12 CONTROL_REG_ADDR_WIDTH;
-typedef 4 CONTROL_REG_DATA_STRB_WIDTH;
-typedef TMul#(CONTROL_REG_DATA_STRB_WIDTH, 8) CONTROL_DATA_WIDTH;
-typedef 64 HOST_ADDR_WIDTH;
-typedef 256 STREAM_DATA_WIDTH;
-typedef TDiv#(STREAM_DATA_WIDTH, 8) STREAM_KEEP_WIDTH;
 
 
-typedef enum {
-    ModifyFirstStagePgt = 0,
-    ModifySecondStagePgt = 1,
-    MaxGuard = 16'hFFFF // padding to make this enum use 8 bit
-} RdmaCsrCmdType deriving(Bits);
 
-typedef struct {
-    RdmaCsrCmdType cmdType;
-    Bit#(16) reqId;
-} RdmaCsrCmdTypeAndId deriving(Bits);
-
-typedef struct {
-    Bit#(16) finishedReqId;
-    Bit#(8)  errorCode;
-} RdmaCsrCmdExecuteResponse deriving(Bits);
-
-typedef struct {
-    Bit#(CONTROL_REG_DATA_WIDTH) ctlRegCmdSize;
-    Bit#(HOST_ADDR_WIDTH) ctlRegCmdAddr;
-    RdmaCsrCmdTypeAndId ctlRegCmdTypeAndId;
-} RdmaControlCmdEntry deriving(Bits);
-
-typedef 32 CONTROL_REG_DATA_WIDTH;
 
 typedef enum {
     CtlRegIdCmdSize = 'h0000,
@@ -54,8 +26,8 @@ typedef enum {
 
 interface RegisterBlock#(numeric type controlAddrWidth, numeric type dataStrbWidth);
     interface RawAxi4LiteSlave#(controlAddrWidth, dataStrbWidth) axilRegBlock;
-    // method ActionValue#() getPgtRequest();
-
+    interface Get#(RdmaControlCmdEntry) pendingControlCmd;
+    interface Put#(RdmaCmdExecuteResponse) pendingControlCmdResp;
 endinterface
 
 
@@ -72,7 +44,7 @@ module mkRegisterBlock(RegisterBlock#(CONTROL_REG_ADDR_WIDTH, CONTROL_REG_DATA_S
     Reg#(Bit#(HOST_ADDR_WIDTH)) ctlRegCmdAddr <- mkRegU;
 
     FIFOF#(RdmaControlCmdEntry) pendingCmdQ <- mkFIFOF;
-    FIFOF#(RdmaCsrCmdExecuteResponse) pendingCmdRespQ <- mkFIFOF;
+    FIFOF#(RdmaCmdExecuteResponse) pendingCmdRespQ <- mkFIFOF;
 
     let ctlAxilSlave <- mkPipeToRawAxi4LiteSlave(
         convertFifoToPipeIn(ctrlWrAddrFifo),
@@ -133,5 +105,6 @@ module mkRegisterBlock(RegisterBlock#(CONTROL_REG_ADDR_WIDTH, CONTROL_REG_DATA_S
     endrule
     
     interface axilRegBlock = ctlAxilSlave;
-
+    interface pendingControlCmd = toGet(pendingCmdQ);
+    interface pendingControlCmdResp = toPut(pendingCmdRespQ);
 endmodule

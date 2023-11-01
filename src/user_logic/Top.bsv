@@ -1,3 +1,4 @@
+import Connectable :: *;
 import ClientServer :: *;
 import GetPut :: *;
 
@@ -7,7 +8,9 @@ import DataTypes :: *;
 import UserLogicSettings :: *;
 import XdmaWrapper :: *;
 import RegisterBlock :: *;
-
+import ControlCmdManager :: *;
+import UserLogicTypes :: *;
+import AddressTranslate :: *;
 
 
 interface BsvTop#(numeric type dataSz, numeric type userSz);
@@ -18,49 +21,44 @@ endinterface
 (* synthesize *)
 module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH));
     XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper;
-
     RegisterBlock#(CONTROL_REG_ADDR_WIDTH, CONTROL_REG_DATA_STRB_WIDTH) regBlock<- mkRegisterBlock;
+    DmaRouter dmaRouter <- mkDmaRouter;
 
-    rule doTestH2cSendReq;
-        let req = DmaReadReq {
-            initiator: DMA_SRC_RQ_RD,
-            sqpn: 1,
-            startAddr: 0,
-            len: 16,
-            wrID: 0
-        };
+    TLB tlb <- mkTLB;
+    PgtManager pgtManager <- mkPgtManager(tlb);
+    ControlCmdManager controlCmdManager <- mkControlCmdManager(regBlock, dmaRouter, pgtManager);
+
+    mkConnection(xdmaWrap.dmaReadSrv, dmaRouter.xdmaReadClt);
+    mkConnection(xdmaWrap.dmaWriteSrv, dmaRouter.xdmaWriteClt);
+
+    // rule doTestH2cRecvReq;
+    //     let _ <- xdmaWrap.dmaReadSrv.response.get;
+    // endrule
+
+
+    // rule doTestC2hSendReq;
+    //     let req = DmaWriteReq {
+    //         metaData: DmaWriteMetaData {
+    //             initiator: DMA_SRC_RQ_RD,
+    //             sqpn: 1,
+    //             startAddr: 0,
+    //             len: 16,
+    //             psn: 0
+    //         },
+    //         dataStream: DataStream {
+    //             data: 'h61616262,
+    //             byteEn: 'b1111,
+    //             isFirst: True,
+    //             isLast: True
+    //         }
+    //     };
         
-        xdmaWrap.dmaReadSrv.request.put(req);
-    endrule
+    //     xdmaWrap.dmaWriteSrv.request.put(req);
+    // endrule
 
-    rule doTestH2cRecvReq;
-        let _ <- xdmaWrap.dmaReadSrv.response.get;
-    endrule
-
-
-    rule doTestC2hSendReq;
-        let req = DmaWriteReq {
-            metaData: DmaWriteMetaData {
-                initiator: DMA_SRC_RQ_RD,
-                sqpn: 1,
-                startAddr: 0,
-                len: 16,
-                psn: 0
-            },
-            dataStream: DataStream {
-                data: 'h61616262,
-                byteEn: 'b1111,
-                isFirst: True,
-                isLast: True
-            }
-        };
-        
-        xdmaWrap.dmaWriteSrv.request.put(req);
-    endrule
-
-    rule doTestC2hRecvReq;
-        let _ <- xdmaWrap.dmaWriteSrv.response.get;
-    endrule
+    // rule doTestC2hRecvReq;
+    //     let _ <- xdmaWrap.dmaWriteSrv.response.get;
+    // endrule
 
 
 

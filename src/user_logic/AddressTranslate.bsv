@@ -12,13 +12,8 @@ import Headers :: *;
 import PrimUtils :: *;
 import Settings :: *;
 import Utils :: *;
+import UserLogicTypes :: *;
 
-
-typedef TExp#(11)  BRAM_CACHE_SIZE; // 2K
-typedef BYTE_WIDTH BRAM_CACHE_DATA_WIDTH;
-
-typedef Bit#(TLog#(BRAM_CACHE_SIZE)) BramCacheAddr;
-typedef Bit#(BRAM_CACHE_DATA_WIDTH)  BramCacheData;
 
 typedef Server#(addrType, dataType) BramRead#(type addrType, type dataType);
 
@@ -100,7 +95,7 @@ function ADDR getPageAlignedAddr(ADDR addr);
     return unpack(addr);
 endfunction
 
-(* synthesize *)
+
 module mkTLB(TLB);
     BramCache#(PgtFirstStageIndex, PgtFirstStagePayload) firstStageCache <- mkBramCache;
     BramCache#(PgtSecondStageIndex, PgtSecondStagePayload) secondStageCache <- mkBramCache;
@@ -172,4 +167,85 @@ module mkTLB(TLB);
     endmethod
 
     interface find = toGPServer(findReqQ, findRespQ);
+endmodule
+
+
+
+interface PgtManager;
+    interface Server#(DmaFetchedCmd, RdmaCmdExecuteResponse) pgtModifySrv;
+endinterface
+
+
+typedef enum {
+    PgtManagerFsmStateIdle,
+    PgtManagerFsmStateHandleFirstStageUpdate,
+    PgtManagerFsmStateHandleSecondStageUpdate
+} PgtManagerFsmState deriving(Bits, Eq);
+
+
+module mkPgtManager#(TLB tlb)(PgtManager);
+    FIFOF#(DmaFetchedCmd) reqQ <- mkFIFOF;
+    FIFOF#(RdmaCmdExecuteResponse) respQ <- mkFIFOF;
+
+
+
+    Reg#(PgtManagerFsmState) state <- mkReg(PgtManagerFsmStateIdle);
+
+    Reg#(DataStream) curBeatOfData <- mkRegU;
+    Reg#(ControlCmdReqId) curReqId <- mkRegU;
+    
+    Integer bytesPerPgtSecondStageEntryRequest = valueOf(PGT_SECOND_STAGE_ENTRY_REQUEST_SIZE_PADDED) / valueOf(BYTE_WIDTH);
+
+    rule updatePgtStateIdle if (state == PgtManagerFsmStateIdle);
+        reqQ.deq;
+        let req = reqQ.first;
+        
+        immAssert(
+            req.dataStream.isFirst,
+            "req.dataStream.isFirst must be True @ mkPgtManager",
+            $format(
+                "req=", fshow(req), " should be valid"
+            )
+        );
+        curBeatOfData <= req.dataStream;
+        curReqId <= req.reqId;
+        if (req.cmdType == RdmaCsrCmdTypeModifyFirstStagePgt) begin
+            state <= PgtManagerFsmStateIdle;
+            PgtModifyFirstStageReq modifyReq = unpack(truncate(req.dataStream.data));
+            tlb.modify(tagged Req4FirstStage modifyReq);
+            respQ.enq(RdmaCmdExecuteResponse{
+                finishedReqId: req.reqId,
+                errorCode: 0
+            });
+        end else begin 
+            state <= PgtManagerFsmStateHandleSecondStageUpdate;
+        end
+    endrule
+
+    rule updatePgtStateHandleSecondStageUpdate if (state == PgtManagerFsmStateHandleSecondStageUpdate);
+        
+        PgtModifySecondStageReq modifyReq = unpack(truncate(curBeatOfData.data));
+        tlb.modify(tagged Req4SecondStage modifyReq);
+        
+        let newCurBeatOfData = curBeatOfData;
+        newCurBeatOfData.byteEn = newCurBeatOfData.byteEn >> bytesPerPgtSecondStageEntryRequest;
+        newCurBeatOfData.data = newCurBeatOfData.data >> (bytesPerPgtSecondStageEntryRequest * valueOf(BYTE_WIDTH));
+
+        if (newCurBeatOfData.byteEn[0] == 0) begin 
+            if (curBeatOfData.isLast) begin
+                state <= PgtManagerFsmStateIdle;
+                respQ.enq(RdmaCmdExecuteResponse{
+                    finishedReqId: curReqId,
+                    errorCode: 0
+                });
+            end else if (reqQ.notEmpty) begin
+                reqQ.deq;
+                curBeatOfData <= reqQ.first.dataStream;
+            end
+        end else begin
+            curBeatOfData <= newCurBeatOfData;
+        end
+    endrule
+
+    interface pgtModifySrv = toGPServer(reqQ, respQ);
 endmodule
