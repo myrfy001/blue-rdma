@@ -15,7 +15,7 @@ interface ControlCmdManager;
 endinterface
 
 module mkControlCmdManager#(
-        RegisterBlock#(CONTROL_REG_ADDR_WIDTH, CONTROL_REG_DATA_STRB_WIDTH) regBlock,
+        RegisterBlock regBlock,
         DmaRouter dmaRouter,
         PgtManager pgtManager
     )(ControlCmdManager);

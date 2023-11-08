@@ -21,7 +21,10 @@ endinterface
 (* synthesize *)
 module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH));
     XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper;
-    RegisterBlock#(CONTROL_REG_ADDR_WIDTH, CONTROL_REG_DATA_STRB_WIDTH) regBlock<- mkRegisterBlock;
+    
+    RegisterBlock regBlock <- mkRegisterBlock;
+    XdmaAxiLiteBridgeWrapper xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(regBlock);
+
     DmaRouter dmaRouter <- mkDmaRouter;
 
     TLB tlb <- mkTLB;
@@ -31,6 +34,7 @@ module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)
     mkConnection(xdmaWrap.dmaReadSrv, dmaRouter.xdmaReadClt);
     mkConnection(xdmaWrap.dmaWriteSrv, dmaRouter.xdmaWriteClt);
 
+    
     // rule doTestH2cRecvReq;
     //     let _ <- xdmaWrap.dmaReadSrv.response.get;
     // endrule
@@ -63,5 +67,5 @@ module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)
 
 
     interface xdmaChannel = xdmaWrap.xdmaChannel;
-    interface axilRegBlock = regBlock.axilRegBlock;
+    interface axilRegBlock = xdmaAxiLiteWrap.axiLiteBridge;
 endmodule

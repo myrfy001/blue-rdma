@@ -4,8 +4,28 @@ import DataTypes :: *;
 
 typedef 12 CONTROL_REG_ADDR_WIDTH;
 typedef 4 CONTROL_REG_DATA_STRB_WIDTH;
-typedef TMul#(CONTROL_REG_DATA_STRB_WIDTH, 8) CONTROL_DATA_WIDTH;
+typedef TMul#(CONTROL_REG_DATA_STRB_WIDTH, 8) CONTROL_REG_DATA_WIDTH;
 typedef 64 HOST_ADDR_WIDTH;
+
+
+typedef struct {
+    Bit#(CONTROL_REG_ADDR_WIDTH) addr;
+    Bit#(CONTROL_REG_DATA_WIDTH) data;
+} CsrWriteRequest;
+
+typedef struct {
+    Bit#(0) flag;
+} CsrWriteResponse;
+
+typedef struct {
+    Bit#(CONTROL_REG_ADDR_WIDTH) addr;
+} CsrReadRequest;
+
+typedef struct {
+    Bit#(CONTROL_REG_DATA_WIDTH) data;
+} CsrReadResponse;
+
+
 
 typedef enum {
     RdmaCsrCmdTypeModifyFirstStagePgt = 0,
@@ -38,7 +58,10 @@ typedef struct {
     RdmaCsrCmdTypeAndId ctlRegCmdTypeAndId;
 } RdmaControlCmdEntry deriving(Bits, FShow);
 
-typedef 32 CONTROL_REG_DATA_WIDTH;
-
 typedef 64 PGT_SECOND_STAGE_ENTRY_REQUEST_SIZE_PADDED;
 typedef TDiv#(DATA_BUS_WIDTH, PGT_SECOND_STAGE_ENTRY_REQUEST_SIZE_PADDED) PGT_SECOND_STAGE_ENTRY_REQUEST_PER_STREAM_FRAME;
+
+
+
+
+
