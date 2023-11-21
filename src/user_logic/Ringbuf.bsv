@@ -1,9 +1,13 @@
 import Vector :: *;
 import UserLogicSettings :: *;
+import UserLogicTypes :: *;
 import DataTypes :: *;
 import Headers :: *;
 import FIFOF :: *;
 import Arbitration :: *;
+import PAClib :: *;
+import PrimUtils :: *;
+import ClientServer :: *;
 
 interface H2CRingBufFifoIfc#(numeric type element_width);
     method Bit#(element_width) first;
@@ -12,21 +16,18 @@ interface H2CRingBufFifoIfc#(numeric type element_width);
     method Bool notEmpty;
 endinterface
 
-interface H2CRingBufCntrlIfc#(numeric type element_width);
+interface H2CRingBufFifoCntrlIfc#(numeric type element_width);
     method Action fillBuf(Bit#(element_width) elem);
     method Bool notEmpty;
 endinterface
 
 interface H2CRingBuf#(numeric type element_width);
     interface H2CRingBufFifoIfc#(element_width) fifo;
-    interface H2CRingBufCntrlIfc#(element_width) cntrl;
+    interface H2CRingBufFifoCntrlIfc#(element_width) cntrl;
 endinterface
 
 module mkH2CRingBuf(H2CRingBuf#(element_width)) ;
     Reg#(Bit#(element_width)) t <- mkRegU;
-
-
-
 
     interface H2CRingBufFifoIfc fifo;
         method Bit#(element_width) first;
@@ -42,7 +43,7 @@ module mkH2CRingBuf(H2CRingBuf#(element_width)) ;
         endmethod
     endinterface
 
-    interface H2CRingBufCntrlIfc cntrl;
+    interface H2CRingBufFifoCntrlIfc cntrl;
         method Action fillBuf(Bit#(element_width) elem);
         endmethod
         method Bool notEmpty;
@@ -57,123 +58,213 @@ interface C2HRingBufFifoIfc#(numeric type element_width);
     method Bool notEmpty;
 endinterface
 
-interface C2HRingBufCntrlIfc#(numeric type element_width);
+interface C2HRingBufFifoCntrlIfc#(numeric type element_width);
     method Bit#(element_width) first;
     method Action deq;
 endinterface
 
 interface C2HRingBuf#(numeric type element_width);
     interface C2HRingBufFifoIfc#(element_width) fifo;
-    interface C2HRingBufCntrlIfc#(element_width) cntrl;
+    interface C2HRingBufFifoCntrlIfc#(element_width) cntrl;
 endinterface
 
-function Tuple2(Bool, UInt#(TSub#(sz, 1))) getRingbufPointerGuardAndIndex(UInt#(sz) pointer);
-    return unpack(pack(pointer));
-endfunction
 
-function Bool isRingbufNotEmpty(UInt#(sz) head, UInt#(sz) tail);
+function Bool isRingbufNotEmpty(Fix4kBRingBufPointer head, Fix4kBRingBufPointer tail);
     return !(head == tail);
 endfunction
 
-function Bool isRingbufNotFull(UInt#(sz) head, UInt#(sz) tail);
-    let {headGuard, headIdx} = getRingbufPointerGuardAndIndex(head);
-    let {tailGuard, tailIdx} = getRingbufPointerGuardAndIndex(tail);
-    return !((headIdx == tailIdx) && (headGuard != tailGuard));
+function Bool isRingbufNotFull(Fix4kBRingBufPointer head, Fix4kBRingBufPointer tail);
+    return !((head.idx == tail.idx) && (head.guard != tail.guard));
 endfunction
 
-typedef UInt#(TAdd#(USER_LOGIC_RING_BUF_LEN_WIDTH,1)) RingbufCounter;
 
-interface RingbufMetadata;
+function Tuple2#(PageNumber4k, PageOffset4k) getPageNumberAndOffset4k(ADDR addr);
+    return unpack(pack(addr));
+endfunction
+
+typedef struct {
+    Bool guard;
+    UInt#(w) idx;
+} RingbufPointer#(numeric type w) deriving(Bits, Eq);
+
+instance Arith#(RingbufPointer#(w)) provisos(Alias#(RingbufPointer#(w), data_t),Bits#(data_t, TAdd#(w, 1)));
+    function data_t \+ (data_t x, data_t y);
+        UInt#(TAdd#(w,1)) tx = unpack(pack(x));
+        UInt#(TAdd#(w,1)) ty = unpack(pack(y));
+        return unpack(pack(tx + ty));
+    endfunction
+
+    function data_t \- (data_t x, data_t y);
+        UInt#(TAdd#(w,1)) tx = unpack(pack(x));
+        UInt#(TAdd#(w,1)) ty = unpack(pack(y));
+        return unpack(pack(tx - ty));
+    endfunction
+
+    function data_t \* (data_t x, data_t y);
+        return error ("The operator " + quote("*") +
+                      " is not defined for " + quote("RingbufPointer") + ".");
+    endfunction
+
+    function data_t \/ (data_t x, data_t y);
+        return error ("The operator " + quote("/") +
+                      " is not defined for " + quote("RingbufPointer") + ".");
+    endfunction
+
+    function data_t \% (data_t x, data_t y);
+        return error ("The operator " + quote("%") +
+                      " is not defined for " + quote("RingbufPointer") + ".");
+    endfunction
+
+    function data_t negate (data_t x);
+        return error ("The operator " + quote("negate") +
+                      " is not defined for " + quote("RingbufPointer") + ".");
+    endfunction
+
+endinstance
+
+instance Literal#(RingbufPointer#(w));
+
+   function fromInteger(n) ;
+        return RingbufPointer{ guard: False, idx: fromInteger(n) } ;
+   endfunction
+   function inLiteralRange(a, i);
+        UInt#(w) idxPart = ?;
+        return inLiteralRange(idxPart, i);
+   endfunction
+endinstance
+
+typedef RingbufPointer#(USER_LOGIC_RING_BUF_DEEP_WIDTH) Fix4kBRingBufPointer;
+
+interface RingbufH2cMetadata;
     interface Reg#(ADDR) addr;
-    interface Reg#(RingbufCounter) head;
-    interface Reg#(RingbufCounter) tail;
-    interface Reg#(RingbufCounter) tailShadow;
-    interface PipeOut#(RingbufDmaReq) dmaReqPipeOut;
+    interface Reg#(Fix4kBRingBufPointer) head;
+    interface Reg#(Fix4kBRingBufPointer) tail;
+    interface Reg#(Fix4kBRingBufPointer) tailShadow;
+    interface RingbufDmaClt dmaClt;
 endinterface
 
-module mkRingbufMetadata(RingbufIndex qIdx, Bool isH2C, Bool qReady, RingbufMetadata ifc);
-    Reg#(ADDR) baseAddrReg <- mkReg(0);
-    Reg#(RingbufCounter) headReg <- mkReg(0);
-    Reg#(RingbufCounter) tailReg <- mkReg(0);
-    Reg#(RingbufCounter) tailShadowReg<- mkReg(0);
-    FIFOF#(RingbufDmaReq) dmaReqQ <- mkFIFOF;
+module mkRingbufH2cMetadata(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(element_width) fifoCntrl, RingbufH2cMetadata ifc)
+    provisos(Bits#(DATA, element_width));
+
     
-    rule sendDmaReq;
-        if (isH2C) begin
-            if (isRingbufNotEmpty(headReg, tailShadowReg) && qReady) begin
-                let availableEntryCnt = headReg - tailShadowReg;
-                
-                RingbufPointer newTailShadow;
-                RingbufDMABlockAccessLen readLen;
 
-                if availableEntryCnt <= valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK) begin
-                    newTailShadow = headReg;
-                    readLen = availableEntryCnt;
-                end else begin 
-                    newTailShadow = tailShadowReg + valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK);
-                    readLen = valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK);
-                end
-                
-                let {newTailShadowGuard, newTailShadowIdx} = getRingbufPointerGuardAndIndex(newTailShadow);
-                let {tailShadowGuard, tailShadowIdx} = getRingbufPointerGuardAndIndex(tailShadowReg);
-                // check if wrap back occur
-                if (newTailShadowGuard != tailShadowGuard) begin
-                    newTailShadow = {newTailShadowGuard, '0};
-                    readLen = valueOf(USER_LOGIC_RING_BUF_LEN) - 
-                    
-                    ;
-                end
+    Reg#(ADDR) baseAddrReg <- mkReg(0);
+    Reg#(Fix4kBRingBufPointer) headReg <- mkReg(unpack(0));
+    Reg#(Fix4kBRingBufPointer) tailReg <- mkReg(unpack(0));
+    Reg#(Fix4kBRingBufPointer) tailShadowReg<- mkReg(unpack(0));
+    FIFOF#(RingbufDmaReq) dmaReqQ <- mkFIFOF;
+    FIFOF#(RingbufDmaResp) dmaRespQ <- mkFIFOF;
 
-                dmaReqQ.enq(RingbufDmaReq{
-                    isH2c:isH2C,
+    Reg#(Bool) ruleState <- mkReg(False);
+    Reg#(RingbufReadBlockInnerOffset) tailPosInReadBlockReg <- mkReg(0);
+
+    
+    rule sendDmaReq if (ruleState == False);
+        
+        if (isRingbufNotEmpty(headReg, tailShadowReg) && !fifoCntrl.notEmpty) begin
+
+            let {curReadBlockStartAddrPgn, _} = getPageNumberAndOffset4k(baseAddrReg);
+
+            PageOffset4k curReadBlockStartAddrOff = zeroExtend(tailShadowReg.idx) << valueOf(RINGBUF_READ_BLOCK_BYTE_WIDTH);
+            ADDR curReadBlockStartAddr = unpack({pack(curReadBlockStartAddrPgn), pack(curReadBlockStartAddrOff)});
+
+
+            let availableEntryCnt = (headReg - tailShadowReg).idx;
+            
+            Fix4kBRingBufPointer newTailShadow = availableEntryCnt <= fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)) ? 
+                                            headReg : tailShadowReg + fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK));
+
+            DataStream ds = unpack(0);
+            ds.isLast = True;
+            dmaReqQ.enq(RingbufDmaReq{
+                    isH2c:True,
                     idx: qIdx,
-                    addr: baseAddrReg + ,
-                    len: ,
-                    data: ?
-                });
+                    addr: curReadBlockStartAddr,
+                    len: fromInteger(valueOf(RINGBUF_BLOCK_READ_LEN)),
+                    data: ds
+            });
+
+            tailPosInReadBlockReg <= truncate(pack(tailReg));
+
+            tailShadowReg <= newTailShadow;
+            ruleState <= True;
+        end
+    endrule
+
+    rule recvDmaResp if (ruleState == True);
+        dmaRespQ.deq;
+        let resp = dmaRespQ.first;
+
+        if (tailPosInReadBlockReg > 0) begin
+            // skip already consumed descriptors in previous block read.
+            tailPosInReadBlockReg <= tailPosInReadBlockReg - 1;
+        end else begin
+            fifoCntrl.fillBuf(resp.data.data);
+            let newTail = tailReg + 1;
+            
+            if (resp.data.isLast) begin
+                ruleState <= False;
+                tailReg <= newTail;
+                immAssert(
+                    newTail == tailShadowReg,
+                    "shadowTail assertion @ mkRingbufH2cMetadata",
+                    $format(
+                        "newTail=%h should == shadowTail=%h, ",
+                        newTail, tailShadowReg
+                    )
+                );
             end
         end
     endrule
+
 
     interface addr = baseAddrReg;
     interface head = headReg;
     interface tail = tailReg;
     interface tailShadow = tailShadowReg;
-    interface  h2cArbitIfc = toPipeOut(dmaReqQ);
+    interface dmaClt = toGPClient(dmaReqQ, dmaRespQ);
 endmodule
 
+typedef Client#(RingbufDmaReq, RingbufDmaResp) RingbufDmaClt;
 
-
-
-interface RingbufPool;
-   
+interface RingbufPool#(numeric type h2cCount, numeric type c2hCount, numeric type element_width);
+    interface Vector#(h2cCount, H2CRingBuf#(element_width)) h2cRings;
 endinterface
 
 module mkRingbufPool(
-    Vector#(h2cCount, H2CRingBufCntrlIfc#(element_width)) h2cFifo,
-    RingbufPool ifc
+    RingbufPool#(h2cCount, c2hCount, element_width) ifc
+) provisos (
+    Add#(1, a__, h2cCount),
+    Add#(TLog#(h2cCount), 1, TLog#(TAdd#(1, h2cCount))),
+    Bits#(DATA, element_width)
 );
     
-    Vector#(h2cCount, PipeOut#(WorkComp)) qpRecvWorkCompPipeOutVec = newVector;
+    Vector#(h2cCount, RingbufDmaClt) dmaAccessCltVec = newVector;
 
-    function Bool arbiterFakeFinishFunc(WorkComp wc) = True;
-    PipeOutArbiter arbiter <- mkPipeOutArbiter(, arbiterFakeFinishFunc);
+    Vector#(h2cCount, H2CRingBuf#(element_width)) h2cFifos = newVector;
+    
 
-    Vector#(h2cCount, RingbufMetadata) h2cMetaData;
-    FIFOF#(Bool) tq <- mkFIFOF;
+    Vector#(h2cCount, RingbufH2cMetadata) h2cMetaData = newVector;
     for (Integer i=0; i< valueOf(h2cCount); i=i+1) begin
-        h2cMetaData[i] <- mkRingbufMetadata(i, True, !h2cFifo[i].notEmpty, tq);
+        h2cFifos[i] <- mkH2CRingBuf;
+        h2cMetaData[i] <- mkRingbufH2cMetadata(fromInteger(i), h2cFifos[i].cntrl);
     end
 
+
+    function Bool isRingbufDmaReqFinished(RingbufDmaReq req) = req.data.isLast;
+    function Bool isRingbufDmaRespFinished(RingbufDmaResp resp) = resp.data.isLast;
+
+    let arbitratedClient <- mkClientArbiter(
+        dmaAccessCltVec,
+        isRingbufDmaReqFinished,
+        isRingbufDmaRespFinished
+    );
+
+    interface h2cRings = h2cFifos;
 endmodule
 
-typedef 2 GGG;
+typedef 256 GGG;
+(* synthesize *)
 module mkBsvTop(Empty);
-    Vector#(GGG,H2CRingBuf#(GGG)) v1 <- replicateM(mkH2CRingBuf);
-
-    Vector#(GGG, H2CRingBufCntrlIfc#(GGG)) v2;
-    for (Integer i=0; i<valueOf(GGG); i=i+1) begin
-        v2[i] = v1[i].cntrl;
-    end
-    RingbufPool pool <- mkRingbufPool(v2);
+    RingbufPool#(2,2, USER_LOGIC_DESCRIPTOR_BIT_WIDTH) pool <- mkRingbufPool;
 endmodule
