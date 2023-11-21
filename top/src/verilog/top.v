@@ -81,9 +81,9 @@ module top #
 
 //////////////////////////////////////////////////  LITE
    //-- AXI Master Write Address Channel
-    wire [31:0] m_axil_awaddr;
+    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [31:0] m_axil_awaddr;
     wire [2:0]  m_axil_awprot;
-    wire 	m_axil_awvalid;
+    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire 	m_axil_awvalid;
     wire 	m_axil_awready;
 
     //-- AXI Master Write Data Channel
