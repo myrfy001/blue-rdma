@@ -95,8 +95,6 @@ typedef struct {
 typedef struct {
     Bool isH2c;
     RingbufNumber idx;
-    ADDR addr;
-    RingbufDMABlockAccessLen len;
     DataStream data;
 } RingbufDmaResp deriving(Bits, FShow);
 
