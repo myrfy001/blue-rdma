@@ -11,36 +11,27 @@ import ClientServer :: *;
 import GetPut :: *;
 import ConfigReg :: * ;
 import Randomizable :: *;
+import PrimUtils :: *;
 
-interface H2CRingBufFifoIfc#(numeric type element_width);
-    method Bit#(element_width) first;
-    method Action deq;
-    method Bool notFull;
+
+
+interface H2CRingBufFifoCntrlIfc#(type t_elem);
+    method Action fillBuf(t_elem elem);
     method Bool notEmpty;
 endinterface
 
-interface H2CRingBufFifoCntrlIfc#(numeric type element_width);
-    method Action fillBuf(Bit#(element_width) elem);
-    method Bool notEmpty;
+interface H2CRingBuf#(type t_elem);
+    interface PipeOut#(t_elem) pipeout;
+    interface H2CRingBufFifoCntrlIfc#(t_elem) cntrl;
 endinterface
 
-interface H2CRingBuf#(numeric type element_width);
-    interface H2CRingBufFifoIfc#(element_width) fifo;
-    interface H2CRingBufFifoCntrlIfc#(element_width) cntrl;
-endinterface
+module mkH2CRingBuf(Integer buf_depth, H2CRingBuf#(t_elem) ifc) provisos (Bits#(t_elem, sz_elem));
+    FIFOF#(t_elem) bufQ <- mkSizedFIFOF(buf_depth);
 
-module mkH2CRingBuf(Integer buf_depth, H2CRingBuf#(element_width) ifc) ;
-    FIFOF#(Bit#(element_width)) bufQ <- mkSizedFIFOF(buf_depth);
-
-    interface H2CRingBufFifoIfc fifo;
-        method Bit#(element_width) first = bufQ.first;
-        method Action deq = bufQ.deq;
-        method Bool notFull = bufQ.notFull;
-        method Bool notEmpty = bufQ.notEmpty;
-    endinterface
+    interface pipeout = toPipeOut(bufQ);
 
     interface H2CRingBufFifoCntrlIfc cntrl;
-        method Action fillBuf(Bit#(element_width) elem);
+        method Action fillBuf(t_elem elem);
             bufQ.enq(elem);
         endmethod
         method Bool notEmpty = bufQ.notEmpty;
@@ -138,10 +129,11 @@ interface RingbufH2cMetadata;
     interface RingbufDmaClt dmaClt;
 endinterface
 
-module mkRingbufH2cMetadata(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(element_width) fifoCntrl, RingbufH2cMetadata ifc)
-    provisos(Bits#(DATA, element_width));
-
-    
+module mkRingbufH2cMetadata(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem) fifoCntrl, RingbufH2cMetadata ifc)
+    provisos(
+        Bits#(t_elem, sz_elem),
+        Bits#(DATA, sz_elem)
+    );
 
     Reg#(ADDR) baseAddrReg <- mkReg(0);
     Reg#(Fix4kBRingBufPointer) headReg <- mkConfigReg(unpack(0));
@@ -219,7 +211,8 @@ module mkRingbufH2cMetadata(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(element_
             let newTail = tailReg;
             if (tailReg != tailShadowReg) begin
                 // the end of read block may contain invalid descriptors, don't handle descriptors beyond tailShadowReg
-                fifoCntrl.fillBuf(resp.data.data);
+                t_elem t = unpack(pack(resp.data.data));
+                fifoCntrl.fillBuf(t);
                 newTail = tailReg + 1;
                 tailReg <= newTail;
                 $display("tail incr...old tailReg=%h, new=%x", tailReg, newTail);
@@ -253,26 +246,27 @@ endmodule
 typedef Client#(RingbufDmaReq, RingbufDmaResp) RingbufDmaClt;
 
 
-interface RingbufPool#(numeric type h2cCount, numeric type c2hCount, numeric type element_width);
-    interface Vector#(h2cCount, H2CRingBufFifoIfc#(element_width)) h2cRings;
+interface RingbufPool#(numeric type h2cCount, numeric type c2hCount, type t_elem);
+    interface Vector#(h2cCount, PipeOut#(t_elem)) h2cRings;
     interface Vector#(h2cCount, RingbufH2cMetadata) h2cMetas;
     interface RingbufDmaClt dmaAccessClt;
 endinterface
 
 module mkRingbufPool(
-    RingbufPool#(h2cCount, c2hCount, element_width) ifc
+    RingbufPool#(h2cCount, c2hCount, t_elem) ifc
 ) provisos (
     Add#(1, anysize, h2cCount),
     Add#(TLog#(h2cCount), 1, TLog#(TAdd#(1, h2cCount))),
-    Bits#(DATA, element_width)
+    Bits#(t_elem, sz_elem),
+    Bits#(DATA, sz_elem)
 );
     
     Vector#(h2cCount, RingbufDmaClt) dmaAccessCltVec = newVector;
-    Vector#(h2cCount, H2CRingBufFifoIfc#(element_width)) h2cFifos = newVector;
+    Vector#(h2cCount, PipeOut#(t_elem)) h2cPipeouts = newVector;
     Vector#(h2cCount, RingbufH2cMetadata) h2cMetaData = newVector;
     for (Integer i=0; i< valueOf(h2cCount); i=i+1) begin
-        H2CRingBuf#(element_width) t <- mkH2CRingBuf(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK));
-        h2cFifos[i] = t.fifo;
+        H2CRingBuf#(t_elem) t <- mkH2CRingBuf(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK));
+        h2cPipeouts[i] = t.pipeout;
         h2cMetaData[i] <- mkRingbufH2cMetadata(fromInteger(i), t.cntrl);
         dmaAccessCltVec[i] = h2cMetaData[i].dmaClt;
     end
@@ -293,7 +287,7 @@ module mkRingbufPool(
         isRingbufDmaRespFinished
     );
 
-    interface h2cRings = h2cFifos;
+    interface h2cRings = h2cPipeouts;
     interface h2cMetas = h2cMetaData;
     interface dmaAccessClt = arbitratedClient;
 endmodule
@@ -301,7 +295,7 @@ endmodule
 
 (* synthesize *)
 module mkTestRingbuf(Empty) ;
-    RingbufPool#(1,1, USER_LOGIC_DESCRIPTOR_BIT_WIDTH) pool <- mkRingbufPool;
+    RingbufPool#(1,1, RingbufRawDescriptor) pool <- mkRingbufPool;
 
     Reg#(UInt#(20)) cntReg <- mkReg(1);
     Reg#(UInt#(3)) respCntReg <- mkReg(0);
