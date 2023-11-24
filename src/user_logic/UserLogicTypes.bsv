@@ -84,20 +84,26 @@ typedef Bit#(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)) RingbufReadBlockInnerOffs
 typedef TLog#(PCIE_MRRS) RINGBUF_READ_BLOCK_BYTE_WIDTH;
 
 
+typedef Bit#(16) UserLogicDmaLen;
+
 typedef struct {
-    Bool isH2c;
-    RingbufNumber idx;
     ADDR addr;
-    RingbufDMABlockAccessLen len;
-    DataStream data;
-} RingbufDmaReq deriving(Bits, FShow);
+    UserLogicDmaLen len;
+} UserLogicDmaH2cReq deriving(Bits, FShow);
 
 typedef struct {
-    Bool isH2c;
-    RingbufNumber idx;
     DataStream data;
-} RingbufDmaResp deriving(Bits, FShow);
+} UserLogicDmaH2cResp deriving(Bits, FShow);
 
+
+typedef struct {
+    ADDR addr;
+    UserLogicDmaLen len;
+    DataStream data;
+} UserLogicDmaC2hReq deriving(Bits, FShow);
+
+typedef struct {
+} UserLogicDmaC2hResp deriving(Bits, FShow);
 
 
 

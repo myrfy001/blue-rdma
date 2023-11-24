@@ -15,52 +15,6 @@ import PrimUtils :: *;
 import Utils :: *;
 
 
-interface H2CRingBufFifoCntrlIfc#(type t_elem);
-    method Action fillBuf(t_elem elem);
-    method Bool notEmpty;
-endinterface
-
-interface H2CRingBuf#(type t_elem);
-    interface PipeOut#(t_elem) pipeout;
-    interface H2CRingBufFifoCntrlIfc#(t_elem) cntrl;
-endinterface
-
-module mkH2CRingBuf(Integer buf_depth, H2CRingBuf#(t_elem) ifc) provisos (Bits#(t_elem, sz_elem));
-    FIFOF#(t_elem) bufQ <- mkSizedFIFOF(buf_depth);
-
-    interface pipeout = toPipeOut(bufQ);
-
-    interface H2CRingBufFifoCntrlIfc cntrl;
-        method Action fillBuf(t_elem elem);
-            bufQ.enq(elem);
-        endmethod
-        method Bool notEmpty = bufQ.notEmpty;
-    endinterface
-endmodule
-
-interface C2HRingBufFifoIfc#(type t_elem);
-    method Action enq(t_elem elem);
-    method Bool notFull;
-endinterface
-
-interface C2HRingBuf#(type t_elem);
-    interface C2HRingBufFifoIfc#(t_elem) fifo;
-    interface PipeOut#(t_elem) cntrl;
-endinterface
-
-module mkC2HRingBuf(Integer buf_depth, C2HRingBuf#(t_elem) ifc) provisos (Bits#(t_elem, sz_elem));
-    FIFOF#(t_elem) bufQ <- mkSizedFIFOF(buf_depth);
-
-    interface C2HRingBufFifoIfc fifo;
-        method Action enq(t_elem elem);
-             bufQ.enq(elem);
-        endmethod
-        method Bool notFull = bufQ.notFull;
-    endinterface
-
-    interface cntrl = toPipeOut(bufQ);
-endmodule
-
 function Bool isRingbufNotEmpty(Fix4kBRingBufPointer head, Fix4kBRingBufPointer tail);
     return !(head == tail);
 endfunction
@@ -127,12 +81,63 @@ endinstance
 
 typedef RingbufPointer#(USER_LOGIC_RING_BUF_DEEP_WIDTH) Fix4kBRingBufPointer;
 
+
+interface H2CRingBufFifoCntrlIfc#(type t_elem);
+    method Action fillBuf(t_elem elem);
+    method Bool notEmpty;
+endinterface
+
+interface H2CRingBuf#(type t_elem);
+    interface PipeOut#(t_elem) pipeout;
+    interface H2CRingBufFifoCntrlIfc#(t_elem) cntrl;
+endinterface
+
+module mkH2CRingBuf(Integer buf_depth, H2CRingBuf#(t_elem) ifc) provisos (Bits#(t_elem, sz_elem));
+    FIFOF#(t_elem) bufQ <- mkSizedFIFOF(buf_depth);
+
+    interface pipeout = toPipeOut(bufQ);
+
+    interface H2CRingBufFifoCntrlIfc cntrl;
+        method Action fillBuf(t_elem elem);
+            bufQ.enq(elem);
+        endmethod
+        method Bool notEmpty = bufQ.notEmpty;
+    endinterface
+endmodule
+
+interface C2HRingBufFifoIfc#(type t_elem);
+    method Action enq(t_elem elem);
+    method Bool notFull;
+endinterface
+
+interface C2HRingBuf#(type t_elem);
+    interface C2HRingBufFifoIfc#(t_elem) fifo;
+    interface PipeOut#(t_elem) cntrl;
+endinterface
+
+module mkC2HRingBuf(Integer buf_depth, C2HRingBuf#(t_elem) ifc) provisos (Bits#(t_elem, sz_elem));
+    FIFOF#(t_elem) bufQ <- mkSizedFIFOF(buf_depth);
+
+    interface C2HRingBufFifoIfc fifo;
+        method Action enq(t_elem elem);
+             bufQ.enq(elem);
+        endmethod
+        method Bool notFull = bufQ.notFull;
+    endinterface
+
+    interface cntrl = toPipeOut(bufQ);
+endmodule
+
+typedef Client#(UserLogicDmaH2cReq, UserLogicDmaH2cResp) RingbufDmaH2cClt;
+typedef Client#(UserLogicDmaC2hReq, UserLogicDmaC2hResp) RingbufDmaC2hClt;
+
+
 interface RingbufH2cMetadata;
     interface Reg#(ADDR) addr;
     interface Reg#(Fix4kBRingBufPointer) head;
     interface Reg#(Fix4kBRingBufPointer) tail;
     interface Reg#(Fix4kBRingBufPointer) tailShadow;
-    interface RingbufDmaClt dmaClt;
+    interface RingbufDmaH2cClt dmaClt;
 endinterface
 
 module mkRingbufH2cMetadata(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem) fifoCntrl, RingbufH2cMetadata ifc)
@@ -145,8 +150,8 @@ module mkRingbufH2cMetadata(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem) 
     Reg#(Fix4kBRingBufPointer) headReg <- mkConfigReg(unpack(0));
     Reg#(Fix4kBRingBufPointer) tailReg <- mkConfigReg(unpack(0));
     Reg#(Fix4kBRingBufPointer) tailShadowReg <- mkConfigReg(unpack(0));
-    FIFOF#(RingbufDmaReq) dmaReqQ <- mkFIFOF;
-    FIFOF#(RingbufDmaResp) dmaRespQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cReq) dmaReqQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cResp) dmaRespQ <- mkFIFOF;
 
     Reg#(Bool) ruleState <- mkReg(False);
     Reg#(RingbufReadBlockInnerOffset) tailPosInReadBlockReg <- mkReg(0);
@@ -179,15 +184,9 @@ module mkRingbufH2cMetadata(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem) 
                 newTailShadow = headReg;
             end
 
-            DataStream ds = unpack(0);
-            ds.isLast = True;
-            ds.isFirst = True;
-            dmaReqQ.enq(RingbufDmaReq{
-                    isH2c:True,
-                    idx: qIdx,
+            dmaReqQ.enq(UserLogicDmaH2cReq{
                     addr: curReadBlockStartAddr,
-                    len: fromInteger(valueOf(RINGBUF_BLOCK_READ_LEN)),
-                    data: ds
+                    len: fromInteger(valueOf(RINGBUF_BLOCK_READ_LEN))
             });
 
             tailPosInReadBlockReg <= truncate(pack(tailReg));
@@ -247,7 +246,7 @@ interface RingbufC2hMetadata;
     interface Reg#(Fix4kBRingBufPointer) head;
     interface Reg#(Fix4kBRingBufPointer) tail;
     interface Reg#(Fix4kBRingBufPointer) headShadow;
-    interface RingbufDmaClt dmaClt;
+    interface RingbufDmaC2hClt dmaClt;
 endinterface
 
 
@@ -262,8 +261,8 @@ module mkRingbufC2hMetadata(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, Ring
     Reg#(Fix4kBRingBufPointer) headReg <- mkConfigReg(unpack(0));
     Reg#(Fix4kBRingBufPointer) tailReg <- mkConfigReg(unpack(0));
     Reg#(Fix4kBRingBufPointer) headShadowReg <- mkConfigReg(unpack(0));
-    FIFOF#(RingbufDmaReq) dmaReqQ <- mkFIFOF;
-    FIFOF#(RingbufDmaResp) dmaRespQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hReq) dmaReqQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hResp) dmaRespQ <- mkFIFOF;
 
 
     Reg#(RingbufReadBlockInnerOffset) headPosInReadBlockReg <- mkReg(0);
@@ -281,16 +280,14 @@ module mkRingbufC2hMetadata(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, Ring
 
             ADDR curWriteStartAddr = unpack({pack(curWriteBlockStartAddrPgn), pack(curWriteBlockStartAddrOff)});
 
-            DataStream ds = unpack(0);
+            DataStream ds;
             ds.isLast = True;
             ds.isFirst = True;
             ds.byteEn = genByteEn(fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)));
             ds.data = unpack(pack(fifoCntrl.first));
             fifoCntrl.deq;
 
-            dmaReqQ.enq(RingbufDmaReq{
-                    isH2c: False,
-                    idx: qIdx,
+            dmaReqQ.enq(UserLogicDmaC2hReq{
                     addr: curWriteStartAddr,
                     len: fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
                     data: ds
@@ -318,7 +315,6 @@ module mkRingbufC2hMetadata(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, Ring
 endmodule
 
 
-typedef Client#(RingbufDmaReq, RingbufDmaResp) RingbufDmaClt;
 
 
 interface RingbufPool#(numeric type h2cCount, numeric type c2hCount, type t_elem);
@@ -326,60 +322,70 @@ interface RingbufPool#(numeric type h2cCount, numeric type c2hCount, type t_elem
     interface Vector#(h2cCount, RingbufH2cMetadata) h2cMetas;
     interface Vector#(c2hCount, C2HRingBufFifoIfc#(t_elem)) c2hRings;
     interface Vector#(c2hCount, RingbufC2hMetadata) c2hMetas;
-    interface RingbufDmaClt dmaAccessClt;
+    interface RingbufDmaH2cClt dmaAccessH2cClt;
+    interface RingbufDmaC2hClt dmaAccessC2hClt;
 endinterface
 
 module mkRingbufPool(
     RingbufPool#(h2cCount, c2hCount, t_elem) ifc
 ) provisos (
-    NumAlias#(TAdd#(h2cCount, c2hCount), totalRingCnt),
-    Add#(1, anysize, totalRingCnt),
-    Add#(TLog#(totalRingCnt), 1, TLog#(TAdd#(1, totalRingCnt))),
+    Add#(1, anysize1, h2cCount),
+    Add#(TLog#(h2cCount), 1, TLog#(TAdd#(1, h2cCount))),
+    Add#(1, anysize2, c2hCount),
+    Add#(TLog#(c2hCount), 1, TLog#(TAdd#(1, c2hCount))),
     Bits#(t_elem, sz_elem),
     Bits#(DATA, sz_elem)
 );
     
-    Vector#(totalRingCnt, RingbufDmaClt) dmaAccessCltVec = newVector;
-
+    Vector#(h2cCount, RingbufDmaH2cClt) dmaAccessH2cCltVec = newVector;
     Vector#(h2cCount, PipeOut#(t_elem)) h2cPipeouts = newVector;
     Vector#(h2cCount, RingbufH2cMetadata) h2cMetaData = newVector;
     for (Integer i=0; i< valueOf(h2cCount); i=i+1) begin
         H2CRingBuf#(t_elem) t <- mkH2CRingBuf(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK));
         h2cPipeouts[i] = t.pipeout;
         h2cMetaData[i] <- mkRingbufH2cMetadata(fromInteger(i), t.cntrl);
-        dmaAccessCltVec[i] = h2cMetaData[i].dmaClt;
+        dmaAccessH2cCltVec[i] = h2cMetaData[i].dmaClt;
     end
 
+    Vector#(c2hCount, RingbufDmaC2hClt) dmaAccessC2hCltVec = newVector;
     Vector#(c2hCount, C2HRingBufFifoIfc#(t_elem)) c2hFifos = newVector;
     Vector#(c2hCount, RingbufC2hMetadata) c2hMetaData = newVector;
-    for (Integer i=0; i< valueOf(h2cCount); i=i+1) begin
+    for (Integer i=0; i< valueOf(c2hCount); i=i+1) begin
         C2HRingBuf#(t_elem) t <- mkC2HRingBuf(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK));
         c2hFifos[i] = t.fifo;
         c2hMetaData[i] <- mkRingbufC2hMetadata(fromInteger(i), t.cntrl);
-        dmaAccessCltVec[i+valueOf(h2cCount)] = c2hMetaData[i].dmaClt;
+        dmaAccessC2hCltVec[i] = c2hMetaData[i].dmaClt;
     end
 
 
-    function Bool isRingbufDmaReqFinished(RingbufDmaReq req);
-        return req.data.isLast;
+
+    function Bool alwaysTrue(anytype resp);
+        return True;
     endfunction
 
-    function Bool isRingbufDmaRespFinished(RingbufDmaResp resp);
+    function Bool isRingbufDmaRespFinished(UserLogicDmaH2cResp resp);
         return resp.data.isLast;
     endfunction
     
 
-    let arbitratedClient <- mkClientArbiter(
-        dmaAccessCltVec,
-        isRingbufDmaReqFinished,
+    let arbitratedH2cClient <- mkClientArbiter(
+        dmaAccessH2cCltVec,
+        alwaysTrue,
         isRingbufDmaRespFinished
+    );
+
+    let arbitratedC2hClient <- mkClientArbiter(
+        dmaAccessC2hCltVec,
+        alwaysTrue,
+        alwaysTrue
     );
 
     interface h2cRings = h2cPipeouts;
     interface h2cMetas = h2cMetaData;
     interface c2hRings = c2hFifos;
     interface c2hMetas = c2hMetaData;
-    interface dmaAccessClt = arbitratedClient;
+    interface dmaAccessH2cClt = arbitratedH2cClient;
+    interface dmaAccessC2hClt = arbitratedC2hClient;
 endmodule
 
 
@@ -390,8 +396,8 @@ module mkTestRingbuf(Empty) ;
 
     Reg#(UInt#(20)) cntReg <- mkReg(1);
     Reg#(UInt#(3)) respCntReg <- mkReg(0);
-    FIFOF#(RingbufDmaReq) pipelineH2CFifo<- mkFIFOF;
-    FIFOF#(RingbufDmaReq) pipelineC2HFifo<- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cReq) pipelineH2CFifo<- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hReq) pipelineC2HFifo<- mkFIFOF;
     Reg#(UInt#(7)) expectH2cRecvReg <- mkReg(0); 
     Reg#(UInt#(7)) expectC2hRecvReg <- mkReg(0); 
     Randomize#(Bit#(10)) randomGen <- mkGenericRandomizer;
@@ -411,25 +417,25 @@ module mkTestRingbuf(Empty) ;
         cntReg <= cntReg + 1;
     endrule
 
-    // rule ruleSofrwareModifyH2cHead;
-    //     if (isRingbufNotFull(pool.h2cMetas[0].head, pool.h2cMetas[0].tail)) begin
-    //         let random <- randomGen.next;
+    rule ruleSofrwareModifyH2cHead;
+        if (isRingbufNotFull(pool.h2cMetas[0].head, pool.h2cMetas[0].tail)) begin
+            let random <- randomGen.next;
             
-    //         // make a two stage random, first one the qeueu is almost empty, second one the queue is almost full
-    //         if (
-    //             (softwareMoveHeadCntReg < 20000 && random < 50) || 
-    //             (softwareMoveHeadCntReg >= 20000 && random > 500)
-    //         ) begin
-    //             softwareMoveHeadCntReg <= softwareMoveHeadCntReg + 1;
-    //             pool.h2cMetas[0].head <= pool.h2cMetas[0].head + 1;
-    //         end
+            // make a two stage random, first one the qeueu is almost empty, second one the queue is almost full
+            if (
+                (softwareMoveHeadCntReg < 20000 && random < 50) || 
+                (softwareMoveHeadCntReg >= 20000 && random > 500)
+            ) begin
+                softwareMoveHeadCntReg <= softwareMoveHeadCntReg + 1;
+                pool.h2cMetas[0].head <= pool.h2cMetas[0].head + 1;
+            end
 
-    //         if (softwareMoveHeadCntReg > 40000) begin
-    //             $display("Passed");
-    //             $finish();
-    //         end
-    //     end
-    // endrule 
+            if (softwareMoveHeadCntReg > 40000) begin
+                $display("Passed");
+                $finish();
+            end
+        end
+    endrule 
 
     rule ruleFakeUserLogicWriteC2hHead;
         let random <- randomGen.next; 
@@ -445,40 +451,40 @@ module mkTestRingbuf(Empty) ;
         end
     endrule
 
-    rule ruleGetToFifoRelay;
-        let req <- pool.dmaAccessClt.request.get;
-        if (req.isH2c) begin
-            pipelineH2CFifo.enq(req);
-        end 
-        else begin
-            pipelineC2HFifo.enq(req);
-        end 
+    rule ruleGetToFifoRelayH2c;
+        let req <- pool.dmaAccessH2cClt.request.get;
+        pipelineH2CFifo.enq(req);
     endrule
 
-    // rule ruleFakeDmaEngineGeneratingH2CResponse;
+    rule ruleGetToFifoRelayC2h;
+        let req <- pool.dmaAccessC2hClt.request.get;
+        pipelineC2HFifo.enq(req);
+    endrule
 
-    //     if (dmaDelaySimulateReg > 0) begin
-    //         dmaDelaySimulateReg <= dmaDelaySimulateReg -1;
-    //     end
-    //     if (pipelineH2CFifo.notEmpty && dmaDelaySimulateReg == 0) begin
-    //         if ((respCntReg & 'h7) == 7) begin
-    //         pipelineH2CFifo.deq;
-    //             let random <- randomGen.next;
-    //             dmaDelaySimulateReg <= unpack(zeroExtend(random & 'h1F));
-    //         end
+    rule ruleFakeDmaEngineGeneratingH2CResponse;
 
-    //         UInt#(32) reqAddr = unpack(truncate(pipelineH2CFifo.first.addr));
+        if (dmaDelaySimulateReg > 0) begin
+            dmaDelaySimulateReg <= dmaDelaySimulateReg -1;
+        end
+        if (pipelineH2CFifo.notEmpty && dmaDelaySimulateReg == 0) begin
+            if ((respCntReg & 'h7) == 7) begin
+            pipelineH2CFifo.deq;
+                let random <- randomGen.next;
+                dmaDelaySimulateReg <= unpack(zeroExtend(random & 'h1F));
+            end
 
-    //         RingbufDmaResp resp = unpack(0);
-    //         respCntReg <= respCntReg + 1;
+            UInt#(32) reqAddr = unpack(truncate(pipelineH2CFifo.first.addr));
+
+            UserLogicDmaH2cResp resp = unpack(0);
+            respCntReg <= respCntReg + 1;
             
-    //         resp.data.isFirst = (respCntReg & 'h7) == 0;
-    //         resp.data.isLast = (respCntReg & 'h7) == 7;
-    //         resp.data.data = extend(pack(reqAddr) + extend(pack(respCntReg)) * 32);
+            resp.data.isFirst = (respCntReg & 'h7) == 0;
+            resp.data.isLast = (respCntReg & 'h7) == 7;
+            resp.data.data = extend(pack(reqAddr) + extend(pack(respCntReg)) * 32);
 
-    //         pool.dmaAccessClt.response.put(resp);
-    //     end
-    // endrule
+            pool.dmaAccessH2cClt.response.put(resp);
+        end
+    endrule
 
     rule ruleFakeDmaEngineGeneratingC2HResponse;
         if (pipelineC2HFifo.notEmpty) begin
@@ -496,30 +502,28 @@ module mkTestRingbuf(Empty) ;
             );
 
             pipelineC2HFifo.deq;
-            RingbufDmaResp resp = unpack(0);
-            resp.data.isFirst = True;
-            resp.data.isLast = True;
-            pool.dmaAccessClt.response.put(resp);
+            UserLogicDmaC2hResp resp = unpack(0);
+            pool.dmaAccessC2hClt.response.put(resp);
         end
     endrule
 
-    // rule fakeUserLogicReadFifo;
-    //     let descriptor = pool.h2cRings[0].first;
-    //     pool.h2cRings[0].deq;
+    rule fakeUserLogicReadFifo;
+        let descriptor = pool.h2cRings[0].first;
+        pool.h2cRings[0].deq;
 
-    //     Bit#(32) descNumber = truncate(descriptor);
-    //     Bit#(32) expectNumber = extend(pack(expectH2cRecvReg)) * 32;
-    //     $display(fshow(descriptor), expectH2cRecvReg, descNumber);
-    //     immAssert(
-    //         expectNumber == descNumber,
-    //         "h2c descriptor read error @ mkTestRingbuf",
-    //         $format(
-    //             "expectRecv=%h should == received=%h, ",
-    //             expectNumber, descNumber
-    //         )
-    //     );
-    //     expectH2cRecvReg <= expectH2cRecvReg + 1;
-    // endrule
+        Bit#(32) descNumber = truncate(descriptor);
+        Bit#(32) expectNumber = extend(pack(expectH2cRecvReg)) * 32;
+        $display(fshow(descriptor), expectH2cRecvReg, descNumber);
+        immAssert(
+            expectNumber == descNumber,
+            "h2c descriptor read error @ mkTestRingbuf",
+            $format(
+                "expectRecv=%h should == received=%h, ",
+                expectNumber, descNumber
+            )
+        );
+        expectH2cRecvReg <= expectH2cRecvReg + 1;
+    endrule
 
     rule fakeSoftwareMoveC2hTail;
         let random <- randomGen.next;
