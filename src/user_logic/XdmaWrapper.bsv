@@ -1,12 +1,15 @@
 import FIFOF :: *;
 import ClientServer :: * ;
+import GetPut :: *;
 
 import UserLogicSettings :: *;
+import UserLogicTypes :: *;
 
 import DataTypes :: *;
 import SemiFifo :: *;
 import BusConversion :: *;
 import AxiStreamTypes :: *;
+import Headers :: *;
 
 
 typedef Bit#(64) XdmaDescBypAddr;
@@ -49,8 +52,8 @@ interface XdmaChannel#(numeric type dataSz, numeric type userSz);
 endinterface
 
 interface XdmaWrapper#(numeric type dataSz, numeric type userSz);
-    interface DmaReadSrv dmaReadSrv;
-    interface DmaWriteSrv dmaWriteSrv;
+    interface UserLogicDmaReadSrv dmaReadSrv;
+    interface UserLogicDmaWriteSrv dmaWriteSrv;
     interface XdmaChannel#(dataSz, userSz) xdmaChannel;
 endinterface
 
@@ -62,20 +65,20 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
     FIFOF#(AxiStream#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)) xdmaC2hStFifo <- mkFIFOF();
     let rawC2hSt <- mkPipeOutToRawAxiStreamMaster(convertFifoToPipeOut(xdmaC2hStFifo));
 
-    let dmaReadReqQ <- mkFIFOF;
-    let dmaReadRespQ <- mkFIFOF;
-    FIFOF#(DmaWriteReq) dmaWriteReqQ <- mkFIFOF;
-    let dmaWriteRespQ <- mkFIFOF;
+    let dmaReadReqQ     <- mkFIFOF;
+    let dmaReadRespQ    <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hReq) dmaWriteReqQ <- mkFIFOF;
+    let dmaWriteRespQ   <- mkFIFOF;
 
-    FIFOF#(DmaReadReq) readReqProcessingQ <- mkFIFOF;
-    FIFOF#(DmaWriteReq) writeReqProcessingQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cReq) readReqProcessingQ   <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hReq) writeReqProcessingQ <- mkFIFOF;
 
     Wire#(Bool) h2cDescBypRdyWire <- mkBypassWire;
     Reg#(Bool) h2cNextBeatIsFirst <- mkReg(True);
 
-    Wire#(Bool) c2hDescBypRdyWire <- mkBypassWire;
-    Reg#(Bool) c2hNextBeatIsFirst <- mkReg(True);
-    Wire#(Bool) c2hDescBypDoneWire <- mkBypassWire;
+    Wire#(Bool) c2hDescBypRdyWire   <- mkBypassWire;
+    Reg#(Bool) c2hNextBeatIsFirst   <- mkReg(True);
+    Wire#(Bool) c2hDescBypDoneWire  <- mkBypassWire;
     
     Bool h2cDescHandshakeWillSuccess = h2cDescBypRdyWire && dmaReadReqQ.notEmpty;
 
@@ -90,11 +93,7 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
         let newData = xdmaH2cStFifo.first;
         let currentProcessingReq = readReqProcessingQ.first;
         xdmaH2cStFifo.deq;
-        dmaReadRespQ.enq(DmaReadResp{
-            initiator: currentProcessingReq.initiator,
-            sqpn: currentProcessingReq.sqpn,
-            wrID: currentProcessingReq.wrID,
-            isRespErr: False,
+        dmaReadRespQ.enq(UserLogicDmaH2cResp{
             dataStream: DataStream{
                 data: unpack(pack(newData.tData)),
                 byteEn: newData.tKeep,
@@ -167,7 +166,7 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
             endmethod
 
             method XdmaDescBypAddr  srcAddr;
-                return h2cDescHandshakeWillSuccess ? dmaReadReqQ.first.startAddr : ?;
+                return h2cDescHandshakeWillSuccess ? dmaReadReqQ.first.addr : ?;
             endmethod
 
             method XdmaDescBypAddr  dstAddr;
@@ -206,11 +205,11 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
             endmethod
 
             method XdmaDescBypAddr  dstAddr;
-                return c2hDescHandshakeWillSuccess ? dmaWriteReqQ.first.metaData.startAddr : ?;
+                return c2hDescHandshakeWillSuccess ? dmaWriteReqQ.first.addr : ?;
             endmethod
 
             method XdmaDescBypLength  len;
-                return c2hDescHandshakeWillSuccess ? extend(dmaWriteReqQ.first.metaData.len) : ?;
+                return c2hDescHandshakeWillSuccess ? extend(dmaWriteReqQ.first.len) : ?;
             endmethod
 
             method XdmaDescBypCtl  ctl;
@@ -230,122 +229,160 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
                     // $error("This rule should not be fired when dmaWriteRespQ is full\n");
                 end else begin
                     writeReqProcessingQ.deq;
-                    dmaWriteRespQ.enq(DmaWriteResp{
-                        initiator: writeReqProcessingQ.first.metaData.initiator,
-                        sqpn: writeReqProcessingQ.first.metaData.sqpn,
-                        psn: writeReqProcessingQ.first.metaData.psn,
-                        isRespErr: False
-                    }); 
+                    dmaWriteRespQ.enq(UserLogicDmaC2hResp{}); 
                 end
-
-                
             endmethod
         endinterface
 
     endinterface
 endmodule
 
-interface DmaRouter;
-    // interface to connect to XDMA wrapper
-    interface DmaReadClt xdmaReadClt;
-    interface DmaWriteClt xdmaWriteClt;
 
-    // interface to connect DMA users
-    interface DmaReadSrv dmaDataPathReadSrv;
-    interface DmaWriteSrv dmaDataPathWriteSrv;
-    interface DmaReadSrv dmaCtrlPathReadSrv;
-    interface DmaWriteSrv dmaCtrlPathWriteSrv;
+
+interface StreamReqProxy#(type t_in_req, type t_in_resp, type t_out_req, type t_out_resp);
+    interface Server#(t_in_req, t_in_resp) inSrv;
+    interface Client#(t_out_req, t_out_resp) outClt;
 endinterface
 
-module mkDmaRouter(DmaRouter);
-    FIFOF#(DmaReadReq) xdmaReadReqQ <- mkFIFOF;
-    FIFOF#(DmaReadResp) xdmaReadRespQ <- mkFIFOF;
-    FIFOF#(DmaWriteReq) xdmaWriteReqQ <- mkFIFOF;
-    FIFOF#(DmaWriteResp) xdmaWriteRespQ <- mkFIFOF;
+module mkStreamReqProxy(
+        function Tuple2#(t_out_req, Maybe#(t_custom)) reqTransFn(t_in_req req),
+        function Tuple2#(t_in_resp, Bool) respTransFn(t_out_resp resp, t_custom customData),
+        StreamReqProxy#(t_in_req, t_in_resp, t_out_req, t_out_resp) ifc
+    ) provisos (
+        Bits#(t_in_req, sz_in_req),
+        Bits#(t_in_resp, sz_in_resp),
+        Bits#(t_out_req, sz_out_req),
+        Bits#(t_out_resp, sz_out_resp),
+        Bits#(t_custom, sz_custom)
+    );
 
-    FIFOF#(DmaReadReq) ctrlPathReadReqQ <- mkFIFOF;
-    FIFOF#(DmaReadResp) ctrlPathReadRespQ <- mkFIFOF;
-    FIFOF#(DmaWriteReq) ctrlPathWriteReqQ <- mkFIFOF;
-    FIFOF#(DmaWriteResp) ctrlPathWriteRespQ <- mkFIFOF;
+    FIFOF#(t_in_req) inReqQ <- mkFIFOF;
+    FIFOF#(t_in_resp) inRespQ <- mkFIFOF;
+    FIFOF#(t_out_req) outReqQ <- mkFIFOF;
+    FIFOF#(t_out_resp) outRespQ <- mkFIFOF;
+    FIFOF#(t_custom) customDataQ <- mkFIFOF;
 
-    FIFOF#(DmaReadReq) dataPathReadReqQ <- mkFIFOF;
-    FIFOF#(DmaReadResp) dataPathReadRespQ <- mkFIFOF;
-    FIFOF#(DmaWriteReq) dataPathWriteReqQ <- mkFIFOF;
-    FIFOF#(DmaWriteResp) dataPathWriteRespQ <- mkFIFOF;
-
-    Reg#(Bool) roundRobinFlag <- mkRegU;
-
-    rule forwardToDmaController;
-        roundRobinFlag <= !roundRobinFlag;
-
-        if (roundRobinFlag) begin
-            // Read Channel
-            if (ctrlPathReadReqQ.notEmpty) begin
-                xdmaReadReqQ.enq(ctrlPathReadReqQ.first);
-                ctrlPathReadReqQ.deq;
-            end else if (dataPathReadReqQ.notEmpty) begin
-                xdmaReadReqQ.enq(dataPathReadReqQ.first);
-                dataPathReadReqQ.deq;
-            end
-            // Write Channel
-            if (ctrlPathWriteReqQ.notEmpty) begin
-                xdmaWriteReqQ.enq(ctrlPathWriteReqQ.first);
-                ctrlPathWriteReqQ.deq;
-            end else if (dataPathWriteReqQ.notEmpty) begin
-                xdmaWriteReqQ.enq(dataPathWriteReqQ.first);
-                dataPathWriteReqQ.deq;
-            end
-        end else begin
-            // Read Channel
-            if (dataPathReadReqQ.notEmpty) begin
-                xdmaReadReqQ.enq(dataPathReadReqQ.first);
-                dataPathReadReqQ.deq;
-            end else if (ctrlPathReadReqQ.notEmpty) begin
-                xdmaReadReqQ.enq(ctrlPathReadReqQ.first);
-                ctrlPathReadReqQ.deq;
-            end
-            // Write Channel
-            if (dataPathWriteReqQ.notEmpty) begin
-                xdmaWriteReqQ.enq(dataPathWriteReqQ.first);
-                dataPathWriteReqQ.deq;
-            end else if (ctrlPathWriteReqQ.notEmpty) begin
-                xdmaWriteReqQ.enq(ctrlPathWriteReqQ.first);
-                ctrlPathWriteReqQ.deq;
-            end
+    rule forwardReq;
+        inReqQ.deq;
+        let inReq = inReqQ.first;
+        let {outReq, customData} = reqTransFn(inReq);
+        if (customData matches tagged Valid .cdata) begin
+            customDataQ.enq(cdata);
         end
+        outReqQ.enq(outReq);
     endrule
 
-    rule forwardToDmaClients;
-        // Read Channel
-        if (xdmaReadRespQ.notEmpty) begin
-            xdmaReadRespQ.deq;
-            if (xdmaReadRespQ.first.initiator == DMA_SRC_CONTROL_PATH_LOGIC) begin
-                ctrlPathReadRespQ.enq(xdmaReadRespQ.first);
-            end else begin
-                dataPathReadRespQ.enq(xdmaReadRespQ.first);
-            end
+    rule forwardResp;
+        outRespQ.deq;
+        let outResp = outRespQ.first;
+        let customData = customDataQ.first;
+        let {inResp, dropCustomData} = respTransFn(outResp, customData);
+        if (dropCustomData) begin
+            customDataQ.deq;
         end
-
-        // write Channel
-        if (xdmaWriteRespQ.notEmpty) begin
-            xdmaWriteRespQ.deq;
-            if (xdmaWriteRespQ.first.initiator == DMA_SRC_CONTROL_PATH_LOGIC) begin
-                ctrlPathWriteRespQ.enq(xdmaWriteRespQ.first);
-            end else begin
-                dataPathWriteRespQ.enq(xdmaWriteRespQ.first);
-            end
-        end
+        inRespQ.enq(inResp);
     endrule
 
+    interface inSrv = toGPServer(inReqQ, inRespQ);
+    interface outClt = toGPClient(outReqQ, outRespQ);
 
-    interface DmaReadClt xdmaReadClt = toGPClient(xdmaReadReqQ, xdmaReadRespQ);
-    interface DmaWriteClt xdmaWriteClt = toGPClient(xdmaWriteReqQ, xdmaWriteRespQ);
+endmodule
 
-    
-    interface DmaReadSrv dmaDataPathReadSrv = toGPServer(dataPathReadReqQ, dataPathReadRespQ);
-    interface DmaWriteSrv dmaDataPathWriteSrv = toGPServer(dataPathWriteReqQ, dataPathWriteRespQ);
-    interface DmaReadSrv dmaCtrlPathReadSrv = toGPServer(ctrlPathReadReqQ, ctrlPathReadRespQ);
-    interface DmaWriteSrv dmaCtrlPathWriteSrv = toGPServer(ctrlPathWriteReqQ, ctrlPathWriteRespQ);
 
+
+
+
+
+
+interface BluerdmaDmaProxy;
+    interface Server#(DmaReadReq, DmaReadResp) blueSideReadSrv;
+    interface Server#(DmaWriteReq, DmaWriteResp) blueSideWriteSrv;
+    interface UserLogicDmaReadClt userlogicSideReadClt;
+    interface UserLogicDmaWriteClt userlogicSideWriteClt;
+endinterface
+
+typedef struct {
+    DmaReqSrcType initiator;
+    QPN sqpn;
+    WorkReqID wrID;
+} UserLogicBluerdmaDmaProxyCustomDataH2c deriving(Bits);
+
+typedef struct {
+    DmaReqSrcType initiator;
+    QPN sqpn;
+    PSN psn;
+} UserLogicBluerdmaDmaProxyCustomDataC2h deriving(Bits);
+
+module mkBluerdmaDmaProxy(BluerdmaDmaProxy);
+    function Tuple2#(UserLogicDmaH2cReq, Maybe#(UserLogicBluerdmaDmaProxyCustomDataH2c)) reqTransFnH2c(DmaReadReq req);
+        return tuple2(
+            UserLogicDmaH2cReq{
+                addr: req.startAddr,
+                len: zeroExtend(pack(req.len))
+            },
+            tagged Valid UserLogicBluerdmaDmaProxyCustomDataH2c {
+                initiator: req.initiator,
+                sqpn: req.sqpn,
+                wrID: req.wrID
+            }
+        );
+    endfunction
+
+    function Tuple2#(DmaReadResp, Bool) respTransFnH2c(UserLogicDmaH2cResp resp, UserLogicBluerdmaDmaProxyCustomDataH2c customData);
+        return tuple2(
+            DmaReadResp{
+                initiator: customData.initiator,
+                sqpn: customData.sqpn,
+                wrID: customData.wrID,
+                isRespErr: False,
+                dataStream: resp.dataStream
+            },
+            resp.dataStream.isLast
+        );
+    endfunction 
+
+
+    function Tuple2#(UserLogicDmaC2hReq, Maybe#(UserLogicBluerdmaDmaProxyCustomDataC2h)) reqTransFnC2h(DmaWriteReq req);
+        
+        return tuple2(
+            UserLogicDmaC2hReq{
+                addr: req.metaData.startAddr,
+                len: zeroExtend(pack(req.metaData.len)),
+                dataStream: req.dataStream
+            },
+            req.dataStream.isFirst ? 
+                (tagged Valid UserLogicBluerdmaDmaProxyCustomDataC2h {
+                initiator: req.metaData.initiator,
+                sqpn: req.metaData.sqpn,
+                psn: req.metaData.psn
+                }) : tagged Invalid
+        );
+    endfunction
+
+    function Tuple2#(DmaWriteResp, Bool) respTransFnC2h(UserLogicDmaC2hResp resp, UserLogicBluerdmaDmaProxyCustomDataC2h customData);
+        return tuple2(
+            DmaWriteResp{
+                initiator: customData.initiator,
+                sqpn: customData.sqpn,
+                psn: customData.psn,
+                isRespErr: False
+            },
+            True
+        );
+    endfunction 
+
+    StreamReqProxy#(
+        DmaReadReq, DmaReadResp, UserLogicDmaH2cReq, UserLogicDmaH2cResp
+    ) h2cProxy <- mkStreamReqProxy(reqTransFnH2c, respTransFnH2c);
+
+    StreamReqProxy#(
+        DmaWriteReq, DmaWriteResp, UserLogicDmaC2hReq, UserLogicDmaC2hResp
+    ) c2hProxy <- mkStreamReqProxy(reqTransFnC2h, respTransFnC2h);
+
+
+    interface blueSideReadSrv = h2cProxy.inSrv;
+    interface blueSideWriteSrv = c2hProxy.inSrv;
+    interface userlogicSideReadClt = h2cProxy.outClt;
+    interface userlogicSideWriteClt = c2hProxy.outClt;
 
 endmodule

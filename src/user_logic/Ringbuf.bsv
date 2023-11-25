@@ -128,8 +128,8 @@ module mkC2HRingBuf(Integer buf_depth, C2HRingBuf#(t_elem) ifc) provisos (Bits#(
     interface cntrl = toPipeOut(bufQ);
 endmodule
 
-typedef Client#(UserLogicDmaH2cReq, UserLogicDmaH2cResp) RingbufDmaH2cClt;
-typedef Client#(UserLogicDmaC2hReq, UserLogicDmaC2hResp) RingbufDmaC2hClt;
+typedef UserLogicDmaReadClt RingbufDmaH2cClt;
+typedef UserLogicDmaWriteClt RingbufDmaC2hClt;
 
 
 interface RingbufH2cMetadata;
@@ -137,10 +137,14 @@ interface RingbufH2cMetadata;
     interface Reg#(Fix4kBRingBufPointer) head;
     interface Reg#(Fix4kBRingBufPointer) tail;
     interface Reg#(Fix4kBRingBufPointer) tailShadow;
+endinterface
+
+interface RingbufH2cController;
+    interface RingbufH2cMetadata metadata;
     interface RingbufDmaH2cClt dmaClt;
 endinterface
 
-module mkRingbufH2cMetadata(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem) fifoCntrl, RingbufH2cMetadata ifc)
+module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem) fifoCntrl, RingbufH2cController ifc)
     provisos(
         Bits#(t_elem, sz_elem),
         Bits#(DATA, sz_elem)
@@ -208,7 +212,7 @@ module mkRingbufH2cMetadata(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem) 
             let newTail = tailReg;
             if (tailReg != tailShadowReg) begin
                 // the end of read block may contain invalid descriptors, don't handle descriptors beyond tailShadowReg
-                t_elem t = unpack(pack(resp.data.data));
+                t_elem t = unpack(pack(resp.dataStream.data));
                 fifoCntrl.fillBuf(t);
                 newTail = tailReg + 1;
                 tailReg <= newTail;
@@ -217,7 +221,7 @@ module mkRingbufH2cMetadata(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem) 
                 // $display("skip invalid...tailReg=%h", tailReg);
             end
 
-            if (resp.data.isLast) begin
+            if (resp.dataStream.isLast) begin
                 ruleState <= False;
                 immAssert(
                     newTail == tailShadowReg,
@@ -231,11 +235,12 @@ module mkRingbufH2cMetadata(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem) 
         end
     endrule
 
-
-    interface addr = baseAddrReg;
-    interface head = headReg;
-    interface tail = tailReg;
-    interface tailShadow = tailShadowReg;
+    interface RingbufH2cMetadata metadata;
+        interface addr = baseAddrReg;
+        interface head = headReg;
+        interface tail = tailReg;
+        interface tailShadow = tailShadowReg;
+    endinterface
     interface dmaClt = toGPClient(dmaReqQ, dmaRespQ);
 endmodule
 
@@ -246,12 +251,16 @@ interface RingbufC2hMetadata;
     interface Reg#(Fix4kBRingBufPointer) head;
     interface Reg#(Fix4kBRingBufPointer) tail;
     interface Reg#(Fix4kBRingBufPointer) headShadow;
+endinterface
+
+interface RingbufC2hController;
+    interface RingbufC2hMetadata metadata;
     interface RingbufDmaC2hClt dmaClt;
 endinterface
 
 
 // TODO: For C2H, doesn't support batch descriptor writeback now. 
-module mkRingbufC2hMetadata(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, RingbufC2hMetadata ifc)
+module mkRingbufC2hController(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, RingbufC2hController ifc)
     provisos(
         Bits#(t_elem, sz_elem),
         Bits#(DATA, sz_elem)
@@ -290,7 +299,7 @@ module mkRingbufC2hMetadata(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, Ring
             dmaReqQ.enq(UserLogicDmaC2hReq{
                     addr: curWriteStartAddr,
                     len: fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
-                    data: ds
+                    dataStream: ds
             });
 
             headShadowReg <= headShadowReg + 1;
@@ -300,17 +309,18 @@ module mkRingbufC2hMetadata(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, Ring
     rule recvDmaResp;
         dmaRespQ.deq;
         let resp = dmaRespQ.first;
-        $display("recvDmaResp @ Q=%d -- head = %x, tail = %x, head_shadow = %x", qIdx, headReg, tailReg, headShadowReg);
+        // $display("recvDmaResp @ Q=%d -- head = %x, tail = %x, head_shadow = %x", qIdx, headReg, tailReg, headShadowReg);
         let newHead = headReg + 1;
         headReg <= newHead;
-        $display("head incr...old tailReg=%h, new=%x", headReg, newHead);
+        // $display("head incr...old tailReg=%h, new=%x", headReg, newHead);
     endrule
 
-
-    interface addr = baseAddrReg;
-    interface head = headReg;
-    interface tail = tailReg;
-    interface headShadow = headShadowReg;
+    interface RingbufC2hMetadata metadata;
+        interface addr = baseAddrReg;
+        interface head = headReg;
+        interface tail = tailReg;
+        interface headShadow = headShadowReg;
+    endinterface
     interface dmaClt = toGPClient(dmaReqQ, dmaRespQ);
 endmodule
 
@@ -343,18 +353,20 @@ module mkRingbufPool(
     for (Integer i=0; i< valueOf(h2cCount); i=i+1) begin
         H2CRingBuf#(t_elem) t <- mkH2CRingBuf(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK));
         h2cPipeouts[i] = t.pipeout;
-        h2cMetaData[i] <- mkRingbufH2cMetadata(fromInteger(i), t.cntrl);
-        dmaAccessH2cCltVec[i] = h2cMetaData[i].dmaClt;
+        RingbufH2cController controller <- mkRingbufH2cController(fromInteger(i), t.cntrl);
+        h2cMetaData[i] = controller.metadata;
+        dmaAccessH2cCltVec[i] = controller.dmaClt;
     end
-
+ 
     Vector#(c2hCount, RingbufDmaC2hClt) dmaAccessC2hCltVec = newVector;
     Vector#(c2hCount, C2HRingBufFifoIfc#(t_elem)) c2hFifos = newVector;
     Vector#(c2hCount, RingbufC2hMetadata) c2hMetaData = newVector;
     for (Integer i=0; i< valueOf(c2hCount); i=i+1) begin
         C2HRingBuf#(t_elem) t <- mkC2HRingBuf(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK));
         c2hFifos[i] = t.fifo;
-        c2hMetaData[i] <- mkRingbufC2hMetadata(fromInteger(i), t.cntrl);
-        dmaAccessC2hCltVec[i] = c2hMetaData[i].dmaClt;
+        RingbufC2hController controller <- mkRingbufC2hController(fromInteger(i), t.cntrl);
+        c2hMetaData[i] = controller.metadata;
+        dmaAccessC2hCltVec[i] = controller.dmaClt;
     end
 
 
@@ -364,7 +376,7 @@ module mkRingbufPool(
     endfunction
 
     function Bool isRingbufDmaRespFinished(UserLogicDmaH2cResp resp);
-        return resp.data.isLast;
+        return resp.dataStream.isLast;
     endfunction
     
 
@@ -389,8 +401,6 @@ module mkRingbufPool(
 endmodule
 
 
-
-(* synthesize *)
 module mkTestRingbuf(Empty) ;
     RingbufPool#(1,1, RingbufRawDescriptor) pool <- mkRingbufPool;
 
@@ -400,7 +410,10 @@ module mkTestRingbuf(Empty) ;
     FIFOF#(UserLogicDmaC2hReq) pipelineC2HFifo<- mkFIFOF;
     Reg#(UInt#(7)) expectH2cRecvReg <- mkReg(0); 
     Reg#(UInt#(7)) expectC2hRecvReg <- mkReg(0); 
-    Randomize#(Bit#(10)) randomGen <- mkGenericRandomizer;
+    Randomize#(Bit#(10)) randomGen1 <- mkGenericRandomizer;
+    Randomize#(Bit#(10)) randomGen2 <- mkGenericRandomizer;
+    Randomize#(Bit#(10)) randomGen3 <- mkGenericRandomizer;
+    Randomize#(Bit#(10)) randomGen4 <- mkGenericRandomizer;
 
     Reg#(UInt#(32)) softwareMoveHeadCntReg <- mkReg(0);
     Reg#(UInt#(32)) hardwareMoveHeadCntReg <- mkReg(0);
@@ -409,7 +422,10 @@ module mkTestRingbuf(Empty) ;
     Reg#(Bool) initializedReg <- mkReg(False);
 
     rule init if (!initializedReg);
-        randomGen.cntrl.init;
+        randomGen1.cntrl.init;
+        randomGen2.cntrl.init;
+        randomGen3.cntrl.init;
+        randomGen4.cntrl.init;
         initializedReg <= True;
     endrule
 
@@ -419,7 +435,7 @@ module mkTestRingbuf(Empty) ;
 
     rule ruleSofrwareModifyH2cHead;
         if (isRingbufNotFull(pool.h2cMetas[0].head, pool.h2cMetas[0].tail)) begin
-            let random <- randomGen.next;
+            let random <- randomGen1.next;
             
             // make a two stage random, first one the qeueu is almost empty, second one the queue is almost full
             if (
@@ -438,14 +454,13 @@ module mkTestRingbuf(Empty) ;
     endrule 
 
     rule ruleFakeUserLogicWriteC2hHead;
-        let random <- randomGen.next; 
+        let random <- randomGen2.next; 
         // make a two stage random, first one the qeueu is almost empty, second one the queue is almost full
   
         if (
             (hardwareMoveHeadCntReg < 20000 && random < 50) || 
             (hardwareMoveHeadCntReg >= 20000 && random > 500)
         ) begin
-            $display("aaaaa");   
             hardwareMoveHeadCntReg <= hardwareMoveHeadCntReg + 1;
             pool.c2hRings[0].enq(zeroExtend(pack(hardwareMoveHeadCntReg)));
         end
@@ -469,7 +484,7 @@ module mkTestRingbuf(Empty) ;
         if (pipelineH2CFifo.notEmpty && dmaDelaySimulateReg == 0) begin
             if ((respCntReg & 'h7) == 7) begin
             pipelineH2CFifo.deq;
-                let random <- randomGen.next;
+                let random <- randomGen3.next;
                 dmaDelaySimulateReg <= unpack(zeroExtend(random & 'h1F));
             end
 
@@ -478,9 +493,9 @@ module mkTestRingbuf(Empty) ;
             UserLogicDmaH2cResp resp = unpack(0);
             respCntReg <= respCntReg + 1;
             
-            resp.data.isFirst = (respCntReg & 'h7) == 0;
-            resp.data.isLast = (respCntReg & 'h7) == 7;
-            resp.data.data = extend(pack(reqAddr) + extend(pack(respCntReg)) * 32);
+            resp.dataStream.isFirst = (respCntReg & 'h7) == 0;
+            resp.dataStream.isLast = (respCntReg & 'h7) == 7;
+            resp.dataStream.data = extend(pack(reqAddr) + extend(pack(respCntReg)) * 32);
 
             pool.dmaAccessH2cClt.response.put(resp);
         end
@@ -491,7 +506,7 @@ module mkTestRingbuf(Empty) ;
             expectC2hRecvReg <= expectC2hRecvReg + 1;
 
             let expectNumber = expectC2hRecvReg;
-            UInt#(7) descNumber = unpack(truncate(pipelineC2HFifo.first.data.data));
+            UInt#(7) descNumber = unpack(truncate(pipelineC2HFifo.first.dataStream.data));
             immAssert(
                 expectNumber == descNumber,
                 "c2h descriptor write error @ mkTestRingbuf",
@@ -526,7 +541,7 @@ module mkTestRingbuf(Empty) ;
     endrule
 
     rule fakeSoftwareMoveC2hTail;
-        let random <- randomGen.next;
+        let random <- randomGen4.next;
         if (isRingbufNotEmpty(pool.c2hMetas[0].head, pool.c2hMetas[0].tail)) begin
             if (random < 50) begin 
                 pool.c2hMetas[0].tail <= pool.c2hMetas[0].tail + 1;
@@ -536,4 +551,25 @@ module mkTestRingbuf(Empty) ;
             end
         end
     endrule
+endmodule
+
+
+
+
+interface TestRingbufSynthesizeable;
+    interface Vector#(1, PipeOut#(RingbufRawDescriptor)) h2cRings;
+
+    interface Vector#(1, C2HRingBufFifoIfc#(RingbufRawDescriptor)) c2hRings;
+
+endinterface
+
+(* synthesize *)
+module mkTestRingbufSynthesizeable(TestRingbufSynthesizeable) ;
+    RingbufPool#(1,1, RingbufRawDescriptor) pool <- mkRingbufPool;
+
+    interface h2cRings = pool.h2cRings;
+
+    interface c2hRings = pool.c2hRings;
+
+    
 endmodule

@@ -3,6 +3,7 @@ import Settings :: *;
 import DataTypes :: *;
 import Headers :: *;
 import UserLogicSettings :: *;
+import ClientServer :: *;
 
 typedef 12 CONTROL_REG_ADDR_WIDTH;
 typedef 4 CONTROL_REG_DATA_STRB_WIDTH;
@@ -92,18 +93,22 @@ typedef struct {
 } UserLogicDmaH2cReq deriving(Bits, FShow);
 
 typedef struct {
-    DataStream data;
+    DataStream dataStream;
 } UserLogicDmaH2cResp deriving(Bits, FShow);
 
 
 typedef struct {
     ADDR addr;
     UserLogicDmaLen len;
-    DataStream data;
+    DataStream dataStream;
 } UserLogicDmaC2hReq deriving(Bits, FShow);
 
 typedef struct {
 } UserLogicDmaC2hResp deriving(Bits, FShow);
 
 
+typedef Server#(UserLogicDmaH2cReq, UserLogicDmaH2cResp)    UserLogicDmaReadSrv;
+typedef Server#(UserLogicDmaC2hReq, UserLogicDmaC2hResp)    UserLogicDmaWriteSrv;
+typedef Client#(UserLogicDmaH2cReq, UserLogicDmaH2cResp)    UserLogicDmaReadClt;
+typedef Client#(UserLogicDmaC2hReq, UserLogicDmaC2hResp)    UserLogicDmaWriteClt;
 
