@@ -9,6 +9,7 @@ import DataTypes :: *;
 import SemiFifo :: *;
 import BusConversion :: *;
 import AxiStreamTypes :: *;
+import Axi4LiteTypes :: *;
 import Headers :: *;
 
 
@@ -289,7 +290,76 @@ module mkStreamReqProxy(
 endmodule
 
 
+interface XdmaAxiLiteBridgeWrapper#(type t_csr_addr, type t_csr_data);
+    interface RawAxi4LiteSlave#(SizeOf#(t_csr_addr), TDiv#(SizeOf#(t_csr_data),BYTE_WIDTH)) cntrlAxil;
+    interface Client#(CsrReadRequest#(t_csr_addr), CsrReadResponse#(t_csr_data)) csrReadClt;
+    interface Client#(CsrWriteRequest#(t_csr_addr, t_csr_data), CsrWriteResponse) csrWriteClt; 
+endinterface 
 
+module mkXdmaAxiLiteBridgeWrapper(XdmaAxiLiteBridgeWrapper#(t_csr_addr, t_csr_data)) 
+    provisos (
+        Bits#(t_csr_addr, sz_csr_addr),
+        Bits#(t_csr_data, sz_csr_data),
+        Mul#(sz_csr_strb, BYTE_WIDTH, sz_csr_data),
+        Div#(sz_csr_data, BYTE_WIDTH, sz_csr_strb),
+        Div#(TMul#(sz_csr_strb, 8), 8, sz_csr_strb)
+    );
+
+
+    FIFOF#(Axi4LiteWrAddr#(sz_csr_addr)) cntrlWrAddrFifo <- mkFIFOF;
+    FIFOF#(Axi4LiteWrData#(sz_csr_strb)) cntrlWrDataFifo <- mkFIFOF;
+    FIFOF#(Axi4LiteWrResp) cntrlWrRespFifo <- mkFIFOF;
+    FIFOF#(Axi4LiteRdAddr#(sz_csr_addr)) cntrlRdAddrFifo <- mkFIFOF;
+    FIFOF#(Axi4LiteRdData#(sz_csr_strb)) cntrlRdDataFifo <- mkFIFOF;
+
+    let cntrlAxilSlave <- mkPipeToRawAxi4LiteSlave(
+        convertFifoToPipeIn(cntrlWrAddrFifo),
+        convertFifoToPipeIn(cntrlWrDataFifo),
+        convertFifoToPipeOut(cntrlWrRespFifo),
+
+        convertFifoToPipeIn(cntrlRdAddrFifo),
+        convertFifoToPipeOut(cntrlRdDataFifo)
+    );
+
+    interface Client csrReadClt;
+        interface Get request;
+            method ActionValue#(CsrReadRequest#(t_csr_addr)) get();
+                cntrlRdAddrFifo.deq;
+                return CsrReadRequest{
+                    addr: unpack(cntrlRdAddrFifo.first.arAddr)
+                };
+            endmethod
+        endinterface
+
+        interface Put response;
+            method Action put(data);
+                cntrlRdDataFifo.enq(Axi4LiteRdData{rData: unpack(pack(data)), rResp: 0});
+            endmethod
+        endinterface
+    endinterface
+
+    interface Client csrWriteClt; 
+        interface Get request;
+            method ActionValue#(CsrWriteRequest#(t_csr_addr, t_csr_data)) get();
+                cntrlWrAddrFifo.deq;
+                cntrlWrDataFifo.deq;
+                return CsrWriteRequest{
+                    addr: unpack(cntrlWrAddrFifo.first.awAddr),
+                    data: unpack(cntrlWrDataFifo.first.wData)
+                };
+            endmethod
+        endinterface
+
+        interface Put response;
+            method Action put(data);
+                cntrlWrRespFifo.enq(0);
+            endmethod
+        endinterface
+    endinterface
+
+    interface cntrlAxil = cntrlAxilSlave;
+    
+endmodule
 
 
 

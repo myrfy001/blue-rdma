@@ -7,13 +7,6 @@ import GetPut :: *;
 import UserLogicTypes :: *;
 
 
-
-
-
-
-
-
-
 typedef enum {
     CtlRegIdCmdSize = 'h0000,
     CtlRegIdCmdAddrLow = 'h0001,
@@ -23,40 +16,30 @@ typedef enum {
 } ControlRegisterAddress deriving(Bits, Eq);
 
 
-interface RegisterBlock;
-    interface Get#(RdmaControlCmdEntry) pendingControlCmd;
-    interface Put#(RdmaCmdExecuteResponse) pendingControlCmdResp;
-    method ActionValue#(CsrWriteResponse) writeReg(CsrWriteRequest req);
-    method ActionValue#(CsrReadResponse) readReg(CsrReadRequest req);
+interface RegisterBlock#(type t_addr, type t_data);
+    interface Server#(CsrWriteRequest#(t_addr, t_data), CsrWriteRespons) csrWriteSrv;
+    interface Server#(CsrReadRequest#(t_addr), CsrReadResponse#(t_data)) csrReadSrv;
 endinterface
 
 
-module mkRegisterBlock(RegisterBlock) ;
+module mkRegisterBlock(RegisterBlock#(t_addr, t_data))
+    provisos (
+        Bits#(t_addr, sz_addr),
+        Bits#(t_data, sz_data)
+    );
 
 
-    Reg#(Bit#(CONTROL_REG_DATA_WIDTH)) ctlRegCmdSize <- mkRegU;
-    Reg#(Bit#(HOST_ADDR_WIDTH)) ctlRegCmdAddr <- mkRegU;
+    Reg#(t_data) ctlRegCmdSize <- mkRegU;
+    Reg#(t_data) ctlRegCmdAddrL <- mkRegU;
+    Reg#(t_data) ctlRegCmdAddrH <- mkRegU;
 
-    FIFOF#(RdmaControlCmdEntry) pendingCmdQ <- mkFIFOF;
-    FIFOF#(RdmaCmdExecuteResponse) pendingCmdRespQ <- mkFIFOF;
-
-    
-
-
-    method ActionValue#(CsrWriteResponse) writeReg(CsrWriteRequest req);
-
+    method ActionValue#(CsrWriteResponse) writeReg(CsrWriteRequest#(t_addr, t_data) req) ;
         case (unpack(truncate(req.addr>>2))) matches
-            CtlRegIdCmdSize: ctlRegCmdSize <= req.data;
-            CtlRegIdCmdAddrLow: ctlRegCmdAddr[31:0] <= req.data;
-            CtlRegIdCmdAddrHigh: ctlRegCmdAddr[63:32] <= req.data;
+            // CtlRegIdCmdSize: ctlRegCmdSize <= unpack(req.data);
+            // CtlRegIdCmdAddrLow: ctlRegCmdAddrL <= unpack(req.data);
+            // CtlRegIdCmdAddrHigh: ctlRegCmdAddrH <= unpack(req.data);
             CtlRegIdCmdTypeAndId: begin
-                if (pendingCmdQ.notFull) begin
-                    pendingCmdQ.enq(RdmaControlCmdEntry{
-                        ctlRegCmdSize: ctlRegCmdSize,
-                        ctlRegCmdAddr: ctlRegCmdAddr,
-                        ctlRegCmdTypeAndId: unpack(req.data)
-                    });
-                end
+                
             end 
             default: begin 
                 $display("unknown addr");
@@ -67,30 +50,20 @@ module mkRegisterBlock(RegisterBlock) ;
         
     endmethod
 
-    method ActionValue#(CsrReadResponse) readReg(CsrReadRequest req);
+    method ActionValue#(CsrReadResponse#(t_data)) readReg(CsrReadRequest#(t_addr) req);
         
-        Bit#(CONTROL_REG_DATA_WIDTH) outData = 32'hFFFFFFFF;
-        case (unpack(truncate(req.addr>>2))) matches
-            CtlRegIdCmdExecuteStatus: begin
-                Bool hasResp = False;
-                if (pendingCmdRespQ.notEmpty) begin
-                    pendingCmdRespQ.deq;
-                    hasResp = True;
-                end
+        // t_data outData = 'hFFFFFFFF;
+        // case (unpack(truncate(req.addr>>2))) matches
+        //     CtlRegIdCmdExecuteStatus: begin
+                
+        //     end
+        //     default: begin 
+        //         $display("unknown addr");
+        //     end
+        // endcase
 
-                Bool cmdQFull = !pendingCmdQ.notFull;
-                outData = {pack(cmdQFull), pack(hasResp), 6'h0 ,pendingCmdRespQ.first.errorCode, pendingCmdRespQ.first.finishedReqId};
-            end
-            default: begin 
-                $display("unknown addr");
-            end
-        endcase
-
-        return CsrReadResponse{data:outData};
+        return unpack(0);
         
     endmethod
     
-    
-    interface pendingControlCmd = toGet(pendingCmdQ);
-    interface pendingControlCmdResp = toPut(pendingCmdRespQ);
 endmodule

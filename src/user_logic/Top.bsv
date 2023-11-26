@@ -18,15 +18,15 @@ import Arbitration :: *;
 
 interface BsvTop#(numeric type dataSz, numeric type userSz);
     interface XdmaChannel#(dataSz, userSz) xdmaChannel;
-    // interface RawAxi4LiteSlave#(CONTROL_REG_ADDR_WIDTH, CONTROL_REG_DATA_STRB_WIDTH) axilRegBlock;
+    interface RawAxi4LiteSlave#(CSR_ADDR_WIDTH, CSR_DATA_STRB_WIDTH) axilRegBlock;
 endinterface
 
 (* synthesize *)
 module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH));
     XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper;
     
-    RegisterBlock regBlock <- mkRegisterBlock;
-    // XdmaAxiLiteBridgeWrapper xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(regBlock);
+    RegisterBlock#(CsrAddr, CsrData) regBlock <- mkRegisterBlock;
+    XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper;
 
     BluerdmaDmaProxy bluerdmaDmaProxy <- mkBluerdmaDmaProxy;
     RingbufPool#(RINGBUF_H2C_TOTAL_COUNT, RINGBUF_C2H_TOTAL_COUNT, RingbufRawDescriptor) ringbufPool <- mkRingbufPool;
@@ -94,5 +94,5 @@ module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)
 
 
     interface xdmaChannel = xdmaWrap.xdmaChannel;
-    // interface axilRegBlock = xdmaAxiLiteWrap.axiLiteBridge;
+    interface axilRegBlock = xdmaAxiLiteWrap.cntrlAxil;
 endmodule

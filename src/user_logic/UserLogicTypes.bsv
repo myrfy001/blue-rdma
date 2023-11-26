@@ -5,28 +5,31 @@ import Headers :: *;
 import UserLogicSettings :: *;
 import ClientServer :: *;
 
-typedef 12 CONTROL_REG_ADDR_WIDTH;
-typedef 4 CONTROL_REG_DATA_STRB_WIDTH;
-typedef TMul#(CONTROL_REG_DATA_STRB_WIDTH, BYTE_WIDTH) CONTROL_REG_DATA_WIDTH;
+typedef 12 CSR_ADDR_WIDTH;
+typedef 4 CSR_DATA_STRB_WIDTH;
+typedef TMul#(CSR_DATA_STRB_WIDTH, BYTE_WIDTH) CSR_DATA_WIDTH;
 typedef 64 HOST_ADDR_WIDTH;
+
+typedef Bit#(CSR_ADDR_WIDTH) CsrAddr;
+typedef Bit#(CSR_DATA_WIDTH) CsrData;
 
 
 typedef struct {
-    Bit#(CONTROL_REG_ADDR_WIDTH) addr;
-    Bit#(CONTROL_REG_DATA_WIDTH) data;
-} CsrWriteRequest;
+    t_addr addr;
+    t_data data;
+} CsrWriteRequest#(type t_addr, type t_data) deriving(Bits);
 
 typedef struct {
     Bit#(0) flag;
-} CsrWriteResponse;
+} CsrWriteResponse deriving(Bits);
 
 typedef struct {
-    Bit#(CONTROL_REG_ADDR_WIDTH) addr;
-} CsrReadRequest;
+    t_addr addr;
+} CsrReadRequest#(type t_addr) deriving(Bits);
 
 typedef struct {
-    Bit#(CONTROL_REG_DATA_WIDTH) data;
-} CsrReadResponse;
+    t_data data;
+} CsrReadResponse#(type t_data) deriving(Bits);
 
 
 
@@ -56,7 +59,7 @@ typedef struct {
 } RdmaCmdExecuteResponse deriving(Bits, FShow);
 
 typedef struct {
-    Bit#(CONTROL_REG_DATA_WIDTH) ctlRegCmdSize;
+    Bit#(CSR_DATA_WIDTH) ctlRegCmdSize;
     Bit#(HOST_ADDR_WIDTH) ctlRegCmdAddr;
     RdmaCsrCmdTypeAndId ctlRegCmdTypeAndId;
 } RdmaControlCmdEntry deriving(Bits, FShow);
