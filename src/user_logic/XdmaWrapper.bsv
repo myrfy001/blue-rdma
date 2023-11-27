@@ -11,6 +11,7 @@ import BusConversion :: *;
 import AxiStreamTypes :: *;
 import Axi4LiteTypes :: *;
 import Headers :: *;
+import RegisterBlock :: *;
 
 
 typedef Bit#(64) XdmaDescBypAddr;
@@ -292,11 +293,11 @@ endmodule
 
 interface XdmaAxiLiteBridgeWrapper#(type t_csr_addr, type t_csr_data);
     interface RawAxi4LiteSlave#(SizeOf#(t_csr_addr), TDiv#(SizeOf#(t_csr_data),BYTE_WIDTH)) cntrlAxil;
-    interface Client#(CsrReadRequest#(t_csr_addr), CsrReadResponse#(t_csr_data)) csrReadClt;
-    interface Client#(CsrWriteRequest#(t_csr_addr, t_csr_data), CsrWriteResponse) csrWriteClt; 
+    // interface Client#(CsrReadRequest#(t_csr_addr), CsrReadResponse#(t_csr_data)) csrReadClt;
+    // interface Client#(CsrWriteRequest#(t_csr_addr, t_csr_data), CsrWriteResponse) csrWriteClt; 
 endinterface 
 
-module mkXdmaAxiLiteBridgeWrapper(XdmaAxiLiteBridgeWrapper#(t_csr_addr, t_csr_data)) 
+module mkXdmaAxiLiteBridgeWrapper(RegisterBlock#(t_csr_addr, t_csr_data) regBlock, XdmaAxiLiteBridgeWrapper#(t_csr_addr, t_csr_data) ifc) 
     provisos (
         Bits#(t_csr_addr, sz_csr_addr),
         Bits#(t_csr_data, sz_csr_data),
@@ -321,41 +322,61 @@ module mkXdmaAxiLiteBridgeWrapper(XdmaAxiLiteBridgeWrapper#(t_csr_addr, t_csr_da
         convertFifoToPipeOut(cntrlRdDataFifo)
     );
 
-    interface Client csrReadClt;
-        interface Get request;
-            method ActionValue#(CsrReadRequest#(t_csr_addr)) get();
-                cntrlRdAddrFifo.deq;
-                return CsrReadRequest{
-                    addr: unpack(cntrlRdAddrFifo.first.arAddr)
-                };
-            endmethod
-        endinterface
+    rule handleRead;
+        cntrlRdAddrFifo.deq;
+        let resp <- regBlock.readReg(
+            CsrReadRequest{
+                addr: unpack(cntrlRdAddrFifo.first.arAddr)
+            });
+        cntrlRdDataFifo.enq(Axi4LiteRdData{rData: unpack(pack(resp.data)), rResp: 0});
+    endrule
 
-        interface Put response;
-            method Action put(data);
-                cntrlRdDataFifo.enq(Axi4LiteRdData{rData: unpack(pack(data)), rResp: 0});
-            endmethod
-        endinterface
-    endinterface
+    rule handleWrite;
+        cntrlWrAddrFifo.deq;
+        cntrlWrDataFifo.deq;
+        let _ <- regBlock.writeReg(
+            CsrWriteRequest{
+                addr: unpack(cntrlWrAddrFifo.first.awAddr),
+                data: unpack(cntrlWrDataFifo.first.wData)
+            });
+        cntrlWrRespFifo.enq(0);
+    endrule
 
-    interface Client csrWriteClt; 
-        interface Get request;
-            method ActionValue#(CsrWriteRequest#(t_csr_addr, t_csr_data)) get();
-                cntrlWrAddrFifo.deq;
-                cntrlWrDataFifo.deq;
-                return CsrWriteRequest{
-                    addr: unpack(cntrlWrAddrFifo.first.awAddr),
-                    data: unpack(cntrlWrDataFifo.first.wData)
-                };
-            endmethod
-        endinterface
+    // interface Client csrReadClt;
+    //     interface Get request;
+    //         method ActionValue#(CsrReadRequest#(t_csr_addr)) get();
+    //             cntrlRdAddrFifo.deq;
+    //             return CsrReadRequest{
+    //                 addr: unpack(cntrlRdAddrFifo.first.arAddr)
+    //             };
+    //         endmethod
+    //     endinterface
 
-        interface Put response;
-            method Action put(data);
-                cntrlWrRespFifo.enq(0);
-            endmethod
-        endinterface
-    endinterface
+    //     interface Put response;
+    //         method Action put(data);
+    //             cntrlRdDataFifo.enq(Axi4LiteRdData{rData: unpack(pack(data)), rResp: 0});
+    //         endmethod
+    //     endinterface
+    // endinterface
+
+    // interface Client csrWriteClt; 
+    //     interface Get request;
+    //         method ActionValue#(CsrWriteRequest#(t_csr_addr, t_csr_data)) get();
+    //             cntrlWrAddrFifo.deq;
+    //             cntrlWrDataFifo.deq;
+    //             return CsrWriteRequest{
+    //                 addr: unpack(cntrlWrAddrFifo.first.awAddr),
+    //                 data: unpack(cntrlWrDataFifo.first.wData)
+    //             };
+    //         endmethod
+    //     endinterface
+
+    //     interface Put response;
+    //         method Action put(data);
+    //             cntrlWrRespFifo.enq(0);
+    //         endmethod
+    //     endinterface
+    // endinterface
 
     interface cntrlAxil = cntrlAxilSlave;
     

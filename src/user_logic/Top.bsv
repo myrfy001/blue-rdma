@@ -25,11 +25,13 @@ endinterface
 module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH));
     XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper;
     
-    RegisterBlock#(CsrAddr, CsrData) regBlock <- mkRegisterBlock;
-    XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper;
+    
 
     BluerdmaDmaProxy bluerdmaDmaProxy <- mkBluerdmaDmaProxy;
     RingbufPool#(RINGBUF_H2C_TOTAL_COUNT, RINGBUF_C2H_TOTAL_COUNT, RingbufRawDescriptor) ringbufPool <- mkRingbufPool;
+
+    RegisterBlock#(CsrAddr, CsrData) regBlock <- mkRegisterBlock(ringbufPool.h2cMetas, ringbufPool.c2hMetas);
+    XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(regBlock);
     
     function Bool isH2cDmaReqFinished(UserLogicDmaH2cReq req) = True;
     function Bool isH2cDmaRespFinished(UserLogicDmaH2cResp resp) = resp.dataStream.isLast;
@@ -53,7 +55,7 @@ module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)
 
     TLB tlb <- mkTLB;
     PgtManager pgtManager <- mkPgtManager(tlb);
-    // ControlCmdManager controlCmdManager <- mkControlCmdManager(regBlock, dmaRouter, pgtManager);
+    
 
     mkConnection(xdmaWrap.dmaReadSrv, xdmaReadClt);
     mkConnection(xdmaWrap.dmaWriteSrv, xdmaWriteClt);

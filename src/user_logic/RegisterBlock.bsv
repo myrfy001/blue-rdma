@@ -2,45 +2,41 @@
 import FIFOF :: *;
 import Connectable :: *;
 import GetPut :: *;
-
+import Vector :: *;
+import Ringbuf :: *;
 
 import UserLogicTypes :: *;
 
 
 typedef enum {
-    CtlRegIdCmdSize = 'h0000,
-    CtlRegIdCmdAddrLow = 'h0001,
-    CtlRegIdCmdAddrHigh = 'h0002,
-    CtlRegIdCmdTypeAndId = 'h0003,
-    CtlRegIdCmdExecuteStatus = 'h0004
-} ControlRegisterAddress deriving(Bits, Eq);
+    CsrIdxRbBaseAddrLow = 'h0000,
+    CsrIdxRbBaseAddrHigh = 'h0001,
+    CsrIdxRbHead = 'h0002,
+    CsrIdxRbTail = 'h0003
+} CsrPageIndexForRingbuf deriving(Bits, Eq);
 
 
 interface RegisterBlock#(type t_addr, type t_data);
-    interface Server#(CsrWriteRequest#(t_addr, t_data), CsrWriteRespons) csrWriteSrv;
-    interface Server#(CsrReadRequest#(t_addr), CsrReadResponse#(t_data)) csrReadSrv;
+    // interface Server#(CsrWriteRequest#(t_addr, t_data), CsrWriteRespons) csrWriteSrv;
+    // interface Server#(CsrReadRequest#(t_addr), CsrReadResponse#(t_data)) csrReadSrv;
+    method ActionValue#(CsrWriteResponse) writeReg(CsrWriteRequest#(t_addr, t_data) req);
+    method ActionValue#(CsrReadResponse#(t_data)) readReg(CsrReadRequest#(t_addr) req);
 endinterface
 
 
-module mkRegisterBlock(RegisterBlock#(t_addr, t_data))
-    provisos (
-        Bits#(t_addr, sz_addr),
-        Bits#(t_data, sz_data)
-    );
+module mkRegisterBlock(
+    Vector#(h2cCount, RingbufH2cMetadata) h2cMetas, 
+    Vector#(c2hCount, RingbufC2hMetadata) c2hMetas,
+     RegisterBlock#(CsrAddr, CsrData) ifc
+);
 
-
-    Reg#(t_data) ctlRegCmdSize <- mkRegU;
-    Reg#(t_data) ctlRegCmdAddrL <- mkRegU;
-    Reg#(t_data) ctlRegCmdAddrH <- mkRegU;
-
-    method ActionValue#(CsrWriteResponse) writeReg(CsrWriteRequest#(t_addr, t_data) req) ;
-        case (unpack(truncate(req.addr>>2))) matches
-            // CtlRegIdCmdSize: ctlRegCmdSize <= unpack(req.data);
-            // CtlRegIdCmdAddrLow: ctlRegCmdAddrL <= unpack(req.data);
-            // CtlRegIdCmdAddrHigh: ctlRegCmdAddrH <= unpack(req.data);
-            CtlRegIdCmdTypeAndId: begin
-                
-            end 
+    method ActionValue#(CsrWriteResponse) writeReg(CsrWriteRequest#(CsrAddr, CsrData) req) ;
+        CsrPageIndexForRingbuf regIdx = unpack(truncate(pack(req.addr)>>2));
+        case (regIdx) matches
+            CsrIdxRbBaseAddrLow: h2cMetas[0].addr[31:0] <= unpack(req.data);
+            CsrIdxRbBaseAddrHigh: h2cMetas[0].addr[63:32] <= unpack(req.data);
+            CsrIdxRbHead: h2cMetas[0].head <= unpack(truncate(req.data));
+            // CsrIdxRbTail: h2cMetas[0].tail <= unpack(truncate(req.data));
             default: begin 
                 $display("unknown addr");
             end
@@ -50,7 +46,7 @@ module mkRegisterBlock(RegisterBlock#(t_addr, t_data))
         
     endmethod
 
-    method ActionValue#(CsrReadResponse#(t_data)) readReg(CsrReadRequest#(t_addr) req);
+    method ActionValue#(CsrReadResponse#(CsrData)) readReg(CsrReadRequest#(CsrAddr) req);
         
         // t_data outData = 'hFFFFFFFF;
         // case (unpack(truncate(req.addr>>2))) matches
