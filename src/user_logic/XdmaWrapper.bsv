@@ -494,9 +494,12 @@ interface XdmaGearbox;
 endinterface
 
 
-module mkXdmaGearbox(Clock fastClock, Reset fastReset, Clock slowClock, Reset slowReset, XdmaGearbox ifc);
+module mkXdmaGearbox(ClockDividerIfc divClk, XdmaGearbox ifc);
     
-    ClockDividerIfc divClk <- mkClockDivider(2);
+    Clock fastClock <- exposeCurrentClock;
+    Reset fastReset <- exposeCurrentReset;
+    Clock slowClock = divClk.slowClock;
+    Reset slowReset = noReset(); // todo: ?? Make sure
     
     let h2cStreamReqQStore <- mkRegStore(fastClock, slowClock);
     let c2hStreamRespQStore <- mkRegStore(slowClock, fastClock);
@@ -622,7 +625,7 @@ module mkXdmaGearbox(Clock fastClock, Reset fastReset, Clock slowClock, Reset sl
                     )
                 );
                 
-                UserLogicDmaC2hWideReq out;
+                UserLogicDmaC2hWideReq out = ?;
 
                 let headPart = fromMaybe(?, headPartMaybe);
                 out.dataStream.isFirst = headPart.dataStream.isFirst;

@@ -2,6 +2,7 @@ import Connectable :: *;
 import ClientServer :: *;
 import GetPut :: *;
 import Vector :: *;
+import Clocks :: * ;
 
 import Axi4LiteTypes :: *;
 
@@ -21,14 +22,18 @@ interface BsvTop#(numeric type dataSz, numeric type userSz);
     interface RawAxi4LiteSlave#(CSR_ADDR_WIDTH, CSR_DATA_STRB_WIDTH) axilRegBlock;
     // interface Clock fastClock;
     // interface Reset fastReset;
-    // interface Clock slowClock;
-    // interface Reset slowReset;
+    interface Clock slowClockIfc;
+    interface Reset slowResetIfc;
 endinterface
 
 (* synthesize *)
-module mkBsvTop(Clock fastClock, Reset fastReset, Clock slowClock, Reset slowReset, BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc);
-
-    XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper;
+module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc);
+    // Clock fastClock, Reset fastReset, Clock slowClock, Reset slowReset, 
+    
+    ClockDividerIfc divClk <- mkClockDivider(2);
+    Clock slowClock = divClk.slowClock;
+    Reset slowReset = noReset();
+    XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper(clocked_by slowClock, reset_by slowReset);
     
     BluerdmaDmaProxy bluerdmaDmaProxy <- mkBluerdmaDmaProxy;
     RingbufPool#(RINGBUF_H2C_TOTAL_COUNT, RINGBUF_C2H_TOTAL_COUNT, RingbufRawDescriptor) ringbufPool <- mkRingbufPool;
@@ -59,7 +64,7 @@ module mkBsvTop(Clock fastClock, Reset fastReset, Clock slowClock, Reset slowRes
     TLB tlb <- mkTLB;
     PgtManager pgtManager <- mkPgtManager(tlb);
     
-    XdmaGearbox xdmaGearbox <- mkXdmaGearbox(fastClock, fastReset, slowClock, slowReset);
+    XdmaGearbox xdmaGearbox <- mkXdmaGearbox(divClk);
 
     mkConnection(xdmaReadClt, xdmaGearbox.h2cStreamSrv);
     mkConnection(xdmaWriteClt, xdmaGearbox.c2hStreamSrv);
@@ -101,7 +106,8 @@ module mkBsvTop(Clock fastClock, Reset fastReset, Clock slowClock, Reset slowRes
     // endrule
 
 
-
+    interface slowClockIfc = slowClock;
+    interface slowResetIfc = slowReset;
     interface xdmaChannel = xdmaWrap.xdmaChannel;
     interface axilRegBlock = xdmaAxiLiteWrap.cntrlAxil;
 endmodule
