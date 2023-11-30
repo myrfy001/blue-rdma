@@ -23,23 +23,23 @@ interface BsvTop#(numeric type dataSz, numeric type userSz);
     // interface Clock fastClock;
     // interface Reset fastReset;
     interface Clock slowClockIfc;
-    interface Reset slowResetIfc;
 endinterface
 
 (* synthesize *)
-module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc);
-    // Clock fastClock, Reset fastReset, Clock slowClock, Reset slowReset, 
+module mkBsvTop(Reset slowReset, BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc);
+
     
     ClockDividerIfc divClk <- mkClockDivider(2);
     Clock slowClock = divClk.slowClock;
-    Reset slowReset = noReset();
+    // Reset slowReset = noReset(); // TODO, make sure which reset to use.
+
     XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper(clocked_by slowClock, reset_by slowReset);
     
     BluerdmaDmaProxy bluerdmaDmaProxy <- mkBluerdmaDmaProxy;
     RingbufPool#(RINGBUF_H2C_TOTAL_COUNT, RINGBUF_C2H_TOTAL_COUNT, RingbufRawDescriptor) ringbufPool <- mkRingbufPool;
 
     RegisterBlock#(CsrAddr, CsrData) regBlock <- mkRegisterBlock(ringbufPool.h2cMetas, ringbufPool.c2hMetas);
-    XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(regBlock);
+    XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(divClk, slowReset, regBlock);
     
     function Bool isH2cDmaReqFinished(UserLogicDmaH2cReq req) = True;
     function Bool isH2cDmaRespFinished(UserLogicDmaH2cResp resp) = resp.dataStream.isLast;
@@ -64,7 +64,7 @@ module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)
     TLB tlb <- mkTLB;
     PgtManager pgtManager <- mkPgtManager(tlb);
     
-    XdmaGearbox xdmaGearbox <- mkXdmaGearbox(divClk);
+    XdmaGearbox xdmaGearbox <- mkXdmaGearbox(divClk, slowReset);
 
     mkConnection(xdmaReadClt, xdmaGearbox.h2cStreamSrv);
     mkConnection(xdmaWriteClt, xdmaGearbox.c2hStreamSrv);
@@ -107,7 +107,6 @@ module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)
 
 
     interface slowClockIfc = slowClock;
-    interface slowResetIfc = slowReset;
     interface xdmaChannel = xdmaWrap.xdmaChannel;
     interface axilRegBlock = xdmaAxiLiteWrap.cntrlAxil;
 endmodule

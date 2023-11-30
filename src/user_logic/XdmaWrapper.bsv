@@ -304,7 +304,7 @@ interface XdmaAxiLiteBridgeWrapper#(type t_csr_addr, type t_csr_data);
     // interface Client#(CsrWriteRequest#(t_csr_addr, t_csr_data), CsrWriteResponse) csrWriteClt; 
 endinterface 
 
-module mkXdmaAxiLiteBridgeWrapper(RegisterBlock#(t_csr_addr, t_csr_data) regBlock, XdmaAxiLiteBridgeWrapper#(t_csr_addr, t_csr_data) ifc) 
+module mkXdmaAxiLiteBridgeWrapper(ClockDividerIfc divClk, Reset slowReset, RegisterBlock#(t_csr_addr, t_csr_data) regBlock, XdmaAxiLiteBridgeWrapper#(t_csr_addr, t_csr_data) ifc) 
     provisos (
         Bits#(t_csr_addr, sz_csr_addr),
         Bits#(t_csr_data, sz_csr_data),
@@ -313,20 +313,25 @@ module mkXdmaAxiLiteBridgeWrapper(RegisterBlock#(t_csr_addr, t_csr_data) regBloc
         Div#(TMul#(sz_csr_strb, 8), 8, sz_csr_strb)
     );
 
+    Clock fastClock <- exposeCurrentClock;
+    Reset fastReset <- exposeCurrentReset;
+    Clock slowClock = divClk.slowClock;
 
-    FIFOF#(Axi4LiteWrAddr#(sz_csr_addr)) cntrlWrAddrFifo <- mkFIFOF;
-    FIFOF#(Axi4LiteWrData#(sz_csr_strb)) cntrlWrDataFifo <- mkFIFOF;
-    FIFOF#(Axi4LiteWrResp) cntrlWrRespFifo <- mkFIFOF;
-    FIFOF#(Axi4LiteRdAddr#(sz_csr_addr)) cntrlRdAddrFifo <- mkFIFOF;
-    FIFOF#(Axi4LiteRdData#(sz_csr_strb)) cntrlRdDataFifo <- mkFIFOF;
+    SyncFIFOIfc#(Axi4LiteWrAddr#(sz_csr_addr)) cntrlWrAddrFifo <- mkSyncFIFO(2, slowClock,slowReset, fastClock);
+    SyncFIFOIfc#(Axi4LiteWrData#(sz_csr_strb)) cntrlWrDataFifo <- mkSyncFIFO(2, slowClock,slowReset, fastClock);
+    SyncFIFOIfc#(Axi4LiteWrResp) cntrlWrRespFifo <- mkSyncFIFO(2, fastClock,fastReset, slowClock);
+    SyncFIFOIfc#(Axi4LiteRdAddr#(sz_csr_addr)) cntrlRdAddrFifo <- mkSyncFIFO(2, slowClock,slowReset, fastClock);
+    SyncFIFOIfc#(Axi4LiteRdData#(sz_csr_strb)) cntrlRdDataFifo <- mkSyncFIFO(2, fastClock,fastReset, slowClock);
 
     let cntrlAxilSlave <- mkPipeToRawAxi4LiteSlave(
-        convertFifoToPipeIn(cntrlWrAddrFifo),
-        convertFifoToPipeIn(cntrlWrDataFifo),
-        convertFifoToPipeOut(cntrlWrRespFifo),
+        convertSyncFifoToPipeIn(cntrlWrAddrFifo),
+        convertSyncFifoToPipeIn(cntrlWrDataFifo),
+        convertSyncFifoToPipeOut(cntrlWrRespFifo),
 
-        convertFifoToPipeIn(cntrlRdAddrFifo),
-        convertFifoToPipeOut(cntrlRdDataFifo)
+        convertSyncFifoToPipeIn(cntrlRdAddrFifo),
+        convertSyncFifoToPipeOut(cntrlRdDataFifo),
+        clocked_by slowClock,
+        reset_by slowReset
     );
 
     rule handleRead;
@@ -494,12 +499,11 @@ interface XdmaGearbox;
 endinterface
 
 
-module mkXdmaGearbox(ClockDividerIfc divClk, XdmaGearbox ifc);
+module mkXdmaGearbox(ClockDividerIfc divClk, Reset slowReset, XdmaGearbox ifc);
     
     Clock fastClock <- exposeCurrentClock;
     Reset fastReset <- exposeCurrentReset;
     Clock slowClock = divClk.slowClock;
-    Reset slowReset = noReset(); // todo: ?? Make sure
     
     let h2cStreamReqQStore <- mkRegStore(fastClock, slowClock);
     let c2hStreamRespQStore <- mkRegStore(slowClock, fastClock);
