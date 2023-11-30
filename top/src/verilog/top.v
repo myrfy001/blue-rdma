@@ -24,8 +24,9 @@ module top #
 
     input 					 sys_clk_p,
     input 					 sys_clk_n,
-    input 					 sys_rst_n
- );
+    input 					 sys_rst_n,
+    input            user_clk_500
+   );
 
    //-----------------------------------------------------------------------------------------------------------------------
 
@@ -50,6 +51,7 @@ module top #
    //----------------------------------------------------------------------------------------------------------------//
    
    wire 					   user_clk;
+  //  wire              user_clk_500;
    wire 					   user_resetn;
    
   // Wires for Avery HOT/WARM and COLD RESET
@@ -247,7 +249,7 @@ module top #
 
 
   mkBsvTop bsv_userlogic_top_inst(
-        .CLK(user_clk),
+        .CLK(user_clk_500),
         .RST_N(user_resetn),
         .xdmaChannel_rawH2cAxiStream_tvalid(m_axis_h2c_tvalid_0),
 		    .xdmaChannel_rawH2cAxiStream_tdata(m_axis_h2c_tdata_0),

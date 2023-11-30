@@ -1,6 +1,8 @@
 import FIFOF :: *;
 import ClientServer :: * ;
 import GetPut :: *;
+import Clocks :: * ;
+import Vector :: *;
 
 import UserLogicSettings :: *;
 import UserLogicTypes :: *;
@@ -12,6 +14,11 @@ import AxiStreamTypes :: *;
 import Axi4LiteTypes :: *;
 import Headers :: *;
 import RegisterBlock :: *;
+import Gearbox :: *;
+import AlignedFIFOs :: * ;
+
+import PrimUtils :: *;
+
 
 
 typedef Bit#(64) XdmaDescBypAddr;
@@ -54,8 +61,8 @@ interface XdmaChannel#(numeric type dataSz, numeric type userSz);
 endinterface
 
 interface XdmaWrapper#(numeric type dataSz, numeric type userSz);
-    interface UserLogicDmaReadSrv dmaReadSrv;
-    interface UserLogicDmaWriteSrv dmaWriteSrv;
+    interface UserLogicDmaReadWideSrv dmaReadSrv;
+    interface UserLogicDmaWriteWideSrv dmaWriteSrv;
     interface XdmaChannel#(dataSz, userSz) xdmaChannel;
 endinterface
 
@@ -69,11 +76,11 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
 
     let dmaReadReqQ     <- mkFIFOF;
     let dmaReadRespQ    <- mkFIFOF;
-    FIFOF#(UserLogicDmaC2hReq) dmaWriteReqQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hWideReq) dmaWriteReqQ <- mkFIFOF;
     let dmaWriteRespQ   <- mkFIFOF;
 
     FIFOF#(UserLogicDmaH2cReq) readReqProcessingQ   <- mkFIFOF;
-    FIFOF#(UserLogicDmaC2hReq) writeReqProcessingQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hWideReq) writeReqProcessingQ <- mkFIFOF;
 
     Wire#(Bool) h2cDescBypRdyWire <- mkBypassWire;
     Reg#(Bool) h2cNextBeatIsFirst <- mkReg(True);
@@ -95,8 +102,8 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
         let newData = xdmaH2cStFifo.first;
         let currentProcessingReq = readReqProcessingQ.first;
         xdmaH2cStFifo.deq;
-        dmaReadRespQ.enq(UserLogicDmaH2cResp{
-            dataStream: DataStream{
+        dmaReadRespQ.enq(UserLogicDmaH2cWideResp{
+            dataStream: DataStreamWide{
                 data: unpack(pack(newData.tData)),
                 byteEn: newData.tKeep,
                 isFirst: h2cNextBeatIsFirst,
@@ -476,4 +483,198 @@ module mkBluerdmaDmaProxy(BluerdmaDmaProxy);
     interface userlogicSideReadClt = h2cProxy.outClt;
     interface userlogicSideWriteClt = c2hProxy.outClt;
 
+endmodule
+
+
+interface XdmaGearbox;
+    interface UserLogicDmaReadWideClt h2cStreamClt;
+    interface UserLogicDmaWriteWideClt c2hStreamClt;
+    interface UserLogicDmaReadSrv h2cStreamSrv;
+    interface UserLogicDmaWriteSrv c2hStreamSrv;
+endinterface
+
+
+module mkXdmaGearbox(Clock fastClock, Reset fastReset, Clock slowClock, Reset slowReset, XdmaGearbox ifc);
+    
+    ClockDividerIfc divClk <- mkClockDivider(2);
+    
+    let h2cStreamReqQStore <- mkRegStore(fastClock, slowClock);
+    let c2hStreamRespQStore <- mkRegStore(slowClock, fastClock);
+
+    AlignedFIFO#(UserLogicDmaH2cReq) h2cStreamReqQ <- mkAlignedFIFO(
+        divClk.fastClock, fastReset,
+        divClk.slowClock, slowReset,
+        h2cStreamReqQStore,
+        divClk.clockReady,
+        True
+    );
+
+    Gearbox#(XDMA_GEARBOX_WIDE_VECTOR_LEN, XDMA_GEARBOX_NARROW_VECTOR_LEN, Maybe#(UserLogicDmaH2cResp)) h2cRespGearbox <- mkNto1Gearbox(
+        divClk.slowClock, slowReset,
+        divClk.fastClock, fastReset
+    );
+
+
+    Gearbox#(XDMA_GEARBOX_NARROW_VECTOR_LEN, XDMA_GEARBOX_WIDE_VECTOR_LEN, Maybe#(UserLogicDmaC2hReq)) c2hReqGearbox <- mk1toNGearbox(
+        divClk.fastClock, fastReset,    
+        divClk.slowClock, slowReset
+    );
+
+    AlignedFIFO#(UserLogicDmaC2hResp) c2hStreamRespQ <- mkAlignedFIFO(
+        divClk.slowClock, slowReset,
+        divClk.fastClock, fastReset,
+        c2hStreamRespQStore,
+        True,
+        divClk.clockReady
+    );
+
+    FIFOF#(UserLogicDmaH2cResp) h2cRespQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hReq) c2hReqQ <- mkFIFOF;
+    
+    Reg#(Bool) isCurrentC2hReqAnEvenBeat <- mkReg(False);
+
+    rule forwardH2cResp;
+        // use this rule to filter out Invalid resp.
+        h2cRespGearbox.deq;
+        if (h2cRespGearbox.first[0] matches tagged Valid .resp) begin
+            h2cRespQ.enq(resp);
+        end
+    endrule
+
+    rule forwardC2hReq;
+        // use this rule to insert a invalid tail if the tail 256 bits is not used.
+        Vector#(XDMA_GEARBOX_NARROW_VECTOR_LEN, Maybe#(UserLogicDmaC2hReq)) out;
+        if (isCurrentC2hReqAnEvenBeat) begin
+            if ( (!c2hReqQ.notEmpty) || (c2hReqQ.notEmpty && c2hReqQ.first.dataStream.isFirst)) begin
+                out[0] = tagged Invalid;
+                c2hReqGearbox.enq(out);
+                isCurrentC2hReqAnEvenBeat <= !isCurrentC2hReqAnEvenBeat;
+            end else begin
+                out[0] = tagged Valid c2hReqQ.first;
+                c2hReqGearbox.enq(out);
+                c2hReqQ.deq;
+                isCurrentC2hReqAnEvenBeat <= !isCurrentC2hReqAnEvenBeat;
+            end
+        end else begin
+            out[0] = tagged Valid c2hReqQ.first;
+            c2hReqGearbox.enq(out);
+            c2hReqQ.deq;
+            isCurrentC2hReqAnEvenBeat <= !isCurrentC2hReqAnEvenBeat;
+        end
+    endrule
+
+    interface UserLogicDmaReadWideClt h2cStreamClt;
+        interface Get request;
+            method ActionValue#(UserLogicDmaH2cReq) get;
+                h2cStreamReqQ.deq;
+                return h2cStreamReqQ.first;
+            endmethod
+        endinterface
+
+        interface Put response;
+            method Action put(UserLogicDmaH2cWideResp in);
+                ByteEn headPartEn = truncate(in.dataStream.byteEn);
+                DATA headPartData = truncate(in.dataStream.data);
+                ByteEn tailPartEn = truncateLSB(in.dataStream.byteEn);
+                DATA tailPartData = truncateLSB(in.dataStream.data);
+
+                UserLogicDmaH2cResp out0;
+                UserLogicDmaH2cResp out1;
+
+
+                out0.dataStream.byteEn = headPartEn;
+                out1.dataStream.byteEn = tailPartEn;
+                out0.dataStream.data = headPartData;
+                out1.dataStream.data = tailPartData;
+
+                Bool isTailPartValid = isZeroR(tailPartEn);
+                out0.dataStream.isFirst = in.dataStream.isFirst;
+                out1.dataStream.isFirst = False;
+                if (!isTailPartValid) begin
+                    out0.dataStream.isLast = in.dataStream.isLast;
+                    out1.dataStream.isLast = False;
+                end else begin
+                    out0.dataStream.isLast = False;
+                    out1.dataStream.isLast = in.dataStream.isLast;
+                end
+
+                Vector#(2, Maybe#(UserLogicDmaH2cResp)) outVec;
+
+                outVec[0] = tagged Valid out0;
+                outVec[1] = isTailPartValid ? tagged Valid out1 : tagged Invalid;
+
+                h2cRespGearbox.enq(outVec);
+            endmethod
+        endinterface
+    endinterface
+
+    interface UserLogicDmaWriteWideClt c2hStreamClt;
+        interface Get request;
+            method ActionValue#(UserLogicDmaC2hWideReq) get;
+                c2hReqGearbox.deq;
+                let headPartMaybe = c2hReqGearbox.first[0];
+                let tailPartMaybe = c2hReqGearbox.first[1];
+                immAssert(
+                    isValid(headPartMaybe),
+                    "XdmaGearbox c2h head part valid check err @ mkXdmaGearbox",
+                    $format(
+                        "expect head part to always be valid"
+                    )
+                );
+                
+                UserLogicDmaC2hWideReq out;
+
+                let headPart = fromMaybe(?, headPartMaybe);
+                out.dataStream.isFirst = headPart.dataStream.isFirst;
+                if (tailPartMaybe matches tagged Valid .tailPart) begin
+                    out.dataStream.data = {tailPart.dataStream.data, headPart.dataStream.data};
+                    out.dataStream.isLast = tailPart.dataStream.isLast;
+                    out.dataStream.byteEn = {tailPart.dataStream.byteEn, headPart.dataStream.byteEn};
+                end else begin
+                    out.dataStream.data = {0, headPart.dataStream.data};
+                    out.dataStream.isLast = headPart.dataStream.isLast;
+                    out.dataStream.byteEn = {0, headPart.dataStream.byteEn};
+                end
+
+                return out;
+            endmethod
+        endinterface
+
+        interface Put response;
+            method Action put(UserLogicDmaC2hResp e);
+                c2hStreamRespQ.enq(e);
+            endmethod
+        endinterface
+    endinterface
+
+    interface UserLogicDmaReadWideSrv h2cStreamSrv;
+        interface Get response;
+            method ActionValue#(UserLogicDmaH2cResp) get;
+                h2cRespQ.deq;
+                return h2cRespQ.first;
+            endmethod
+        endinterface
+
+        interface Put request;
+            method Action put(UserLogicDmaH2cReq e);
+                h2cStreamReqQ.enq(e);
+            endmethod
+        endinterface
+
+    endinterface
+
+    interface UserLogicDmaWriteWideSrv c2hStreamSrv;
+        interface Get response;
+            method ActionValue#(UserLogicDmaC2hResp) get;
+                c2hStreamRespQ.deq;
+                return c2hStreamRespQ.first;
+            endmethod
+        endinterface
+
+        interface Put request;
+            method Action put(UserLogicDmaC2hReq e);
+                c2hReqQ.enq(e);
+            endmethod
+        endinterface
+    endinterface
 endmodule

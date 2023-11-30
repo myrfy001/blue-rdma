@@ -15,6 +15,7 @@ import PrimUtils :: *;
 import Utils :: *;
 
 
+
 function Bool isRingbufNotEmpty(Fix4kBRingBufPointer head, Fix4kBRingBufPointer tail);
     return !(head == tail);
 endfunction
@@ -421,6 +422,18 @@ module mkTestRingbuf(Empty) ;
 
     Reg#(Bool) initializedReg <- mkReg(False);
 
+    Reg#(UInt#(32)) testReg <- mkReg(0);
+    FIFOF#(UInt#(32)) testFifo <- mkSizedFIFOF(3);
+
+    rule testR;
+        testFifo.enq(testReg);
+        testReg <= testReg + 1;
+    endrule
+
+    rule testR1;
+        testFifo.deq;
+    endrule
+
     rule init if (!initializedReg);
         randomGen1.cntrl.init;
         randomGen2.cntrl.init;
@@ -434,8 +447,9 @@ module mkTestRingbuf(Empty) ;
     endrule
 
     rule ruleSofrwareModifyH2cHead;
+        let random <- randomGen1.next;
         if (isRingbufNotFull(pool.h2cMetas[0].head, pool.h2cMetas[0].tail)) begin
-            let random <- randomGen1.next;
+            
             
             // make a two stage random, first one the qeueu is almost empty, second one the queue is almost full
             if (
@@ -477,14 +491,13 @@ module mkTestRingbuf(Empty) ;
     endrule
 
     rule ruleFakeDmaEngineGeneratingH2CResponse;
-
+        let random <- randomGen3.next;
         if (dmaDelaySimulateReg > 0) begin
             dmaDelaySimulateReg <= dmaDelaySimulateReg -1;
         end
         if (pipelineH2CFifo.notEmpty && dmaDelaySimulateReg == 0) begin
             if ((respCntReg & 'h7) == 7) begin
-            pipelineH2CFifo.deq;
-                let random <- randomGen3.next;
+                pipelineH2CFifo.deq;
                 dmaDelaySimulateReg <= unpack(zeroExtend(random & 'h1F));
             end
 

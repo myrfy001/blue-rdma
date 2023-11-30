@@ -90,6 +90,18 @@ typedef TLog#(PCIE_MRRS) RINGBUF_READ_BLOCK_BYTE_WIDTH;
 
 typedef Bit#(16) UserLogicDmaLen;
 
+typedef TMul#(DATA_BUS_WIDTH, 2) DATA_BUS_WIDE_WIDTH;
+typedef TMul#(DATA_BUS_BYTE_WIDTH, 2) DATA_BUS_WIDE_BYTE_WIDTH;
+typedef Bit#(DATA_BUS_WIDE_WIDTH)      DATA_WIDE;
+typedef Bit#(DATA_BUS_WIDE_BYTE_WIDTH) ByteEnWide;
+
+typedef struct {
+    DATA_WIDE data;
+    ByteEnWide byteEn;
+    Bool isFirst;
+    Bool isLast;
+} DataStreamWide deriving(Bits, Bounded, Eq, FShow);
+
 typedef struct {
     ADDR addr;
     UserLogicDmaLen len;
@@ -99,12 +111,22 @@ typedef struct {
     DataStream dataStream;
 } UserLogicDmaH2cResp deriving(Bits, FShow);
 
+typedef struct {
+    DataStreamWide dataStream;
+} UserLogicDmaH2cWideResp deriving(Bits, FShow);
+
 
 typedef struct {
     ADDR addr;
     UserLogicDmaLen len;
     DataStream dataStream;
 } UserLogicDmaC2hReq deriving(Bits, FShow);
+
+typedef struct {
+    ADDR addr;
+    UserLogicDmaLen len;
+    DataStreamWide dataStream;
+} UserLogicDmaC2hWideReq deriving(Bits, FShow);
 
 typedef struct {
 } UserLogicDmaC2hResp deriving(Bits, FShow);
@@ -115,3 +137,10 @@ typedef Server#(UserLogicDmaC2hReq, UserLogicDmaC2hResp)    UserLogicDmaWriteSrv
 typedef Client#(UserLogicDmaH2cReq, UserLogicDmaH2cResp)    UserLogicDmaReadClt;
 typedef Client#(UserLogicDmaC2hReq, UserLogicDmaC2hResp)    UserLogicDmaWriteClt;
 
+typedef Server#(UserLogicDmaH2cReq, UserLogicDmaH2cWideResp)    UserLogicDmaReadWideSrv;
+typedef Server#(UserLogicDmaC2hWideReq, UserLogicDmaC2hResp)    UserLogicDmaWriteWideSrv;
+typedef Client#(UserLogicDmaH2cReq, UserLogicDmaH2cWideResp)    UserLogicDmaReadWideClt;
+typedef Client#(UserLogicDmaC2hWideReq, UserLogicDmaC2hResp)    UserLogicDmaWriteWideClt;
+
+typedef 2 XDMA_GEARBOX_WIDE_VECTOR_LEN;
+typedef 1 XDMA_GEARBOX_NARROW_VECTOR_LEN;

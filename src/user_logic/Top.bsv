@@ -19,14 +19,17 @@ import Arbitration :: *;
 interface BsvTop#(numeric type dataSz, numeric type userSz);
     interface XdmaChannel#(dataSz, userSz) xdmaChannel;
     interface RawAxi4LiteSlave#(CSR_ADDR_WIDTH, CSR_DATA_STRB_WIDTH) axilRegBlock;
+    // interface Clock fastClock;
+    // interface Reset fastReset;
+    // interface Clock slowClock;
+    // interface Reset slowReset;
 endinterface
 
 (* synthesize *)
-module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH));
+module mkBsvTop(Clock fastClock, Reset fastReset, Clock slowClock, Reset slowReset, BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc);
+
     XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper;
     
-    
-
     BluerdmaDmaProxy bluerdmaDmaProxy <- mkBluerdmaDmaProxy;
     RingbufPool#(RINGBUF_H2C_TOTAL_COUNT, RINGBUF_C2H_TOTAL_COUNT, RingbufRawDescriptor) ringbufPool <- mkRingbufPool;
 
@@ -56,9 +59,13 @@ module mkBsvTop(BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)
     TLB tlb <- mkTLB;
     PgtManager pgtManager <- mkPgtManager(tlb);
     
+    XdmaGearbox xdmaGearbox <- mkXdmaGearbox(fastClock, fastReset, slowClock, slowReset);
 
-    mkConnection(xdmaWrap.dmaReadSrv, xdmaReadClt);
-    mkConnection(xdmaWrap.dmaWriteSrv, xdmaWriteClt);
+    mkConnection(xdmaReadClt, xdmaGearbox.h2cStreamSrv);
+    mkConnection(xdmaWriteClt, xdmaGearbox.c2hStreamSrv);
+
+    mkConnection(xdmaWrap.dmaReadSrv, xdmaGearbox.h2cStreamClt);
+    mkConnection(xdmaWrap.dmaWriteSrv, xdmaGearbox.c2hStreamClt);
 
     
 
