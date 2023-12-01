@@ -304,7 +304,7 @@ interface XdmaAxiLiteBridgeWrapper#(type t_csr_addr, type t_csr_data);
     // interface Client#(CsrWriteRequest#(t_csr_addr, t_csr_data), CsrWriteResponse) csrWriteClt; 
 endinterface 
 
-module mkXdmaAxiLiteBridgeWrapper(ClockDividerIfc divClk, Reset slowReset, RegisterBlock#(t_csr_addr, t_csr_data) regBlock, XdmaAxiLiteBridgeWrapper#(t_csr_addr, t_csr_data) ifc) 
+module mkXdmaAxiLiteBridgeWrapper(Clock slowClock, Reset slowReset, RegisterBlock#(t_csr_addr, t_csr_data) regBlock, XdmaAxiLiteBridgeWrapper#(t_csr_addr, t_csr_data) ifc) 
     provisos (
         Bits#(t_csr_addr, sz_csr_addr),
         Bits#(t_csr_data, sz_csr_data),
@@ -312,10 +312,11 @@ module mkXdmaAxiLiteBridgeWrapper(ClockDividerIfc divClk, Reset slowReset, Regis
         Div#(sz_csr_data, BYTE_WIDTH, sz_csr_strb),
         Div#(TMul#(sz_csr_strb, 8), 8, sz_csr_strb)
     );
+    ClockDividerIfc divClk <- mkClockDivider(2);
 
     Clock fastClock <- exposeCurrentClock;
     Reset fastReset <- exposeCurrentReset;
-    Clock slowClock = divClk.slowClock;
+
 
     SyncFIFOIfc#(Axi4LiteWrAddr#(sz_csr_addr)) cntrlWrAddrFifo <- mkSyncFIFO(2, slowClock,slowReset, fastClock);
     SyncFIFOIfc#(Axi4LiteWrData#(sz_csr_strb)) cntrlWrDataFifo <- mkSyncFIFO(2, slowClock,slowReset, fastClock);
@@ -499,37 +500,37 @@ interface XdmaGearbox;
 endinterface
 
 
-module mkXdmaGearbox(ClockDividerIfc divClk, Reset slowReset, XdmaGearbox ifc);
+module mkXdmaGearbox(Clock slowClock, Reset slowReset, XdmaGearbox ifc);
     
     Clock fastClock <- exposeCurrentClock;
     Reset fastReset <- exposeCurrentReset;
-    Clock slowClock = divClk.slowClock;
+    ClockDividerIfc divClk <- mkClockDivider(2);
     
     let h2cStreamReqQStore <- mkRegStore(fastClock, slowClock);
     let c2hStreamRespQStore <- mkRegStore(slowClock, fastClock);
 
     AlignedFIFO#(UserLogicDmaH2cReq) h2cStreamReqQ <- mkAlignedFIFO(
-        divClk.fastClock, fastReset,
-        divClk.slowClock, slowReset,
+        fastClock, fastReset,
+        slowClock, slowReset,
         h2cStreamReqQStore,
         divClk.clockReady,
         True
     );
 
     Gearbox#(XDMA_GEARBOX_WIDE_VECTOR_LEN, XDMA_GEARBOX_NARROW_VECTOR_LEN, Maybe#(UserLogicDmaH2cResp)) h2cRespGearbox <- mkNto1Gearbox(
-        divClk.slowClock, slowReset,
-        divClk.fastClock, fastReset
+        slowClock, slowReset,
+        fastClock, fastReset
     );
 
 
     Gearbox#(XDMA_GEARBOX_NARROW_VECTOR_LEN, XDMA_GEARBOX_WIDE_VECTOR_LEN, Maybe#(UserLogicDmaC2hReq)) c2hReqGearbox <- mk1toNGearbox(
-        divClk.fastClock, fastReset,    
-        divClk.slowClock, slowReset
+        fastClock, fastReset,    
+        slowClock, slowReset
     );
 
     AlignedFIFO#(UserLogicDmaC2hResp) c2hStreamRespQ <- mkAlignedFIFO(
-        divClk.slowClock, slowReset,
-        divClk.fastClock, fastReset,
+        slowClock, slowReset,
+        fastClock, fastReset,
         c2hStreamRespQStore,
         True,
         divClk.clockReady

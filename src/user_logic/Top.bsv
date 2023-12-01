@@ -26,12 +26,8 @@ interface BsvTop#(numeric type dataSz, numeric type userSz);
 endinterface
 
 (* synthesize *)
-module mkBsvTop(Reset slowReset, BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc);
-
-    
-    ClockDividerIfc divClk <- mkClockDivider(2);
-    Clock slowClock = divClk.slowClock;
-    // Reset slowReset = noReset(); // TODO, make sure which reset to use.
+module mkBsvTop(Clock slowClock, Reset slowReset, BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc);
+    // TODO, make sure which reset to use.
 
     XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper(clocked_by slowClock, reset_by slowReset);
     
@@ -39,7 +35,7 @@ module mkBsvTop(Reset slowReset, BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_
     RingbufPool#(RINGBUF_H2C_TOTAL_COUNT, RINGBUF_C2H_TOTAL_COUNT, RingbufRawDescriptor) ringbufPool <- mkRingbufPool;
 
     RegisterBlock#(CsrAddr, CsrData) regBlock <- mkRegisterBlock(ringbufPool.h2cMetas, ringbufPool.c2hMetas);
-    XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(divClk, slowReset, regBlock);
+    XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(slowClock, slowReset, regBlock);
     
     function Bool isH2cDmaReqFinished(UserLogicDmaH2cReq req) = True;
     function Bool isH2cDmaRespFinished(UserLogicDmaH2cResp resp) = resp.dataStream.isLast;
@@ -64,7 +60,7 @@ module mkBsvTop(Reset slowReset, BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_
     TLB tlb <- mkTLB;
     PgtManager pgtManager <- mkPgtManager(tlb);
     
-    XdmaGearbox xdmaGearbox <- mkXdmaGearbox(divClk, slowReset);
+    XdmaGearbox xdmaGearbox <- mkXdmaGearbox(slowClock, slowReset);
 
     mkConnection(xdmaReadClt, xdmaGearbox.h2cStreamSrv);
     mkConnection(xdmaWriteClt, xdmaGearbox.c2hStreamSrv);
