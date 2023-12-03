@@ -18,6 +18,8 @@ import Gearbox :: *;
 import AlignedFIFOs :: * ;
 
 import PrimUtils :: *;
+import Connectable :: * ;
+import StmtFSM::*;
 
 
 
@@ -544,6 +546,7 @@ module mkXdmaGearbox(Clock slowClock, Reset slowReset, XdmaGearbox ifc);
     rule forwardH2cResp;
         // use this rule to filter out Invalid resp.
         h2cRespGearbox.deq;
+        $display("forwardH2cResp deq", fshow(h2cRespGearbox.first));
         if (h2cRespGearbox.first[0] matches tagged Valid .resp) begin
             h2cRespQ.enq(resp);
         end
@@ -595,7 +598,7 @@ module mkXdmaGearbox(Clock slowClock, Reset slowReset, XdmaGearbox ifc);
                 out0.dataStream.data = headPartData;
                 out1.dataStream.data = tailPartData;
 
-                Bool isTailPartValid = isZeroR(tailPartEn);
+                Bool isTailPartValid = !isZeroR(tailPartEn);
                 out0.dataStream.isFirst = in.dataStream.isFirst;
                 out1.dataStream.isFirst = False;
                 if (!isTailPartValid) begin
@@ -685,4 +688,100 @@ module mkXdmaGearbox(Clock slowClock, Reset slowReset, XdmaGearbox ifc);
             endmethod
         endinterface
     endinterface
+endmodule
+
+
+(* synthesize *)
+module mkTbGearbox(Empty);
+    ClockDividerIfc divClk <- mkClockDivider(2);
+    Reset slowReset <- mkInitialReset(1, clocked_by divClk.slowClock);
+    XdmaGearbox dut <- mkXdmaGearbox(divClk.slowClock, slowReset);
+
+    FIFOF#(UserLogicDmaH2cReq) xdmaH2cReqQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
+    FIFOF#(UserLogicDmaH2cWideResp) xdmaH2cRespQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
+    FIFOF#(UserLogicDmaC2hWideReq) xdmaC2hReqQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
+    FIFOF#(UserLogicDmaC2hResp) xdmaC2hRespQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
+
+    FIFOF#(UserLogicDmaH2cReq) userH2cReqQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cResp) userH2cRespQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hReq) userC2hReqQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hResp) userC2hRespQ <- mkFIFOF;
+
+
+    mkConnection(toPut(xdmaH2cReqQ), dut.h2cStreamClt.request);
+    mkConnection(toGet(xdmaH2cRespQ), dut.h2cStreamClt.response);
+    mkConnection(toPut(xdmaC2hReqQ), dut.c2hStreamClt.request);
+    mkConnection(toGet(xdmaC2hRespQ), dut.c2hStreamClt.response);
+    mkConnection(toGet(userH2cReqQ), dut.h2cStreamSrv.request);
+    mkConnection(toPut(userH2cRespQ), dut.h2cStreamSrv.response);
+    mkConnection(toGet(userC2hReqQ), dut.c2hStreamSrv.request);
+    mkConnection(toPut(userC2hRespQ), dut.c2hStreamSrv.response);
+
+    Reg#(Bool) startedXdma <- mkReg(False, clocked_by divClk.slowClock, reset_by slowReset);
+    Reg#(Bool) startedUser <- mkReg(False);
+    Reg#(Bit#(10)) counter <- mkReg(0);
+
+    FSM runUserSideLogic <- mkFSM(
+        (seq
+            $display("66666");
+            // TODO: why first enqueue is missed?
+            userH2cReqQ.enq(UserLogicDmaH2cReq{
+                addr: 'h0,
+                len: 'h5
+            });
+            $display("7777777777");
+
+            userH2cReqQ.enq(UserLogicDmaH2cReq{
+                addr: 'h0,
+                len: 'h6
+            });
+            $display("88888888");
+            $display(fshow(userH2cRespQ.first));
+            userH2cRespQ.deq;
+            $display("999999");
+
+            $display(fshow(userH2cRespQ.first));
+            userH2cRespQ.deq;
+            $display("0000000");
+        endseq)
+    );
+
+    FSM runXdmaSideLogic <- mkFSM(
+        (seq
+            $display("33333");
+            xdmaH2cReqQ.deq;
+            $display("4444444");
+            xdmaH2cRespQ.enq(
+                UserLogicDmaH2cWideResp{
+                    dataStream: DataStreamWide {
+                        data: ?,
+                        byteEn: ?,
+                        isFirst: True,
+                        isLast: True
+                    }
+                }
+            );
+            $display("55555");
+           
+        endseq),
+        clocked_by divClk.slowClock, reset_by slowReset
+    );
+
+
+    rule doFakeXdma if (!startedXdma);
+        $display("1111");
+        startedXdma <= True;
+        runXdmaSideLogic.start;
+    endrule
+
+    rule doTest if (!startedUser && counter > 10);
+        $display("22222");
+        startedUser <= True;
+        runUserSideLogic.start;
+    endrule
+
+    rule doKeepRunning;
+        counter <= counter + 1;
+    endrule
+    
 endmodule
