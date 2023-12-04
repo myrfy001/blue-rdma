@@ -3,6 +3,7 @@ import ClientServer :: * ;
 import GetPut :: *;
 import Clocks :: * ;
 import Vector :: *;
+import BRAM :: *;
 
 import UserLogicSettings :: *;
 import UserLogicTypes :: *;
@@ -634,8 +635,10 @@ module mkXdmaGearbox(Clock slowClock, Reset slowReset, XdmaGearbox ifc);
                 );
                 
                 UserLogicDmaC2hWideReq out = ?;
-
+    
                 let headPart = fromMaybe(?, headPartMaybe);
+                out.addr = headPart.addr;
+                out.len = headPart.len;
                 out.dataStream.isFirst = headPart.dataStream.isFirst;
                 if (tailPartMaybe matches tagged Valid .tailPart) begin
                     out.dataStream.data = {tailPart.dataStream.data, headPart.dataStream.data};
@@ -697,10 +700,12 @@ module mkTbGearbox(Empty);
     Reset slowReset <- mkInitialReset(1, clocked_by divClk.slowClock);
     XdmaGearbox dut <- mkXdmaGearbox(divClk.slowClock, slowReset);
 
-    FIFOF#(UserLogicDmaH2cReq) xdmaH2cReqQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
-    FIFOF#(UserLogicDmaH2cWideResp) xdmaH2cRespQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
-    FIFOF#(UserLogicDmaC2hWideReq) xdmaC2hReqQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
-    FIFOF#(UserLogicDmaC2hResp) xdmaC2hRespQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
+    // FIFOF#(UserLogicDmaH2cReq) xdmaH2cReqQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
+    // FIFOF#(UserLogicDmaH2cWideResp) xdmaH2cRespQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
+    // FIFOF#(UserLogicDmaC2hWideReq) xdmaC2hReqQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
+    // FIFOF#(UserLogicDmaC2hResp) xdmaC2hRespQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
+
+    FakeXdma fakeXdma <- mkFakeXdma(clocked_by divClk.slowClock, reset_by slowReset);
 
     FIFOF#(UserLogicDmaH2cReq) userH2cReqQ <- mkFIFOF;
     FIFOF#(UserLogicDmaH2cResp) userH2cRespQ <- mkFIFOF;
@@ -708,10 +713,9 @@ module mkTbGearbox(Empty);
     FIFOF#(UserLogicDmaC2hResp) userC2hRespQ <- mkFIFOF;
 
 
-    mkConnection(toPut(xdmaH2cReqQ), dut.h2cStreamClt.request);
-    mkConnection(toGet(xdmaH2cRespQ), dut.h2cStreamClt.response);
-    mkConnection(toPut(xdmaC2hReqQ), dut.c2hStreamClt.request);
-    mkConnection(toGet(xdmaC2hRespQ), dut.c2hStreamClt.response);
+    mkConnection(fakeXdma.xdmaH2cSrv, dut.h2cStreamClt);
+    mkConnection(fakeXdma.xdmaC2hSrv, dut.c2hStreamClt);
+
     mkConnection(toGet(userH2cReqQ), dut.h2cStreamSrv.request);
     mkConnection(toPut(userH2cRespQ), dut.h2cStreamSrv.response);
     mkConnection(toGet(userC2hReqQ), dut.c2hStreamSrv.request);
@@ -723,59 +727,80 @@ module mkTbGearbox(Empty);
 
     FSM runUserSideLogic <- mkFSM(
         (seq
-            $display("66666");
-            // TODO: why first enqueue is missed?
-            userH2cReqQ.enq(UserLogicDmaH2cReq{
+
+            userC2hReqQ.enq(UserLogicDmaC2hReq{
                 addr: 'h0,
-                len: 'h5
+                len: 2,
+                dataStream: DataStream{
+                    data: 'h12345678,
+                    isFirst:True,
+                    isLast: True,
+                    byteEn: 'h3
+                }
             });
-            $display("7777777777");
+
+            userC2hRespQ.deq;
+
+            userC2hReqQ.enq(UserLogicDmaC2hReq{
+                addr: 'h40,
+                len: 'h40,
+                dataStream: DataStream{
+                    data: 'h1234,
+                    isFirst:True,
+                    isLast: False,
+                    byteEn: -1
+                }
+            });
+
+            userC2hReqQ.enq(UserLogicDmaC2hReq{
+                addr: 'h40,
+                len: 'h40,
+                dataStream: DataStream{
+                    data: 'habcd,
+                    isFirst:False,
+                    isLast: True,
+                    byteEn: -1
+                }
+            });
+
+            userC2hRespQ.deq;
+
+            delay(200);
 
             userH2cReqQ.enq(UserLogicDmaH2cReq{
                 addr: 'h0,
-                len: 'h6
+                len: 128
             });
-            $display("88888888");
-            $display(fshow(userH2cRespQ.first));
             userH2cRespQ.deq;
-            $display("999999");
+            userH2cRespQ.deq;
 
-            $display(fshow(userH2cRespQ.first));
-            userH2cRespQ.deq;
-            $display("0000000");
         endseq)
     );
 
-    FSM runXdmaSideLogic <- mkFSM(
-        (seq
-            $display("33333");
-            xdmaH2cReqQ.deq;
-            $display("4444444");
-            xdmaH2cRespQ.enq(
-                UserLogicDmaH2cWideResp{
-                    dataStream: DataStreamWide {
-                        data: ?,
-                        byteEn: ?,
-                        isFirst: True,
-                        isLast: True
-                    }
-                }
-            );
-            $display("55555");
-           
-        endseq),
-        clocked_by divClk.slowClock, reset_by slowReset
-    );
+    // FSM runXdmaSideLogic <- mkFSM(
+    //     (seq
+    //         xdmaH2cReqQ.deq;
+    //         xdmaH2cRespQ.enq(
+    //             UserLogicDmaH2cWideResp{
+    //                 dataStream: DataStreamWide {
+    //                     data: ?,
+    //                     byteEn: ?,
+    //                     isFirst: True,
+    //                     isLast: True
+    //                 }
+    //             }
+    //         );
+    //     endseq),
+    //     clocked_by divClk.slowClock, reset_by slowReset
+    // );
 
 
-    rule doFakeXdma if (!startedXdma);
-        $display("1111");
-        startedXdma <= True;
-        runXdmaSideLogic.start;
-    endrule
+    // rule doFakeXdma if (!startedXdma);
+    //     startedXdma <= True;
+    //     runXdmaSideLogic.start;
+    // endrule
 
     rule doTest if (!startedUser && counter > 10);
-        $display("22222");
         startedUser <= True;
         runUserSideLogic.start;
     endrule
@@ -784,4 +809,153 @@ module mkTbGearbox(Empty);
         counter <= counter + 1;
     endrule
     
+endmodule
+
+
+interface FakeXdma;
+    interface UserLogicDmaReadWideSrv xdmaH2cSrv;
+    interface UserLogicDmaWriteWideSrv xdmaC2hSrv;
+endinterface
+
+
+// TODO: this fake xdma only support 64 byte aligned read now. 
+// This is enough for testing descriptor fetch, but not for RDMA read and write.
+// modify it to allow any alignment.
+module mkFakeXdma(FakeXdma ifc);
+    FIFOF#(UserLogicDmaH2cReq) xdmaH2cReqQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cWideResp) xdmaH2cRespQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hWideReq) xdmaC2hReqQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hResp) xdmaC2hRespQ <- mkFIFOF;
+
+    BRAM_Configure cfg = defaultValue;
+    cfg.allowWriteResponseBypass = False;
+    cfg.memorySize = 1024*1024; // 64 MB, word size is 64B
+    // BRAM2PortBE#(ADDR, DATA_WIDE, SizeOf#(ByteEnWide)) hostMem <- mkBRAM2ServerBE(cfg);
+
+    BRAM2PortBE#(Bit#(32), Bit#(512), 64) hostMem <- mkBRAM2ServerBE(cfg);
+
+    Reg#(Bool) currentIsH2cReg <- mkReg(True);
+    Reg#(Bool) currentNotFinished <- mkReg(False);
+    FIFOF#(Tuple4#(Bool, ADDR, UserLogicDmaLen, DataStreamWide)) unionedReqQ <- mkFIFOF;
+    FIFOF#(DataStreamWide) respInfoQ <- mkFIFOF;
+
+    Reg#(UserLogicDmaLen) bytesLeftReg <- mkRegU;
+    Reg#(ADDR) currentAddrReg <- mkRegU;
+
+
+    rule ruleArbitter;
+        
+        if (currentIsH2cReg) begin
+            
+            if (xdmaH2cReqQ.notEmpty) begin
+                xdmaH2cReqQ.deq;
+                let req = xdmaH2cReqQ.first;
+                unionedReqQ.enq(tuple4(True, req.addr, req.len, ?));
+                if (xdmaC2hReqQ.notEmpty) begin
+                    currentIsH2cReg <= !currentIsH2cReg;
+                end
+            end else begin
+                currentIsH2cReg <= !currentIsH2cReg;
+            end
+        end else begin
+            if (xdmaC2hReqQ.notEmpty) begin
+                xdmaC2hReqQ.deq;
+                let req = xdmaC2hReqQ.first;
+                unionedReqQ.enq(tuple4(False, req.addr, req.len, req.dataStream));
+                if (req.dataStream.isLast && xdmaH2cReqQ.notEmpty) begin
+                    currentIsH2cReg <= !currentIsH2cReg;
+                end
+            end else begin
+                currentIsH2cReg <= !currentIsH2cReg;
+            end
+        end
+    endrule
+
+
+    rule handleReq;
+        if (unionedReqQ.notEmpty) begin
+            let {isH2c, addr, len, stream} = unionedReqQ.first;
+            if (isH2c) begin
+                if (currentNotFinished == False) begin
+                    $display("byteLeft----=", len, len-fromInteger(valueOf(SizeOf#(ByteEnWide))));
+                    UserLogicDmaLen byteLeft = len;
+                    let isLastBeat = byteLeft <= fromInteger(valueOf(SizeOf#(ByteEnWide)));
+                    let byteToRead = isLastBeat ? byteLeft : fromInteger(valueOf(SizeOf#(ByteEnWide)));
+                    let curAddr = addr;
+                    let byteEn = (1 << byteToRead) - 1;
+                    hostMem.portA.request.put(BRAMRequestBE{
+                        writeen: 0,
+                        responseOnWrite: False,
+                        address: unpack(truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))))),
+                        datain: byteEn
+                    });
+                    respInfoQ.enq(DataStreamWide{isFirst: True, isLast: isLastBeat, byteEn: byteEn, data: ?});
+                    if (isLastBeat) begin
+                        currentNotFinished <= False;
+                        unionedReqQ.deq;
+                    end else begin
+                        currentNotFinished <= True;
+                        bytesLeftReg <= byteLeft - fromInteger(valueOf(SizeOf#(ByteEnWide)));
+                        currentAddrReg <= curAddr + fromInteger(valueOf(SizeOf#(ByteEnWide)));
+                    end
+                end else begin
+                    // For a big request, we have to split it into multi BRAM read requests
+                    let isLastBeat = bytesLeftReg <= fromInteger(valueOf(SizeOf#(ByteEnWide)));
+                    let byteToRead = isLastBeat ? bytesLeftReg : fromInteger(valueOf(SizeOf#(ByteEnWide)));
+                    let curAddr = currentAddrReg;
+                    let byteEn = (1 << byteToRead) - 1;
+                    hostMem.portA.request.put(BRAMRequestBE{
+                        writeen: 0,
+                        responseOnWrite: False,
+                        address: unpack(truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))))),
+                        datain: byteEn
+                    });
+                    respInfoQ.enq(DataStreamWide{isFirst: False, isLast: isLastBeat, byteEn: byteEn, data: ?});
+                    if (isLastBeat) begin
+                        currentNotFinished <= False;
+                        unionedReqQ.deq;
+                    end else begin
+                        currentNotFinished <= True;
+                        bytesLeftReg <= bytesLeftReg - fromInteger(valueOf(SizeOf#(ByteEnWide)));
+                        currentAddrReg <= currentAddrReg + fromInteger(valueOf(SizeOf#(ByteEnWide)));
+                    end
+                    $display("bytesLeftReg=", bytesLeftReg);
+                end
+            end else begin
+                
+                unionedReqQ.deq;
+                let curAddr = currentAddrReg;
+                if (stream.isFirst) begin
+                    currentAddrReg <= addr + fromInteger(valueOf(SizeOf#(ByteEnWide)));
+                    curAddr = addr;
+                end
+                if (stream.isLast) begin
+                    xdmaC2hRespQ.enq(?);
+                end
+                hostMem.portA.request.put(BRAMRequestBE{
+                    writeen: stream.byteEn,
+                    responseOnWrite: False,
+                    address: unpack(truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))))),
+                    datain: stream.data
+                });
+            end
+        end
+    endrule
+
+    rule handleResp;
+        let memReadResp <- hostMem.portA.response.get;
+        let readInfo = respInfoQ.first;
+        respInfoQ.deq;
+        xdmaH2cRespQ.enq(UserLogicDmaH2cWideResp{
+            dataStream: DataStreamWide{
+                data: memReadResp,
+                isFirst: readInfo.isFirst,
+                isLast: readInfo.isLast,
+                byteEn: readInfo.byteEn
+            }
+        });
+    endrule
+
+    interface xdmaH2cSrv = toGPServer(xdmaH2cReqQ, xdmaH2cRespQ);
+    interface xdmaC2hSrv = toGPServer(xdmaC2hReqQ, xdmaC2hRespQ);
 endmodule
