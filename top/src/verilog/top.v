@@ -5,12 +5,12 @@ module top #
    parameter PL_LINK_CAP_MAX_LINK_WIDTH          = 16,            // 1- X1; 2 - X2; 4 - X4; 8 - X8
    parameter PL_SIM_FAST_LINK_TRAINING           = "FALSE",      // Simulation Speedup
    parameter PL_LINK_CAP_MAX_LINK_SPEED          = 4,             // 1- GEN1; 2 - GEN2; 4 - GEN3
-   parameter C_DATA_WIDTH                        = 256 ,
+   parameter C_DATA_WIDTH                        = 512 ,
    parameter EXT_PIPE_SIM                        = "FALSE",  // This Parameter has effect on selecting Enable External PIPE Interface in GUI.
    parameter C_ROOT_PORT                         = "FALSE",      // PCIe block is in root port mode
    parameter C_DEVICE_NUMBER                     = 0,            // Device number for Root Port configurations only
-   parameter AXIS_CCIX_RX_TDATA_WIDTH     = 256, 
-   parameter AXIS_CCIX_TX_TDATA_WIDTH     = 256,
+   parameter AXIS_CCIX_RX_TDATA_WIDTH     = 512, 
+   parameter AXIS_CCIX_TX_TDATA_WIDTH     = 512,
    parameter AXIS_CCIX_RX_TUSER_WIDTH     = 46,
    parameter AXIS_CCIX_TX_TUSER_WIDTH     = 46
    )
@@ -24,8 +24,7 @@ module top #
 
     input 					 sys_clk_p,
     input 					 sys_clk_n,
-    input 					 sys_rst_n,
-    input            user_clk_500
+    input 					 sys_rst_n
    );
 
    //-----------------------------------------------------------------------------------------------------------------------
@@ -50,8 +49,8 @@ module top #
    //  AXI Interface                                                                                                 //
    //----------------------------------------------------------------------------------------------------------------//
    
-   wire 					   user_clk;
-  //  wire              user_clk_500;
+   wire 					   user_clk_250;
+   wire              user_clk_500;
    wire 					   user_resetn;
    
   // Wires for Avery HOT/WARM and COLD RESET
@@ -83,9 +82,9 @@ module top #
 
 //////////////////////////////////////////////////  LITE
    //-- AXI Master Write Address Channel
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [31:0] m_axil_awaddr;
+    wire [31:0] m_axil_awaddr;
     wire [2:0]  m_axil_awprot;
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire 	m_axil_awvalid;
+    wire 	m_axil_awvalid;
     wire 	m_axil_awready;
 
     //-- AXI Master Write Data Channel
@@ -112,41 +111,52 @@ module top #
     // wire          msi_enable;
 
       // AXI streaming ports
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [C_DATA_WIDTH-1:0]	m_axis_h2c_tdata_0;
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire 			m_axis_h2c_tlast_0;
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire 			m_axis_h2c_tvalid_0;
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire 			m_axis_h2c_tready_0;
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [C_DATA_WIDTH/8-1:0]	m_axis_h2c_tkeep_0;
+    wire [C_DATA_WIDTH-1:0]	m_axis_h2c_tdata_0;
+    wire 			m_axis_h2c_tlast_0;
+    wire 			m_axis_h2c_tvalid_0;
+    wire 			m_axis_h2c_tready_0;
+    wire [C_DATA_WIDTH/8-1:0]	m_axis_h2c_tkeep_0;
     
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [C_DATA_WIDTH-1:0] s_axis_c2h_tdata_0; 
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire s_axis_c2h_tlast_0;
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire s_axis_c2h_tvalid_0;
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire s_axis_c2h_tready_0;
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [C_DATA_WIDTH/8-1:0] s_axis_c2h_tkeep_0; 
+    wire [C_DATA_WIDTH-1:0] s_axis_c2h_tdata_0; 
+    wire s_axis_c2h_tlast_0;
+    wire s_axis_c2h_tvalid_0;
+    wire s_axis_c2h_tready_0;
+    wire [C_DATA_WIDTH/8-1:0] s_axis_c2h_tkeep_0; 
 
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [7:0] c2h_sts_0;
-    (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [7:0] h2c_sts_0;
+    wire [7:0] c2h_sts_0;
+    wire [7:0] h2c_sts_0;
 
 
   // Ref clock buffer
-
   IBUFDS_GTE4 # (.REFCLK_HROW_CK_SEL(2'b00)) refclk_ibuf (.O(sys_clk_gt), .ODIV2(sys_clk), .I(sys_clk_p), .CEB(1'b0), .IB(sys_clk_n));
   // Reset buffer
   IBUF   sys_reset_n_ibuf (.O(sys_rst_n_c), .I(sys_rst_n));
-     
+
   // Descriptor Bypass Control Logic
-  (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*) wire c2h_dsc_byp_ready_0;
-  (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [63 : 0] c2h_dsc_byp_src_addr_0;
-  (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [63 : 0] c2h_dsc_byp_dst_addr_0;
-  (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [27 : 0] c2h_dsc_byp_len_0;
-  (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [15 : 0] c2h_dsc_byp_ctl_0;
-  (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire c2h_dsc_byp_load_0;
-  (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire h2c_dsc_byp_ready_0;
-  (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [63 : 0] h2c_dsc_byp_src_addr_0;
-  (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [63 : 0] h2c_dsc_byp_dst_addr_0;
-  (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [27 : 0] h2c_dsc_byp_len_0;
-  (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire [15 : 0] h2c_dsc_byp_ctl_0;
-  (*mark_debug,mark_debug_valid="true",mark_debug_clock="user_clk"*)wire h2c_dsc_byp_load_0;
+  wire c2h_dsc_byp_ready_0;
+  wire [63 : 0] c2h_dsc_byp_src_addr_0;
+  wire [63 : 0] c2h_dsc_byp_dst_addr_0;
+  wire [27 : 0] c2h_dsc_byp_len_0;
+  wire [4 : 0] c2h_dsc_byp_ctl_0;
+  wire c2h_dsc_byp_load_0;
+  wire h2c_dsc_byp_ready_0;
+  wire [63 : 0] h2c_dsc_byp_src_addr_0;
+  wire [63 : 0] h2c_dsc_byp_dst_addr_0;
+  wire [27 : 0] h2c_dsc_byp_len_0;
+  wire [4 : 0] h2c_dsc_byp_ctl_0;
+  wire h2c_dsc_byp_load_0;
+
+
+  clk_wiz_xdma_250_to_500 mmcm_250_to_500
+   (
+      // Clock out ports
+      .clk_out1(user_clk_500),     // output clk_out1
+      // Status and control signals
+      .locked(locked),       // output locked
+      // Clock in ports
+      .clk_in1(user_clk_250)      // input clk_in1
+  );
+
 
 
   // Core Top Level Wrapper
@@ -234,21 +244,19 @@ module top #
       .h2c_dsc_byp_load_0     (h2c_dsc_byp_load_0),
 
 
-
       .usr_irq_req  (usr_irq_req),
       .usr_irq_ack  (usr_irq_ack),
 
-
-
       //-- AXI Global
-      .axi_aclk        ( user_clk ),
+      .axi_aclk        ( user_clk_250),
       .axi_aresetn     ( user_resetn ),
-
       .user_lnk_up     ( user_lnk_up )
     );
 
 
   mkBsvTop bsv_userlogic_top_inst(
+        .CLK_slowClock(user_clk_250),
+        .RST_N_slowReset(user_resetn),
         .CLK(user_clk_500),
         .RST_N(user_resetn),
         .xdmaChannel_rawH2cAxiStream_tvalid(m_axis_h2c_tvalid_0),
