@@ -819,21 +819,26 @@ endinterface
 
 
 
-typedef SizeOf#(UserLogicDmaLen)                    FAKE_XDMA_MAX_BURST_WIDTH;          // 1MB
-typedef DATA_BUS_WIDE_WIDTH                         FAKE_XDMA_BEAT_DATA_WIDTH;          // 512-bit
-typedef TLog#(FAKE_XDMA_BEAT_DATA_WIDTH)            FAKE_XDMA_BEAT_DATA_BYTE_WIDTH;     // 64B
+typedef SizeOf#(UserLogicDmaLen)                            FAKE_XDMA_MAX_BURST_WIDTH;          // 1MB
+typedef DATA_BUS_WIDE_WIDTH                                 FAKE_XDMA_BEAT_DATA_BIT_WIDTH;      // 512-bit
+typedef TDiv#(FAKE_XDMA_BEAT_DATA_BIT_WIDTH, BYTE_WIDTH)    FAKE_XDMA_BEAT_DATA_BYTE_WIDTH;     // 64B
 
 
 
-typedef Bit#(TLog#(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH)) FakeXdmaBeatOffset;
+typedef Bit#(TLog#(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH)) FakeXdmaBeatByteOffset;
+typedef Bit#(TLog#(FAKE_XDMA_BEAT_DATA_BIT_WIDTH)) FakeXdmaBeatBitOffset;
 
 
 typedef struct {
     Bool isFirst;
     Bool isLast;
-    FakeXdmaBeatOffset firstBeatSkipOffset;
-    firstBeatSkipOffset beatValidByteCnt;
-} FakeXdmaMemReadExtraInfo deriving(Bits, FShow);
+    FakeXdmaBeatByteOffset beatValidByteCnt;
+} FakeXdmaMemReadBeatExtraInfo deriving(Bits, FShow);
+
+typedef struct {
+    FakeXdmaBeatByteOffset leftShiftCnt;
+    FakeXdmaBeatByteOffset rightShiftCnt;
+} FakeXdmaMemReadStreamExtraInfo deriving(Bits, FShow);
 
 module mkFakeXdma(FakeXdma ifc);
     FIFOF#(UserLogicDmaH2cReq) xdmaH2cReqQ <- mkFIFOF;
@@ -846,17 +851,19 @@ module mkFakeXdma(FakeXdma ifc);
     cfg.memorySize = 1024*1024; // 64 MB, word size is 64B
     // BRAM2PortBE#(ADDR, DATA_WIDE, SizeOf#(ByteEnWide)) hostMem <- mkBRAM2ServerBE(cfg);
 
-    BRAM2PortBE#(ADDR, Bit#(FAKE_XDMA_BEAT_DATA_WIDTH), 64) hostMem <- mkBRAM2ServerBE(cfg);
+    BRAM2PortBE#(ADDR, Bit#(FAKE_XDMA_BEAT_DATA_BIT_WIDTH), 64) hostMem <- mkBRAM2ServerBE(cfg);
 
     Reg#(Bool) currentIsH2cReg <- mkReg(True);
     Reg#(Bool) currentNotFinished <- mkReg(False);
     FIFOF#(Tuple4#(Bool, ADDR, UserLogicDmaLen, DataStreamWide)) unionedReqQ <- mkFIFOF;
-    FIFOF#(FakeXdmaMemReadExtraInfo) respInfoQ <- mkFIFOF;
+    FIFOF#(FakeXdmaMemReadBeatExtraInfo) respBeatInfoQ <- mkFIFOF;
+    FIFOF#(FakeXdmaMemReadStreamExtraInfo) respStreamInfoQ <- mkFIFOF;
 
     Reg#(UserLogicDmaLen) bytesLeftReg <- mkRegU;
     Reg#(ADDR) currentAddrReg <- mkRegU;
 
     Reg#(DATA_WIDE) prevMemReadRespReg <- mkReg;
+    Reg#(Bool) isHandleExtraResp <- mkReg(False);
 
     rule ruleArbitter;
         
@@ -890,8 +897,8 @@ module mkFakeXdma(FakeXdma ifc);
     rule handleReq;
         if (unionedReqQ.notEmpty) begin
             let {isH2c, addr, len, stream} = unionedReqQ.first;
-            FakeXdmaBeatOffset firstBeatSkipOffset = truncate(addr);
-            FakeXdmaBeatOffset firstBeatValidByteCnt = valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH) - firstBeatSkipOffset; 
+            FakeXdmaBeatByteOffset firstBeatSkipOffset = truncate(addr);
+            FakeXdmaBeatByteOffset firstBeatValidByteCnt = valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH) - firstBeatSkipOffset; 
             if (isH2c) begin
                 if (currentNotFinished == False) begin
                     UserLogicDmaLen byteLeft = len;
@@ -905,7 +912,8 @@ module mkFakeXdma(FakeXdma ifc);
                         address: curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))),
                         datain: ?
                     });
-                    respInfoQ.enq(FakeXdmaMemReadExtraInfo{isFirst: True, isLast: isLastBeat, firstBeatSkipOffset: firstBeatSkipOffset, beatValidByteCnt: firstBeatValidByteCnt});
+                    respBeatInfoQ.enq(FakeXdmaMemReadBeatExtraInfo{isFirst: True, isLast: isLastBeat, beatValidByteCnt: isLastBeat ? byteLeft : firstBeatValidByteCnt});
+                    respStreamInfoQ.enq(FakeXdmaMemReadStreamExtraInfo{leftShiftCnt: firstBeatValidByteCnt, rightShiftCnt: firstBeatSkipOffset});
                     if (isLastBeat) begin
                         currentNotFinished <= False;
                         unionedReqQ.deq;
@@ -925,7 +933,7 @@ module mkFakeXdma(FakeXdma ifc);
                         address: curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))),
                         datain: ?
                     });
-                    respInfoQ.enq(FakeXdmaMemReadExtraInfo{isFirst: False, isLast: isLastBeat, firstBeatSkipOffset: firstBeatSkipOffset, beatValidByteCnt: beatValidByteCnt});
+                    respBeatInfoQ.enq(FakeXdmaMemReadExtraInfo{isFirst: False, isLast: isLastBeat, beatValidByteCnt: beatValidByteCnt});
                     if (isLastBeat) begin
                         currentNotFinished <= False;
                         unionedReqQ.deq;
@@ -957,31 +965,47 @@ module mkFakeXdma(FakeXdma ifc);
         end
     endrule
 
-    rule handleResp;
+    rule handleResp if (!isHandleExtraResp);
         let memReadResp <- hostMem.portA.response.get;
-        let readInfo = respInfoQ.first;
-        respInfoQ.deq;
+        let readBeatInfo = respBeatInfoQ.first;
+        let readStreamInfo = respStreamInfoQ.first;
+
+        respBeatInfoQ.deq;
+        if (readBeatInfo.isLast) begin
+            respStreamInfoQ.deq;
+        end
 
         prevMemReadRespReg <= memReadResp;
 
-        if (readInfo.isFirst) begin
-            if (readInfo.isLast) begin
+        let virtualLastData = readBeatInfo.isFirst ? memReadResp : prevMemReadRespReg;
+        let virtualNewData = readBeatInfo.isFirst ? 0 : memReadResp;
+        let virtual
+        
+        FakeXdmaBeatBitOffset leftShiftBit = zeroExtend(readStreamInfo.leftShiftCnt) << 3;
+        FakeXdmaBeatBitOffset rightShiftBit = zeroExtend(readStreamInfo.rightShiftCnt) << 3;
+        let outData = (virtualLastData >> rightShiftBit) | (virtualNewData << leftShiftBit) ; 
+
+        if (readBeatInfo.isFirst) begin
+            if (readBeatInfo.isLast) begin
                 xdmaH2cRespQ.enq(UserLogicDmaH2cWideResp{
                     dataStream: DataStreamWide{
-                        data: memReadResp >> readInfo.firstBeatSkipOffset,
-                        isFirst: readInfo.isFirst,
-                        isLast: readInfo.isLast,
-                        byteEn: (1 << readInfo.beatValidByteCnt) - 1
+                        data: memReadResp >> readBeatInfo.firstBeatSkipOffset,
+                        isFirst: readBeatInfo.isFirst,
+                        isLast: readBeatInfo.isLast,
+                        byteEn: (1 << readBeatInfo.beatValidByteCnt) - 1
                     }
                 }); 
             end else begin
-                if (readInfo.beatValidByteCnt == )
+                if (readBeatInfo.beatValidByteCnt == )
             end
-        end else if (readInfo.isLast) begin
+        end else if (readBeatInfo.isLast) begin
 
         end
 
 
+    endrule
+
+    rule handleExtraResp if (isHandleExtraResp);
     endrule
 
     interface xdmaH2cSrv = toGPServer(xdmaH2cReqQ, xdmaH2cRespQ);
