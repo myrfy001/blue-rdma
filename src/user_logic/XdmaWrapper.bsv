@@ -768,7 +768,7 @@ module mkTbGearbox(Empty);
             delay(200);
 
             userH2cReqQ.enq(UserLogicDmaH2cReq{
-                addr: 'h1,
+                addr: 'h0,
                 len: 129
             });
             userH2cRespQ.deq;
@@ -826,7 +826,9 @@ typedef TDiv#(FAKE_XDMA_BEAT_DATA_BIT_WIDTH, BYTE_WIDTH)    FAKE_XDMA_BEAT_DATA_
 
 
 typedef Bit#(TAdd#(TLog#(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH),1)) FakeXdmaBeatByteOffset;
-typedef Bit#(TLog#(FAKE_XDMA_BEAT_DATA_BIT_WIDTH)) FakeXdmaBeatBitOffset;
+typedef Bit#(TAdd#(TLog#(FAKE_XDMA_BEAT_DATA_BIT_WIDTH),1)) FakeXdmaBeatBitOffset;
+
+typedef TSub#(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH,1) FAKE_XDMA_BEAT_DATA_BYTE_OFFFSET_MASK;
 
 
 typedef struct {
@@ -905,7 +907,7 @@ module mkFakeXdma(FakeXdma ifc);
 
     rule handleReq;
         let {isH2c, addr, len, stream} = unionedReqQ.first;
-        FakeXdmaBeatByteOffset firstBeatSkipOffset = truncate(addr);
+        FakeXdmaBeatByteOffset firstBeatSkipOffset = truncate(addr & fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_OFFFSET_MASK)));
         FakeXdmaBeatByteOffset firstBeatValidByteCnt = fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH)) - firstBeatSkipOffset; 
         if (isH2c) begin
             if (currentNotFinished == False) begin
@@ -950,7 +952,6 @@ module mkFakeXdma(FakeXdma ifc);
                     bytesLeftReg <= bytesLeftReg - zeroExtend(beatValidByteCnt);
                     currentAddrReg <= currentAddrReg + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
                 end
-                $display("bytesLeftReg=", bytesLeftReg);
             end
         end else begin
             
@@ -988,41 +989,25 @@ module mkFakeXdma(FakeXdma ifc);
         FakeXdmaBeatBitOffset leftShiftBit = zeroExtend(readStreamInfo.leftShiftCnt) << 3;
         FakeXdmaBeatBitOffset rightShiftBit = zeroExtend(readStreamInfo.rightShiftCnt) << 3;
 
-        if (prevBeatInfo.isFirst && prevBeatInfo.isLast) begin
+
+        if (prevBeatInfo.isLast) begin
 
             let outData = (prevMemReadResp >> rightShiftBit);
-            let outEn = (1 << prevBeatInfo.beatValidByteCnt) - 1;
+            let outEn = (
+                prevBeatInfo.isFirst ? 
+                (1 << prevBeatInfo.beatValidByteCnt) :
+                (1 << (prevBeatInfo.beatValidByteCnt - readStreamInfo.rightShiftCnt)
+            ) - 1);
 
             xdmaH2cRespQ.enq(UserLogicDmaH2cWideResp{
                 dataStream: DataStreamWide{
                     data: outData,
-                    isFirst: True,
+                    isFirst: prevBeatInfo.isFirst,
                     isLast: True,
                     byteEn: outEn
                 }
             });
-
-            if (memReadRespQ.notEmpty) begin
-                memReadRespQ.deq;
-                respBeatInfoQ.deq;
-                prevMemReadRespReg <= tuple2(memReadRespQ.first, respBeatInfoQ.first);
-            end else begin
-                readRespHandleStateReg <= fromInteger(readRespHandleStateHandleFirst);
-            end
-        
-        end else if (prevBeatInfo.isLast) begin
-
-            let outData = (prevMemReadResp >> rightShiftBit);
-            let outEn = (1 << (prevBeatInfo.beatValidByteCnt - readStreamInfo.rightShiftCnt)) - 1; 
-
-            xdmaH2cRespQ.enq(UserLogicDmaH2cWideResp{
-                dataStream: DataStreamWide{
-                    data: outData,
-                    isFirst: False,
-                    isLast: True,
-                    byteEn: outEn
-                }
-            });
+            respStreamInfoQ.deq;
 
             if (memReadRespQ.notEmpty) begin
                 memReadRespQ.deq;
@@ -1054,6 +1039,7 @@ module mkFakeXdma(FakeXdma ifc);
                 // keep current state
             end else begin
                 readRespHandleStateReg <= fromInteger(readRespHandleStateHandleFirst);
+                respStreamInfoQ.deq;
             end
 
             memReadRespQ.deq;
