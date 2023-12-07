@@ -21,7 +21,7 @@ import AlignedFIFOs :: * ;
 import PrimUtils :: *;
 import Connectable :: * ;
 import StmtFSM::*;
-
+import Randomizable :: * ;
 
 
 typedef Bit#(64) XdmaDescBypAddr;
@@ -547,7 +547,7 @@ module mkXdmaGearbox(Clock slowClock, Reset slowReset, XdmaGearbox ifc);
     rule forwardH2cResp;
         // use this rule to filter out Invalid resp.
         h2cRespGearbox.deq;
-        $display("forwardH2cResp deq", fshow(h2cRespGearbox.first));
+        
         if (h2cRespGearbox.first[0] matches tagged Valid .resp) begin
             h2cRespQ.enq(resp);
         end
@@ -705,7 +705,7 @@ module mkTbGearbox(Empty);
     // FIFOF#(UserLogicDmaC2hWideReq) xdmaC2hReqQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
     // FIFOF#(UserLogicDmaC2hResp) xdmaC2hRespQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
 
-    FakeXdma fakeXdma <- mkFakeXdma(clocked_by divClk.slowClock, reset_by slowReset);
+    FakeXdma fakeXdma <- mkFakeXdma(2, clocked_by divClk.slowClock, reset_by slowReset);
 
     FIFOF#(UserLogicDmaH2cReq) userH2cReqQ <- mkFIFOF;
     FIFOF#(UserLogicDmaH2cResp) userH2cRespQ <- mkFIFOF;
@@ -876,7 +876,7 @@ function FakeXdmaBeatByteNum calcFragByteNumFromByteEnWide(ByteEnWide fragByteEn
     return byteEnBitNum;
 endfunction
 
-module mkFakeXdma(FakeXdma ifc);
+module mkFakeXdma(Integer id, FakeXdma ifc);
     FIFOF#(UserLogicDmaH2cReq) xdmaH2cReqQ <- mkFIFOF;
     FIFOF#(UserLogicDmaH2cWideResp) xdmaH2cRespQ <- mkFIFOF;
     FIFOF#(UserLogicDmaC2hWideReq) xdmaC2hReqQ <- mkFIFOF;
@@ -913,12 +913,12 @@ module mkFakeXdma(FakeXdma ifc);
 
 
     rule ruleArbitter;
-        
         if (currentIsH2cReg) begin
             
             if (xdmaH2cReqQ.notEmpty) begin
                 xdmaH2cReqQ.deq;
                 let req = xdmaH2cReqQ.first;
+                
                 unionedReqQ.enq(tuple4(True, req.addr, req.len, ?));
                 if (xdmaC2hReqQ.notEmpty) begin
                     currentIsH2cReg <= !currentIsH2cReg;
@@ -930,6 +930,7 @@ module mkFakeXdma(FakeXdma ifc);
             if (xdmaC2hReqQ.notEmpty) begin
                 xdmaC2hReqQ.deq;
                 let req = xdmaC2hReqQ.first;
+                
                 unionedReqQ.enq(tuple4(False, req.addr, req.len, req.dataStream));
                 if (req.dataStream.isLast && xdmaH2cReqQ.notEmpty) begin
                     currentIsH2cReg <= !currentIsH2cReg;
@@ -946,6 +947,7 @@ module mkFakeXdma(FakeXdma ifc);
         FakeXdmaBeatByteNum addrAlignOffset = truncate(addr & fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_OFFFSET_MASK)));
         FakeXdmaBeatByteNum addrAlignRemainder = fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH)) - addrAlignOffset; 
         if (isH2c) begin
+            
             if (currentNotFinished == False) begin
                 UserLogicDmaLen byteLeft = len;
 
@@ -962,9 +964,11 @@ module mkFakeXdma(FakeXdma ifc);
                 respStreamInfoQ.enq(FakeXdmaMemReadStreamExtraInfo{leftShiftByteCnt: addrAlignRemainder, rightShiftByteCnt: addrAlignOffset});
                 if (isLastBeat) begin
                     currentNotFinished <= False;
+                    
                     unionedReqQ.deq;
                 end else begin
                     currentNotFinished <= True;
+                    
                     bytesLeftReg <= byteLeft - zeroExtend(addrAlignRemainder);
                     currentAddrReg <= curAddr + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
                 end
@@ -982,9 +986,11 @@ module mkFakeXdma(FakeXdma ifc);
                 respBeatInfoQ.enq(FakeXdmaMemReadBeatExtraInfo{isFirst: False, isLast: isLastBeat, beatValidByteCnt: beatValidByteCnt});
                 if (isLastBeat) begin
                     currentNotFinished <= False;
+                    
                     unionedReqQ.deq;
                 end else begin
                     currentNotFinished <= True;
+                    
                     bytesLeftReg <= bytesLeftReg - zeroExtend(beatValidByteCnt);
                     currentAddrReg <= currentAddrReg + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
                 end
@@ -1002,10 +1008,6 @@ module mkFakeXdma(FakeXdma ifc);
                 let outData = stream.data << leftShiftBit;
                 let byteEn = stream.byteEn << leftShiftByte;
                 let curAddr = addr;
-                $display("stream.data=", fshow(stream.data));
-                $display("outData=", fshow(outData));
-                $display("byteEn=", fshow(byteEn));
-                $display("leftShiftBit=", fshow(leftShiftBit));
                 hostMem.portA.request.put(BRAMRequestBE{
                     writeen: byteEn,
                     responseOnWrite: False,
@@ -1013,7 +1015,7 @@ module mkFakeXdma(FakeXdma ifc);
                     datain: outData
                 });
 
-                currentAddrReg <= currentAddrReg + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
+                currentAddrReg <= curAddr + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
                 prevMemWriteReqReg <= tuple2(stream.data, FakeXdmaMemWriteBeatExtraInfo{isFirst: stream.isFirst, isLast: stream.isLast, byteEn: stream.byteEn});
             end else begin
                 let {prevReqData, prevReqBeatInfo} = prevMemWriteReqReg;
@@ -1022,7 +1024,6 @@ module mkFakeXdma(FakeXdma ifc);
 
                 let curAddr = currentAddrReg;
                 
-                $display("curAddr==", fshow(curAddr));
                 hostMem.portA.request.put(BRAMRequestBE{
                     writeen: byteEn,
                     responseOnWrite: False,
@@ -1030,14 +1031,13 @@ module mkFakeXdma(FakeXdma ifc);
                     datain: outData
                 });
 
-
                 currentAddrReg <= currentAddrReg + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
                 prevMemWriteReqReg <= tuple2(stream.data, FakeXdmaMemWriteBeatExtraInfo{isFirst: stream.isFirst, isLast: stream.isLast, byteEn: stream.byteEn});
             end
 
             
             let hasMoreData = unpack(pack({1'b0, stream.byteEn})[rightShiftByte]);
-            if (hasMoreData) begin
+            if (hasMoreData && stream.isLast) begin
                 writeReqNeedExtraBeat <= True;
             end else begin
                 xdmaC2hRespQ.enq(UserLogicDmaC2hResp{});
@@ -1060,8 +1060,6 @@ module mkFakeXdma(FakeXdma ifc);
         let outData = prevReqData >> rightShiftBit;
         let byteEn = prevReqBeatInfo.byteEn >> rightShiftByte;
         let curAddr = currentAddrReg;
-
-        $display("curAddr===", fshow(curAddr));
         hostMem.portA.request.put(BRAMRequestBE{
             writeen: byteEn,
             responseOnWrite: False,
@@ -1074,13 +1072,15 @@ module mkFakeXdma(FakeXdma ifc);
 
 
     rule ruleHandleRespFirst if (readRespHandleStateReg == fromInteger(readRespHandleStateHandleFirst));
-        
         let newMemReadResp = memReadRespQ.first;
         memReadRespQ.deq;
         respBeatInfoQ.deq;
+        
         prevMemReadRespReg <= tuple2(newMemReadResp, respBeatInfoQ.first);
         readRespHandleStateReg <= fromInteger(readRespHandleStateHandleMiddle);
+        
     endrule
+
 
     rule ruleHandleRespMiddle if (readRespHandleStateReg == fromInteger(readRespHandleStateHandleMiddle));
         let readStreamInfo = respStreamInfoQ.first;
@@ -1089,13 +1089,13 @@ module mkFakeXdma(FakeXdma ifc);
         FakeXdmaBeatBitNum leftShiftBit = zeroExtend(readStreamInfo.leftShiftByteCnt) << 3;
         FakeXdmaBeatBitNum rightShiftBit = zeroExtend(readStreamInfo.rightShiftByteCnt) << 3;
 
-
+        
         if (prevBeatInfo.isLast) begin
 
             let outData = (prevMemReadResp >> rightShiftBit);
             let outEn = (
                 prevBeatInfo.isFirst ? 
-                (1 << prevBeatInfo.beatValidByteCnt) :
+                (1 << prevBeatInfo.beatValidByteCnt) -1 :
                 (1 << (prevBeatInfo.beatValidByteCnt - readStreamInfo.rightShiftByteCnt)
             ) - 1);
 
@@ -1112,13 +1112,14 @@ module mkFakeXdma(FakeXdma ifc);
             if (memReadRespQ.notEmpty) begin
                 memReadRespQ.deq;
                 respBeatInfoQ.deq;
+                
                 prevMemReadRespReg <= tuple2(memReadRespQ.first, respBeatInfoQ.first);
             end else begin
                 readRespHandleStateReg <= fromInteger(readRespHandleStateHandleFirst);
             end
 
         end else begin
-
+            
             let newBeatInfo = respBeatInfoQ.first;
             let newMemReadResp = memReadRespQ.first;
             
@@ -1144,6 +1145,7 @@ module mkFakeXdma(FakeXdma ifc);
 
             memReadRespQ.deq;
             respBeatInfoQ.deq;
+            
             prevMemReadRespReg <= tuple2(newMemReadResp, respBeatInfoQ.first);
 
         end
@@ -1151,4 +1153,143 @@ module mkFakeXdma(FakeXdma ifc);
 
     interface xdmaH2cSrv = toGPServer(xdmaH2cReqQ, xdmaH2cRespQ);
     interface xdmaC2hSrv = toGPServer(xdmaC2hReqQ, xdmaC2hRespQ);
+endmodule
+
+
+
+
+(* synthesize *)
+module mkTbFakeXdma(Empty);
+
+    FakeXdma fakeXdmaSrc <- mkFakeXdma(0);
+    FakeXdma fakeXdmaDst <- mkFakeXdma(1);
+
+    Reg#(UInt#(32)) i <- mkReg(0);
+    Reg#(Bool) startedUser <- mkReg(False);
+
+    FIFOF#(UserLogicDmaC2hResp) srcC2hRespQ <- mkFIFOF;
+    mkConnection(toPut(srcC2hRespQ), fakeXdmaSrc.xdmaC2hSrv.response);
+
+    Randomize#(Bit#(13)) startAddrRnd <- mkGenericRandomizer;
+    Randomize#(Bit#(8)) lenRnd <- mkGenericRandomizer;
+    FIFOF#(Tuple2#(Bit#(13), Bit#(8))) readReqQ <- mkFIFOF;
+    FIFOF#(Tuple2#(Bit#(13), Bit#(8))) readReqMetaQ <- mkFIFOF;
+
+    FSM runTest <- mkFSM(
+        (seq
+            // init SrcXdma
+            for (i <= 0; i < 4096; i <= i + 1) 
+            seq
+                action
+                    fakeXdmaSrc.xdmaC2hSrv.request.put(UserLogicDmaC2hWideReq{
+                        addr: zeroExtend(pack(i)),
+                        len: 1,
+                        dataStream: DataStreamWide{
+                            data: zeroExtend(pack(i)),
+                            isFirst:True,
+                            isLast: True,
+                            byteEn: 'h1
+                        }
+                    });
+                endaction
+                action
+                    srcC2hRespQ.deq;
+                endaction
+            endseq
+            
+            // Init random
+            action
+                startAddrRnd.cntrl.init;
+                lenRnd.cntrl.init;
+            endaction
+
+            for (i <= 0; i < 8192 * 2; i <= i + 1) 
+            seq
+                action
+                    let a <- startAddrRnd.next;
+                    let l <- lenRnd.next;
+                    
+                    if (a + zeroExtend(l) <= 4096 && l > 0) begin
+                        readReqQ.enq(tuple2(a, l));
+                    end
+                endaction
+            endseq
+            
+            delay(1000);
+
+            // check result
+            for (i <= 0; i < 4096; i <= i + 1) 
+            seq
+                action
+                    fakeXdmaDst.xdmaH2cSrv.request.put(UserLogicDmaH2cReq{
+                        addr: zeroExtend(pack(i)),
+                        len: 1
+                    });
+                endaction
+                action
+                    let resp <- fakeXdmaDst.xdmaH2cSrv.response.get;
+                    if ((resp.dataStream.byteEn != 1) || (resp.dataStream.data[7:0] != pack(i)[7:0]) ) begin
+                        $display("Error, exxpected last byte = %x, i = %x", pack(i)[7:0], i);
+                        $display("resp=", fshow(resp));
+                        $finish;
+                    end
+                endaction
+            endseq
+            $display("passed");
+            $finish;
+        endseq)
+    );
+
+    rule sendDmaReadReq;
+        let {addr, len} = readReqQ.first;
+        readReqQ.deq;
+
+        readReqMetaQ.enq(tuple2(addr, len));
+
+        fakeXdmaSrc.xdmaH2cSrv.request.put(UserLogicDmaH2cReq{
+            addr: zeroExtend(addr),
+            len: zeroExtend(len)
+        });
+    endrule
+
+    rule forwardDMAReadToDMAWrite;
+        let {addr, len} = readReqMetaQ.first;
+        UserLogicDmaH2cWideResp resp <- fakeXdmaSrc.xdmaH2cSrv.response.get;
+        
+        if (resp.dataStream.isLast) begin
+            readReqMetaQ.deq;
+        end
+
+        // force unused bytes to 0. this makes the test more strict
+        DATA_WIDE t = resp.dataStream.data;
+        for (Integer i = 0; i < 64; i = i + 1) begin
+            if (resp.dataStream.byteEn[i] == 0) begin
+                t[i*8 + 7: i*8] = 8'h0;
+            end
+        end
+
+        resp.dataStream.data = t;
+
+
+        fakeXdmaDst.xdmaC2hSrv.request.put(
+            UserLogicDmaC2hWideReq{
+                addr: zeroExtend(addr),
+                len: zeroExtend(len),
+                dataStream: resp.dataStream
+            }
+        );
+    endrule
+
+    rule descardDmaWriteResult;
+        let _ <- fakeXdmaDst.xdmaC2hSrv.response.get;
+    endrule
+
+
+
+    rule doTest if (!startedUser);
+        startedUser <= True;
+        runTest.start;
+    endrule
+
+
 endmodule
