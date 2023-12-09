@@ -33,39 +33,17 @@ typedef struct {
 
 
 
-typedef enum {
-    RdmaCsrCmdTypeModifyFirstStagePgt = 0,
-    RdmaCsrCmdTypeModifySecondStagePgt = 1,
-    RdmaCsrCmdTypeMaxGuard = 16'hFFFF // padding to make this enum use 8 bit
-} RdmaCsrCmdType deriving(Bits, Eq, FShow);
+// typedef enum {
+//     RdmaCsrCmdTypeModifyFirstStagePgt = 0,
+//     RdmaCsrCmdTypeModifySecondStagePgt = 1,
+//     RdmaCsrCmdTypeMaxGuard = 16'hFFFF // padding to make this enum use 8 bit
+// } RdmaCsrCmdType deriving(Bits, Eq, FShow);
 
 typedef Bit#(16) ControlCmdReqId;
 typedef Bit#(8)  ControlCmdErrCode;
 
-typedef struct {
-    RdmaCsrCmdType cmdType;
-    ControlCmdReqId reqId;
-} RdmaCsrCmdTypeAndId deriving(Bits, FShow);
-
-typedef struct {
-    RdmaCsrCmdType cmdType;
-    ControlCmdReqId reqId;
-    DataStream dataStream;
-} DmaFetchedCmd deriving(Bits, FShow);
-
-typedef struct {
-    ControlCmdReqId finishedReqId;
-    ControlCmdErrCode  errorCode;
-} RdmaCmdExecuteResponse deriving(Bits, FShow);
-
-typedef struct {
-    Bit#(CSR_DATA_WIDTH) ctlRegCmdSize;
-    Bit#(HOST_ADDR_WIDTH) ctlRegCmdAddr;
-    RdmaCsrCmdTypeAndId ctlRegCmdTypeAndId;
-} RdmaControlCmdEntry deriving(Bits, FShow);
 
 typedef 64 PGT_SECOND_STAGE_ENTRY_REQUEST_SIZE_PADDED;
-typedef TDiv#(DATA_BUS_WIDTH, PGT_SECOND_STAGE_ENTRY_REQUEST_SIZE_PADDED) PGT_SECOND_STAGE_ENTRY_REQUEST_PER_STREAM_FRAME;
 
 
 typedef 12 PAGE_OFFSET_BIT_WIDTH;
@@ -87,8 +65,12 @@ typedef TDiv#(PCIE_MRRS, USER_LOGIC_DESCRIPTOR_BYTE_WIDTH) RINGBUF_DESC_ENTRY_PE
 typedef Bit#(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)) RingbufReadBlockInnerOffset;
 typedef TLog#(PCIE_MRRS) RINGBUF_READ_BLOCK_BYTE_WIDTH;
 
+typedef 1 RINGBUF_DESC_OPCODE_OFFSET;
+typedef 6 RINGBUF_DESC_OPCODE_LENGTH;
+typedef Bit#(RINGBUF_DESC_OPCODE_LENGTH) RingbufRawDescriptorOpcode;
 
-typedef Bit#(16) UserLogicDmaLen;
+
+typedef Bit#(20) UserLogicDmaLen;
 
 typedef TMul#(DATA_BUS_WIDTH, 2) DATA_BUS_WIDE_WIDTH;
 typedef TMul#(DATA_BUS_BYTE_WIDTH, 2) DATA_BUS_WIDE_BYTE_WIDTH;
@@ -144,3 +126,25 @@ typedef Client#(UserLogicDmaC2hWideReq, UserLogicDmaC2hResp)    UserLogicDmaWrit
 
 typedef 2 XDMA_GEARBOX_WIDE_VECTOR_LEN;
 typedef 1 XDMA_GEARBOX_NARROW_VECTOR_LEN;
+
+typedef enum {
+    CmdQueueOpcodeUpdateFirstStagePGT = 'h0,
+    CmdQueueOpcodeUpdateSecondStagePGT = 'h1
+} CommandQueueOpcode deriving(Bits, Eq);
+
+typedef struct {
+    Bit#(32) reserved1;
+    Bit#(32) index;
+    Bit#(32) pointedToSecondStageCount;
+    Bit#(32) pointedToSecondStageIndex;
+    Bit#(64) baseVA;
+    Bit#(64) commonHeader;
+}CmdQueueDescUpdateFirstStagePGT deriving(Bits, FShow);
+
+typedef struct {
+    Bit#(64) reserved1;
+    Bit#(32) dmaReadLength;
+    Bit#(32) startIndex;
+    Bit#(64) dmaAddr;
+    Bit#(64) commonHeader;
+}CmdQueueDescUpdateSecondStagePGT deriving(Bits, FShow);

@@ -12,7 +12,9 @@ import Headers :: *;
 import PrimUtils :: *;
 import Settings :: *;
 import Utils :: *;
+import UserLogicSettings :: *;
 import UserLogicTypes :: *;
+import UserLogicUtils :: *;
 
 
 typedef Server#(addrType, dataType) BramRead#(type addrType, type dataType);
@@ -172,7 +174,8 @@ endmodule
 
 
 interface PgtManager;
-    interface Server#(DmaFetchedCmd, RdmaCmdExecuteResponse) pgtModifySrv;
+    interface Server#(RingbufRawDescriptor, Bool) pgtModifySrv;
+    interface UserLogicDmaReadClt pgtDmaReadClt;
 endinterface
 
 
@@ -184,68 +187,83 @@ typedef enum {
 
 
 module mkPgtManager#(TLB tlb)(PgtManager);
-    FIFOF#(DmaFetchedCmd) reqQ <- mkFIFOF;
-    FIFOF#(RdmaCmdExecuteResponse) respQ <- mkFIFOF;
+    FIFOF#(RingbufRawDescriptor) reqQ <- mkFIFOF;
+    FIFOF#(Bool) respQ <- mkFIFOF;
+
+    FIFOF#(UserLogicDmaH2cReq) dmaReadReqQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cResp) dmaReadRespQ <- mkFIFOF;
 
 
 
     Reg#(PgtManagerFsmState) state <- mkReg(PgtManagerFsmStateIdle);
 
-    Reg#(DataStream) curBeatOfData <- mkRegU;
-    Reg#(ControlCmdReqId) curReqId <- mkRegU;
+    Reg#(DataStream) curBeatOfDataReg <- mkReg(unpack(0));
+    Reg#(PgtSecondStageIndex) curSecondStagePgtWriteIdxReg <- mkRegU;
     
     Integer bytesPerPgtSecondStageEntryRequest = valueOf(PGT_SECOND_STAGE_ENTRY_REQUEST_SIZE_PADDED) / valueOf(BYTE_WIDTH);
 
+
     rule updatePgtStateIdle if (state == PgtManagerFsmStateIdle);
+        let descRaw = reqQ.first;
         reqQ.deq;
-        let req = reqQ.first;
-        
-        immAssert(
-            req.dataStream.isFirst,
-            "req.dataStream.isFirst must be True @ mkPgtManager",
-            $format(
-                "req=", fshow(req), " should be valid"
-            )
-        );
-        curBeatOfData <= req.dataStream;
-        curReqId <= req.reqId;
-        if (req.cmdType == RdmaCsrCmdTypeModifyFirstStagePgt) begin
-            state <= PgtManagerFsmStateIdle;
-            PgtModifyFirstStageReq modifyReq = unpack(truncate(req.dataStream.data));
-            tlb.modify(tagged Req4FirstStage modifyReq);
-            respQ.enq(RdmaCmdExecuteResponse{
-                finishedReqId: req.reqId,
-                errorCode: 0
-            });
-        end else begin 
-            state <= PgtManagerFsmStateHandleSecondStageUpdate;
-        end
+
+        let opcode = getOpcodeFromRingbufDescriptor(descRaw);
+
+        case (unpack(truncate(opcode)))
+            CmdQueueOpcodeUpdateFirstStagePGT: begin
+                state <= PgtManagerFsmStateIdle;
+                CmdQueueDescUpdateFirstStagePGT desc = unpack(descRaw);
+                let modifyReq = PgtModifyFirstStageReq {
+                    asid: truncate(desc.index),
+                    content: PgtFirstStagePayload{
+                        secondStageOffset: truncate(desc.pointedToSecondStageIndex),
+                        secondStageEntryCnt: truncate(desc.pointedToSecondStageCount),
+                        baseVA: desc.baseVA
+                    }
+                };
+                tlb.modify(tagged Req4FirstStage modifyReq);
+                respQ.enq(True);
+            end
+            CmdQueueOpcodeUpdateSecondStagePGT: begin
+                CmdQueueDescUpdateSecondStagePGT desc = unpack(descRaw);
+                dmaReadReqQ.enq(UserLogicDmaH2cReq{
+                    addr: desc.dmaAddr,
+                    len: truncate(desc.dmaReadLength)
+                });
+                curSecondStagePgtWriteIdxReg <= truncate(desc.startIndex);
+                state <= PgtManagerFsmStateHandleSecondStageUpdate;
+            end
+        endcase
     endrule
 
-    rule updatePgtStateHandleSecondStageUpdate if (state == PgtManagerFsmStateHandleSecondStageUpdate);
-        
-        PgtModifySecondStageReq modifyReq = unpack(truncate(curBeatOfData.data));
-        tlb.modify(tagged Req4SecondStage modifyReq);
-        
-        let newCurBeatOfData = curBeatOfData;
-        newCurBeatOfData.byteEn = newCurBeatOfData.byteEn >> bytesPerPgtSecondStageEntryRequest;
-        newCurBeatOfData.data = newCurBeatOfData.data >> (bytesPerPgtSecondStageEntryRequest * valueOf(BYTE_WIDTH));
 
-        if (newCurBeatOfData.byteEn[0] == 0) begin 
-            if (curBeatOfData.isLast) begin
+    rule updatePgtStateHandleSecondStageUpdate if (state == PgtManagerFsmStateHandleSecondStageUpdate);
+        // since this is the control path, it's not fully pipelined to make it simple.
+        if (curBeatOfDataReg.byteEn[0] == 0) begin
+            if (curBeatOfDataReg.isLast) begin
                 state <= PgtManagerFsmStateIdle;
-                respQ.enq(RdmaCmdExecuteResponse{
-                    finishedReqId: curReqId,
-                    errorCode: 0
-                });
-            end else if (reqQ.notEmpty) begin
-                reqQ.deq;
-                curBeatOfData <= reqQ.first.dataStream;
+                curBeatOfDataReg <= unpack(0);
+                respQ.enq(True);
+            end else begin
+                curBeatOfDataReg <= dmaReadRespQ.first.dataStream;
+                dmaReadRespQ.deq;
             end
-        end else begin
-            curBeatOfData <= newCurBeatOfData;
+        end else begin 
+            let modifyReq = PgtModifySecondStageReq{
+                index: curSecondStagePgtWriteIdxReg,
+                content: PgtSecondStagePayload {
+                    paPart: truncate(curBeatOfDataReg.data)
+                }
+            };
+            tlb.modify(tagged Req4SecondStage modifyReq);
+            curSecondStagePgtWriteIdxReg <= curSecondStagePgtWriteIdxReg + 1;
+            let t = curBeatOfDataReg;
+            t.byteEn = t.byteEn >> bytesPerPgtSecondStageEntryRequest;
+            t.data = t.data >> (bytesPerPgtSecondStageEntryRequest * valueOf(BYTE_WIDTH));
+            curBeatOfDataReg <= t;
         end
     endrule
 
     interface pgtModifySrv = toGPServer(reqQ, respQ);
+    interface pgtDmaReadClt = toGPClient(dmaReadReqQ, dmaReadRespQ);
 endmodule

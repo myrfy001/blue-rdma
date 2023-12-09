@@ -303,11 +303,11 @@ endmodule
 
 interface XdmaAxiLiteBridgeWrapper#(type t_csr_addr, type t_csr_data);
     interface RawAxi4LiteSlave#(SizeOf#(t_csr_addr), TDiv#(SizeOf#(t_csr_data),BYTE_WIDTH)) cntrlAxil;
-    // interface Client#(CsrReadRequest#(t_csr_addr), CsrReadResponse#(t_csr_data)) csrReadClt;
-    // interface Client#(CsrWriteRequest#(t_csr_addr, t_csr_data), CsrWriteResponse) csrWriteClt; 
+    interface Client#(CsrReadRequest#(t_csr_addr), CsrReadResponse#(t_csr_data)) csrReadClt;
+    interface Client#(CsrWriteRequest#(t_csr_addr, t_csr_data), CsrWriteResponse) csrWriteClt; 
 endinterface 
 
-module mkXdmaAxiLiteBridgeWrapper(Clock slowClock, Reset slowReset, RegisterBlock#(t_csr_addr, t_csr_data) regBlock, XdmaAxiLiteBridgeWrapper#(t_csr_addr, t_csr_data) ifc) 
+module mkXdmaAxiLiteBridgeWrapper(Clock slowClock, Reset slowReset, XdmaAxiLiteBridgeWrapper#(t_csr_addr, t_csr_data) ifc) 
     provisos (
         Bits#(t_csr_addr, sz_csr_addr),
         Bits#(t_csr_data, sz_csr_data),
@@ -327,6 +327,11 @@ module mkXdmaAxiLiteBridgeWrapper(Clock slowClock, Reset slowReset, RegisterBloc
     SyncFIFOIfc#(Axi4LiteRdAddr#(sz_csr_addr)) cntrlRdAddrFifo <- mkSyncFIFO(2, slowClock,slowReset, fastClock);
     SyncFIFOIfc#(Axi4LiteRdData#(sz_csr_strb)) cntrlRdDataFifo <- mkSyncFIFO(2, fastClock,fastReset, slowClock);
 
+    FIFOF#(CsrWriteRequest#(t_csr_addr, t_csr_data)) writeReqQ <- mkFIFOF;
+    FIFOF#(CsrWriteResponse) writeRespQ <- mkFIFOF;
+    FIFOF#(CsrReadRequest#(t_csr_addr)) readReqQ <- mkFIFOF;
+    FIFOF#(CsrReadResponse#(t_csr_data)) readRespQ <- mkFIFOF;
+
     let cntrlAxilSlave <- mkPipeToRawAxi4LiteSlave(
         convertSyncFifoToPipeIn(cntrlWrAddrFifo),
         convertSyncFifoToPipeIn(cntrlWrDataFifo),
@@ -338,64 +343,34 @@ module mkXdmaAxiLiteBridgeWrapper(Clock slowClock, Reset slowReset, RegisterBloc
         reset_by slowReset
     );
 
-    rule handleRead;
-        cntrlRdAddrFifo.deq;
-        let resp <- regBlock.readReg(
-            CsrReadRequest{
-                addr: unpack(cntrlRdAddrFifo.first.arAddr)
-            });
-        cntrlRdDataFifo.enq(Axi4LiteRdData{rData: unpack(pack(resp.data)), rResp: 0});
-    endrule
+    // rule handleRead;
+    //     cntrlRdAddrFifo.deq;
+
+    //     let resp <- regBlock.readReg(
+    //         CsrReadRequest{
+    //             addr: unpack(cntrlRdAddrFifo.first.arAddr)
+    //         });
+    //     cntrlRdDataFifo.enq(Axi4LiteRdData{rData: unpack(pack(resp.data)), rResp: 0});
+    // endrule
+
 
     rule handleWrite;
         cntrlWrAddrFifo.deq;
         cntrlWrDataFifo.deq;
-        let _ <- regBlock.writeReg(
-            CsrWriteRequest{
-                addr: unpack(cntrlWrAddrFifo.first.awAddr),
-                data: unpack(cntrlWrDataFifo.first.wData)
-            });
+        writeReqQ.enq(CsrWriteRequest{
+            addr: unpack(cntrlWrAddrFifo.first.awAddr),
+            data: unpack(cntrlWrDataFifo.first.wData)
+        });
+    endrule
+
+    rule forwardWriteResp;
+        writeRespQ.deq;
         cntrlWrRespFifo.enq(0);
     endrule
 
-    // interface Client csrReadClt;
-    //     interface Get request;
-    //         method ActionValue#(CsrReadRequest#(t_csr_addr)) get();
-    //             cntrlRdAddrFifo.deq;
-    //             return CsrReadRequest{
-    //                 addr: unpack(cntrlRdAddrFifo.first.arAddr)
-    //             };
-    //         endmethod
-    //     endinterface
-
-    //     interface Put response;
-    //         method Action put(data);
-    //             cntrlRdDataFifo.enq(Axi4LiteRdData{rData: unpack(pack(data)), rResp: 0});
-    //         endmethod
-    //     endinterface
-    // endinterface
-
-    // interface Client csrWriteClt; 
-    //     interface Get request;
-    //         method ActionValue#(CsrWriteRequest#(t_csr_addr, t_csr_data)) get();
-    //             cntrlWrAddrFifo.deq;
-    //             cntrlWrDataFifo.deq;
-    //             return CsrWriteRequest{
-    //                 addr: unpack(cntrlWrAddrFifo.first.awAddr),
-    //                 data: unpack(cntrlWrDataFifo.first.wData)
-    //             };
-    //         endmethod
-    //     endinterface
-
-    //     interface Put response;
-    //         method Action put(data);
-    //             cntrlWrRespFifo.enq(0);
-    //         endmethod
-    //     endinterface
-    // endinterface
-
     interface cntrlAxil = cntrlAxilSlave;
-    
+    interface csrWriteClt = toGPClient(writeReqQ, writeRespQ);
+    interface csrReadClt = toGPClient(readReqQ, readRespQ);
 endmodule
 
 
@@ -700,11 +675,6 @@ module mkTbGearbox(Empty);
     Reset slowReset <- mkInitialReset(1, clocked_by divClk.slowClock);
     XdmaGearbox dut <- mkXdmaGearbox(divClk.slowClock, slowReset);
 
-    // FIFOF#(UserLogicDmaH2cReq) xdmaH2cReqQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
-    // FIFOF#(UserLogicDmaH2cWideResp) xdmaH2cRespQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
-    // FIFOF#(UserLogicDmaC2hWideReq) xdmaC2hReqQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
-    // FIFOF#(UserLogicDmaC2hResp) xdmaC2hRespQ <- mkFIFOF(clocked_by divClk.slowClock, reset_by slowReset);
-
     FakeXdma fakeXdma <- mkFakeXdma(2, clocked_by divClk.slowClock, reset_by slowReset);
 
     FIFOF#(UserLogicDmaH2cReq) userH2cReqQ <- mkFIFOF;
@@ -788,29 +758,6 @@ module mkTbGearbox(Empty);
 
         endseq)
     );
-
-    // FSM runXdmaSideLogic <- mkFSM(
-    //     (seq
-    //         xdmaH2cReqQ.deq;
-    //         xdmaH2cRespQ.enq(
-    //             UserLogicDmaH2cWideResp{
-    //                 dataStream: DataStreamWide {
-    //                     data: ?,
-    //                     byteEn: ?,
-    //                     isFirst: True,
-    //                     isLast: True
-    //                 }
-    //             }
-    //         );
-    //     endseq),
-    //     clocked_by divClk.slowClock, reset_by slowReset
-    // );
-
-
-    // rule doFakeXdma if (!startedXdma);
-    //     startedXdma <= True;
-    //     runXdmaSideLogic.start;
-    // endrule
 
     rule doTest if (!startedUser && counter > 10);
         startedUser <= True;
@@ -944,6 +891,14 @@ module mkFakeXdma(Integer id, FakeXdma ifc);
 
     rule handleReq if (!writeReqNeedExtraBeat);
         let {isH2c, addr, len, stream} = unionedReqQ.first;
+        immAssert(
+            len != 0,
+            "DMA request len is 0 @ mkFakeXdma",
+            $format(
+                "request should not be 0 in length, request = ", fshow(unionedReqQ.first)
+            )
+        );
+
         FakeXdmaBeatByteNum addrAlignOffset = truncate(addr & fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_OFFFSET_MASK)));
         FakeXdmaBeatByteNum addrAlignRemainder = fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH)) - addrAlignOffset; 
         if (isH2c) begin

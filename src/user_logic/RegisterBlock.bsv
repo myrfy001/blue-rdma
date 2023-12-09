@@ -4,8 +4,10 @@ import Connectable :: *;
 import GetPut :: *;
 import Vector :: *;
 import Ringbuf :: *;
+import ClientServer :: *;
 
 import UserLogicTypes :: *;
+
 
 
 typedef enum {
@@ -17,10 +19,10 @@ typedef enum {
 
 
 interface RegisterBlock#(type t_addr, type t_data);
-    // interface Server#(CsrWriteRequest#(t_addr, t_data), CsrWriteRespons) csrWriteSrv;
-    // interface Server#(CsrReadRequest#(t_addr), CsrReadResponse#(t_data)) csrReadSrv;
-    method ActionValue#(CsrWriteResponse) writeReg(CsrWriteRequest#(t_addr, t_data) req);
-    method ActionValue#(CsrReadResponse#(t_data)) readReg(CsrReadRequest#(t_addr) req);
+    interface Server#(CsrWriteRequest#(t_addr, t_data), CsrWriteResponse) csrWriteSrv;
+    interface Server#(CsrReadRequest#(t_addr), CsrReadResponse#(t_data)) csrReadSrv;
+    // method ActionValue#(CsrWriteResponse) writeReg(CsrWriteRequest#(t_addr, t_data) req);
+    // method ActionValue#(CsrReadResponse#(t_data)) readReg(CsrReadRequest#(t_addr) req);
 endinterface
 
 
@@ -29,37 +31,33 @@ module mkRegisterBlock(
     Vector#(c2hCount, RingbufC2hMetadata) c2hMetas,
      RegisterBlock#(CsrAddr, CsrData) ifc
 );
+    FIFOF#(CsrWriteRequest#(CsrAddr, CsrData)) writeReqQ <- mkFIFOF;
+    FIFOF#(CsrWriteResponse) writeRespQ <- mkFIFOF;
+    FIFOF#(CsrReadRequest#(CsrAddr)) readReqQ <- mkFIFOF;
+    FIFOF#(CsrReadResponse#(CsrData)) readRespQ <- mkFIFOF;
 
-    method ActionValue#(CsrWriteResponse) writeReg(CsrWriteRequest#(CsrAddr, CsrData) req) ;
-        CsrPageIndexForRingbuf regIdx = unpack(truncate(pack(req.addr)>>2));
+    rule ruleHandleWrite;
+        CsrPageIndexForRingbuf regIdx = unpack(truncate(pack(writeReqQ.first.addr)>>2));
+        let data = writeReqQ.first.data;
+        writeReqQ.deq;
         case (regIdx) matches
-            CsrIdxRbBaseAddrLow: h2cMetas[0].addr[31:0] <= unpack(req.data);
-            CsrIdxRbBaseAddrHigh: h2cMetas[0].addr[63:32] <= unpack(req.data);
-            CsrIdxRbHead: h2cMetas[0].head <= unpack(truncate(req.data));
-            // CsrIdxRbTail: h2cMetas[0].tail <= unpack(truncate(req.data));
+            CsrIdxRbBaseAddrLow: h2cMetas[0].addr[31:0] <= unpack(data);
+            CsrIdxRbBaseAddrHigh: h2cMetas[0].addr[63:32] <= unpack(data);
+            CsrIdxRbHead: h2cMetas[0].head <= unpack(truncate(data));
+            CsrIdxRbTail: h2cMetas[0].tail <= unpack(truncate(data));
             default: begin 
                 $display("unknown addr");
             end
         endcase
 
-        return CsrWriteResponse{flag: 0};
-        
-    endmethod
+        writeRespQ.enq(CsrWriteResponse{flag: 0});
+    endrule
 
-    method ActionValue#(CsrReadResponse#(CsrData)) readReg(CsrReadRequest#(CsrAddr) req);
-        
-        // t_data outData = 'hFFFFFFFF;
-        // case (unpack(truncate(req.addr>>2))) matches
-        //     CtlRegIdCmdExecuteStatus: begin
-                
-        //     end
-        //     default: begin 
-        //         $display("unknown addr");
-        //     end
-        // endcase
+    // rule ruleHandleRead;
+    //     let _ = readReqWire;
+    //     readRespWire <= unpack(0);
+    // endrule
 
-        return unpack(0);
-        
-    endmethod
-    
+    interface csrWriteSrv = toGPServer(writeReqQ, writeRespQ);
+    interface csrReadSrv = toGPServer(readReqQ, readRespQ);
 endmodule
