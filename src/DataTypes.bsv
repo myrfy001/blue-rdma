@@ -139,12 +139,12 @@ typedef struct {
     PgtSecondStageIndex secondStageOffset;
     PgtSecondStageIndex secondStageEntryCnt;
     ADDR baseVA;
-} PgtFirstStagePayload deriving(Bits);
+} PgtFirstStagePayload deriving(Bits, FShow);
 typedef SizeOf#(PgtFirstStagePayload) PGT_FIRST_STAGE_PAYLOAD_WIDTH;
 
 typedef struct {
     Bit#(TLB_CACHE_PA_DATA_WIDTH) paPart;
-} PgtSecondStagePayload deriving(Bits);
+} PgtSecondStagePayload deriving(Bits, FShow);
 typedef SizeOf#(PgtSecondStagePayload) PGT_SECOND_STAGE_PAYLOAD_WIDTH;
 
 // this alias make it easy if we change to a real MMU+TLB arch
@@ -153,33 +153,33 @@ typedef PgtFirstStageIndex          ASID;
 typedef struct {
     ASID asid;
     PgtFirstStagePayload content;
-} PgtModifyFirstStageReq deriving(Bits);
+} PgtModifyFirstStageReq deriving(Bits, FShow);
 
 typedef struct {
     Bool success;
-} PgtModifyFirstStageResp deriving(Bits);
+} PgtModifyFirstStageResp deriving(Bits, FShow);
 
 typedef struct {
     PgtSecondStageIndex index;
     PgtSecondStagePayload content;
-} PgtModifySecondStageReq deriving(Bits);
+} PgtModifySecondStageReq deriving(Bits, FShow);
 
 typedef struct {
     Bool success;
-} PgtModifySecondStageResp deriving(Bits);
+} PgtModifySecondStageResp deriving(Bits, FShow);
 
 
 typedef union tagged {
     PgtModifyFirstStageReq Req4FirstStage;
     PgtModifySecondStageReq Req4SecondStage;
-} PgtModifyReq deriving(Bits);
+} PgtModifyReq deriving(Bits, FShow);
 
 // not used now, but the modify response maybe used in the future if we need to wait
 // DMA finish before modify the TLB.
 typedef union tagged {
     PgtModifyFirstStageResp Resp4FirstStage;
     PgtModifySecondStageResp Resp4SecondStage;
-} PgtModifyResp deriving(Bits);
+} PgtModifyResp deriving(Bits, FShow);
 
 
 

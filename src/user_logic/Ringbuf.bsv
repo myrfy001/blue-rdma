@@ -148,7 +148,8 @@ endinterface
 module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem) fifoCntrl, RingbufH2cController ifc)
     provisos(
         Bits#(t_elem, sz_elem),
-        Bits#(DATA, sz_elem)
+        Bits#(DATA, sz_elem),
+        FShow#(t_elem)
     );
 
     Reg#(ADDR) baseAddrReg <- mkReg(0);
@@ -193,7 +194,7 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
                     addr: curReadBlockStartAddr,
                     len: fromInteger(valueOf(RINGBUF_BLOCK_READ_LEN))
             });
-
+            // $display("h2c ringbuf send new dma request");
             tailPosInReadBlockReg <= truncate(pack(tailReg));
 
             tailShadowReg <= newTailShadow;
@@ -214,6 +215,7 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
             if (tailReg != tailShadowReg) begin
                 // the end of read block may contain invalid descriptors, don't handle descriptors beyond tailShadowReg
                 t_elem t = unpack(pack(resp.dataStream.data));
+                // $display(fshow(t));
                 fifoCntrl.fillBuf(t);
                 newTail = tailReg + 1;
                 tailReg <= newTail;
@@ -223,6 +225,7 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
             end
 
             if (resp.dataStream.isLast) begin
+                // $display("current read block finished.");
                 ruleState <= False;
                 immAssert(
                     newTail == tailShadowReg,
@@ -345,7 +348,8 @@ module mkRingbufPool(
     Add#(1, anysize2, c2hCount),
     Add#(TLog#(c2hCount), 1, TLog#(TAdd#(1, c2hCount))),
     Bits#(t_elem, sz_elem),
-    Bits#(DATA, sz_elem)
+    Bits#(DATA, sz_elem),
+    FShow#(t_elem)
 );
     
     Vector#(h2cCount, RingbufDmaH2cClt) dmaAccessH2cCltVec = newVector;

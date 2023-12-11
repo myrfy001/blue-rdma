@@ -3,8 +3,10 @@ import ClientServer :: *;
 import GetPut :: *;
 import Vector :: *;
 import Clocks :: * ;
-
+import StmtFSM::*;
+import Randomizable :: * ;
 import Axi4LiteTypes :: *;
+import BRAM :: *;
 
 import DataTypes :: *;
 import UserLogicSettings :: *;
@@ -16,6 +18,7 @@ import AddressTranslate :: *;
 import Ringbuf :: *;
 import Arbitration :: *;
 import UserLogicUtils :: *;
+import CmdQueue :: *;
 
 
 interface BsvTop#(numeric type dataSz, numeric type userSz);
@@ -88,6 +91,15 @@ module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrDa
     mkConnection(xdmaWriteClt, xdmaGearbox.c2hStreamSrv);
 
 
+    CommandQueueController cmdQController<- mkCommandQueueController;
+    mkConnection(toGet(ringbufPool.h2cRings[0]), cmdQController.ringbufSrv.request);
+    // TODO: use mkCOnnection for this and the line above
+    rule forwardCmdQResponseToRingbuf;
+        let t <- cmdQController.ringbufSrv.response.get;
+        ringbufPool.c2hRings[0].enq(t);
+    endrule
+
+    mkConnection(cmdQController.pgtManagerClt, pgtManager.pgtModifySrv);
 
     
     interface csrWriteSrv = regBlock.csrWriteSrv;
@@ -103,10 +115,41 @@ module mkTbTop(Empty);
     Clock slowClock = divClk.slowClock;
     Reset slowReset <- mkInitialReset(1, clocked_by slowClock);
 
-    FakeXdma fakeXdma <- mkFakeXdma(2, clocked_by slowClock, reset_by slowReset);
+    FakeXdma fakeXdma <- mkFakeXdma(2, tagged Hex "src/bsv/user_logic/test_host_memory.hex", clocked_by slowClock, reset_by slowReset);
 
     BsvTopCore#(CsrAddr, CsrData) bsvTopCore <- mkBsvTopCore(slowClock, slowReset);
     mkConnection(fakeXdma.xdmaH2cSrv, bsvTopCore.dmaReadClt);
     mkConnection(fakeXdma.xdmaC2hSrv, bsvTopCore.dmaWriteClt);
 
+
+
+
+
+    Reg#(UInt#(32)) i <- mkReg(0);
+    Reg#(Bool) startedUser <- mkReg(False);
+
+    Randomize#(Bit#(13)) startAddrRnd <- mkGenericRandomizer;
+    Randomize#(Bit#(8)) lenRnd <- mkGenericRandomizer;
+
+
+    FSM runTest <- mkFSM(
+        (seq
+            bsvTopCore.csrWriteSrv.request.put(CsrWriteRequest{
+                addr: 'h0002 << 2,
+                data: 2
+            });
+            
+            action
+                let t <- bsvTopCore.csrWriteSrv.response.get;
+            endaction
+
+        endseq)
+    );
+    
+
+
+    rule doTest if (!startedUser);
+        startedUser <= True;
+        runTest.start;
+    endrule
 endmodule

@@ -206,7 +206,7 @@ module mkPgtManager#(TLB tlb)(PgtManager);
     rule updatePgtStateIdle if (state == PgtManagerFsmStateIdle);
         let descRaw = reqQ.first;
         reqQ.deq;
-
+        // $display("PGT get modify request", fshow(descRaw));
         let opcode = getOpcodeFromRingbufDescriptor(descRaw);
 
         case (unpack(truncate(opcode)))
@@ -223,6 +223,7 @@ module mkPgtManager#(TLB tlb)(PgtManager);
                 };
                 tlb.modify(tagged Req4FirstStage modifyReq);
                 respQ.enq(True);
+                // $display("addr translate modify first stage finished.");
             end
             CmdQueueOpcodeUpdateSecondStagePGT: begin
                 CmdQueueDescUpdateSecondStagePGT desc = unpack(descRaw);
@@ -232,6 +233,7 @@ module mkPgtManager#(TLB tlb)(PgtManager);
                 });
                 curSecondStagePgtWriteIdxReg <= truncate(desc.startIndex);
                 state <= PgtManagerFsmStateHandleSecondStageUpdate;
+                // $display("addr translate modify second stage start.");
             end
         endcase
     endrule
@@ -244,6 +246,7 @@ module mkPgtManager#(TLB tlb)(PgtManager);
                 state <= PgtManagerFsmStateIdle;
                 curBeatOfDataReg <= unpack(0);
                 respQ.enq(True);
+                // $display("addr translate modify second stage finished.");
             end else begin
                 curBeatOfDataReg <= dmaReadRespQ.first.dataStream;
                 dmaReadRespQ.deq;
@@ -256,6 +259,7 @@ module mkPgtManager#(TLB tlb)(PgtManager);
                 }
             };
             tlb.modify(tagged Req4SecondStage modifyReq);
+            // $display("addr translate modify second stage:", fshow(modifyReq));
             curSecondStagePgtWriteIdxReg <= curSecondStagePgtWriteIdxReg + 1;
             let t = curBeatOfDataReg;
             t.byteEn = t.byteEn >> bytesPerPgtSecondStageEntryRequest;

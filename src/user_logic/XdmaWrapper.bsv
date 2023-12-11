@@ -675,7 +675,7 @@ module mkTbGearbox(Empty);
     Reset slowReset <- mkInitialReset(1, clocked_by divClk.slowClock);
     XdmaGearbox dut <- mkXdmaGearbox(divClk.slowClock, slowReset);
 
-    FakeXdma fakeXdma <- mkFakeXdma(2, clocked_by divClk.slowClock, reset_by slowReset);
+    FakeXdma fakeXdma <- mkFakeXdma(2, tagged None, clocked_by divClk.slowClock, reset_by slowReset);
 
     FIFOF#(UserLogicDmaH2cReq) userH2cReqQ <- mkFIFOF;
     FIFOF#(UserLogicDmaH2cResp) userH2cRespQ <- mkFIFOF;
@@ -823,7 +823,7 @@ function FakeXdmaBeatByteNum calcFragByteNumFromByteEnWide(ByteEnWide fragByteEn
     return byteEnBitNum;
 endfunction
 
-module mkFakeXdma(Integer id, FakeXdma ifc);
+module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
     FIFOF#(UserLogicDmaH2cReq) xdmaH2cReqQ <- mkFIFOF;
     FIFOF#(UserLogicDmaH2cWideResp) xdmaH2cRespQ <- mkFIFOF;
     FIFOF#(UserLogicDmaC2hWideReq) xdmaC2hReqQ <- mkFIFOF;
@@ -832,6 +832,7 @@ module mkFakeXdma(Integer id, FakeXdma ifc);
     BRAM_Configure cfg = defaultValue;
     cfg.allowWriteResponseBypass = False;
     cfg.memorySize = 1024*1024; // 64 MB, word size is 64B
+    cfg.loadFormat = initData;
     // BRAM2PortBE#(ADDR, DATA_WIDE, SizeOf#(ByteEnWide)) hostMem <- mkBRAM2ServerBE(cfg);
 
     BRAM2PortBE#(Bit#(32), Bit#(512), 64) hostMem <- mkBRAM2ServerBE(cfg);
@@ -1116,8 +1117,8 @@ endmodule
 (* synthesize *)
 module mkTbFakeXdma(Empty);
 
-    FakeXdma fakeXdmaSrc <- mkFakeXdma(0);
-    FakeXdma fakeXdmaDst <- mkFakeXdma(1);
+    FakeXdma fakeXdmaSrc <- mkFakeXdma(0, tagged None);
+    FakeXdma fakeXdmaDst <- mkFakeXdma(1, tagged None);
 
     Reg#(UInt#(32)) i <- mkReg(0);
     Reg#(Bool) startedUser <- mkReg(False);
