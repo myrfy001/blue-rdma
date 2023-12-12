@@ -139,7 +139,7 @@ typedef struct {
     PgtSecondStageIndex secondStageOffset;
     PgtSecondStageIndex secondStageEntryCnt;
     ADDR baseVA;
-} PgtFirstStagePayload deriving(Bits, FShow);
+    } PgtFirstStagePayload deriving(Bits, FShow);
 typedef SizeOf#(PgtFirstStagePayload) PGT_FIRST_STAGE_PAYLOAD_WIDTH;
 
 typedef struct {

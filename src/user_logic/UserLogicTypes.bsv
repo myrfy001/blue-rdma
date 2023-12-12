@@ -129,8 +129,11 @@ typedef 1 XDMA_GEARBOX_NARROW_VECTOR_LEN;
 
 typedef enum {
     CmdQueueOpcodeUpdateFirstStagePGT = 'h0,
-    CmdQueueOpcodeUpdateSecondStagePGT = 'h1
+    CmdQueueOpcodeUpdateSecondStagePGT = 'h1,
+    CmdQueueOpcodePdManagement = 'h2
 } CommandQueueOpcode deriving(Bits, Eq);
+
+typedef Bit#(TLog#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT)) DescriptorSegmentIndex;
 
 typedef struct {
     Bit#(32) reserved1;
