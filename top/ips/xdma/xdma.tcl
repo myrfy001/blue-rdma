@@ -9,7 +9,7 @@ set properties [list \
   CONFIG.pcie_extended_tag {false} \
   CONFIG.pf0_interrupt_pin {NONE} \
   CONFIG.pf0_msi_enabled {false} \
-  CONFIG.pipe_sim {true} \
+  CONFIG.pipe_sim {false} \
   CONFIG.pl_link_cap_max_link_speed {8.0_GT/s} \
   CONFIG.pl_link_cap_max_link_width {X16} \
   CONFIG.xdma_axi_intf_mm {AXI_Stream} \

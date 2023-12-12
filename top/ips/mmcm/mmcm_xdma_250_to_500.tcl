@@ -27,7 +27,7 @@ set_property -dict [list \
   CONFIG.SECONDARY_SOURCE {Single_ended_clock_capable_pin} \
   CONFIG.USE_PHASE_ALIGNMENT {true} \
   CONFIG.USE_RESET {false} \
-  CONFIG.USE_SAFE_CLOCK_STARTUP {true} \
+  CONFIG.USE_SAFE_CLOCK_STARTUP {false} \
 ] [get_ips clk_wiz_xdma_250_to_500]
 
 
