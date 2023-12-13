@@ -1,17 +1,15 @@
 import ClientServer :: *;
 import GetPut :: *;
 import FIFOF :: *;
+import Vector :: *;
 
 import DataTypes :: *;
 import UserLogicSettings :: *;
 import UserLogicUtils :: *;
 import UserLogicTypes :: *;
 import MetaData :: *;
-
-Integer reqDescFieldOffset_F_PD_ADMIN_IS_ALLOC = 96;
-Integer reqDescFieldOffset_F_PD_ADMIN_HANDLER = 64;
-Integer respDescFieldOffset_F_CMD_SUCCESS = 64;
-Integer respDescFieldOffset_F_PD_ADMIN_HANDLER = 96;
+import PrimUtils :: *;
+import Controller :: *;
 
 
 interface CommandQueueController;
@@ -20,20 +18,7 @@ interface CommandQueueController;
     interface Client#(MetaDataReq, MetaDataResp) metaDataManagerClt;
 endinterface
 
-function t_data getFieldFromRawRingbufDescriptor(RingbufRawDescriptor desc, Integer offset) provisos(Bits#(t_data, sz_data));
-    let bytes = pack(desc);
-    return unpack(bytes[offset + valueOf(sz_data) - 1: offset]);
-endfunction
-function RingbufRawDescriptor setFieldFromRawRingbufDescriptor(RingbufRawDescriptor desc, Integer offset, t_data value) 
-    provisos(
-        Bits#(t_data, sz_data),
-        Add#(anysize, sz_data, SizeOf#(RingbufRawDescriptor))
-    );
 
-    let bytes = pack(desc);
-    bytes[offset + valueOf(sz_data) - 1: offset] = pack(value);
-    return unpack(bytes);
-endfunction
 
 module mkCommandQueueController(CommandQueueController ifc);
     FIFOF#(RingbufRawDescriptor) ringbufReqQ <- mkFIFOF;
@@ -47,72 +32,234 @@ module mkCommandQueueController(CommandQueueController ifc);
     FIFOF#(RingbufRawDescriptor) metaDataInflightReqQ <- mkFIFOF;
     FIFOF#(MetaDataResp) metaDataRespQ <- mkFIFOF;
 
-    Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, Reg#(readVReg)) segBuf <- replicateM(mkRegU);
+    Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, Reg#(RingbufRawDescriptor)) reqSegBuf <- replicateM(mkRegU);
+    Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, Reg#(RingbufRawDescriptor)) respSegBuf <- replicateM(mkRegU);
 
-    Reg#(Bool) isFillingSegments <- mkReg(True); 
+    Reg#(Bool) isFillingReqSegmentsReg <- mkReg(True); 
+    Reg#(Bool) isFirstReqSegmentsReg <- mkReg(True); 
+    Reg#(DescriptorSegmentIndex) totalReqSegCntReg <- mkRegU;
+    Reg#(DescriptorSegmentIndex) curReqSegCntReg <- mkReg(0);
 
-    Reg#(DescriptorSegmentIndex) totalSegCnt <- mkRegU;
-    Reg#(DescriptorSegmentIndex) curSegCnt <- mkReg(0);
+    Reg#(Bool) isSendingRespDescReg <- mkReg(False); 
+    Reg#(DescriptorSegmentIndex) respSegCntReg <- mkRegU;
 
-    rule fillAllSegments if (isFillingSegments);
-        let desc = ringbufReqQ.first;
+    rule fillAllReqSegments if (isFillingReqSegmentsReg);
+        let rawDesc = ringbufReqQ.first;
         ringbufReqQ.deq;
-        segBuf[0] <= desc;
-        for (Integer i = 0; i < valueOf(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT) - 1; i=i+1) begin
-            segBuf [i+1] <= segBuf[i]
+        reqSegBuf[0] <= rawDesc;
+        DescriptorSegmentIndex totalSegCnt = totalReqSegCntReg;
+        DescriptorSegmentIndex curSegCnt = curReqSegCntReg;
+        if (isFirstReqSegmentsReg) begin
+            CmdQueueDescCommonHead head = unpack(truncate(rawDesc));
+            totalSegCnt = unpack(head.extraSegmentCnt);
+            curSegCnt = 0;
         end
+
+        let hasMoreSegs = totalSegCnt != curSegCnt;
+        if (!hasMoreSegs) begin
+            isFirstReqSegmentsReg <= True;
+            isFillingReqSegmentsReg <= False;
+        end else begin
+            isFirstReqSegmentsReg <= False;
+            isFillingReqSegmentsReg <= True;
+            for (Integer i = 0; i < valueOf(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT) - 1; i=i+1) begin
+                reqSegBuf [i+1] <= reqSegBuf[i];
+            end
+        end
+
+        curSegCnt = curSegCnt + 1;
+        curReqSegCntReg <= curSegCnt; 
+        totalReqSegCntReg <= totalSegCnt;
     endrule
     
     
-    rule dispatchRingbufRequestDescriptors if !(isFillingSegments);
-        
-        let opcode = getOpcodeFromRingbufDescriptor(desc);
+    rule dispatchRingbufRequestDescriptors if (!isFillingReqSegmentsReg);
+        isFillingReqSegmentsReg <= True;
+        let headDescIdx = totalReqSegCntReg;
+        RingbufRawDescriptor rawDesc = reqSegBuf[headDescIdx];
+        let opcode = getOpcodeFromRingbufDescriptor(rawDesc);
         case (unpack(truncate(opcode)))
             CmdQueueOpcodeUpdateFirstStagePGT: begin
-                pgtReqQ.enq(desc);
-                pgtInflightReqQ.enq(desc); // TODO, we can simplify this to only include 32-bit user_data field
+                pgtReqQ.enq(rawDesc);
+                pgtInflightReqQ.enq(rawDesc); // TODO, we can simplify this to only include 32-bit user_data field
             end
             CmdQueueOpcodeUpdateSecondStagePGT: begin
-                pgtReqQ.enq(desc);
-                pgtInflightReqQ.enq(desc); // TODO, we can simplify this to only include 32-bit user_data field
+                pgtReqQ.enq(rawDesc);
+                pgtInflightReqQ.enq(rawDesc); // TODO, we can simplify this to only include 32-bit user_data field
             end
             CmdQueueOpcodePdManagement: begin
-                HandlerPD pdHandler = getFieldFromRawRingbufDescriptor(desc, reqDescFieldOffset_F_PD_ADMIN_HANDLER);
-                KeyPD pdKey = unpack(truncate(pack(pdHandler)));
+                CmdQueueReqDescPdManagement desc = unpack(rawDesc);
+                KeyPD pdKey = unpack(truncate(pack(desc.pdHandler)));
                 metaDataReqQ.enq(tagged Req4PD ReqPD{
-                    allocOrNot: getFieldFromRawRingbufDescriptor(desc, reqDescFieldOffset_F_PD_ADMIN_IS_ALLOC),
+                    allocOrNot: desc.isAlloc,
                     pdKey: pdKey,
-                    pdHandler: pdHandler
+                    pdHandler: desc.pdHandler
+                });
+            end
+            CmdQueueOpcodeMrManagement: begin
+                CmdQueueReqDescMrManagementSeg0 desc0 = unpack(reqSegBuf[1]);
+                CmdQueueReqDescMrManagementSeg1 desc1 = unpack(reqSegBuf[0]);
+                KeyPartMR lkeyPart = truncate(desc1.lkey);
+                KeyPartMR rkeyPart = truncate(desc1.rkey);
+                metaDataReqQ.enq(tagged Req4MR ReqMR{
+                    allocOrNot: desc0.isAlloc,
+                    lkeyOrNot: True,
+                    mr: MemRegion {
+                        laddr: desc0.startAddr,
+                        len: desc0.mrLen,
+                        accFlags: FlagsType{flags: pack(desc0.accessFlag)},
+                        pdHandler: desc0.pdHandler,
+                        lkeyPart: lkeyPart,
+                        rkeyPart: rkeyPart
+                    },
+                    lkey: desc1.lkey,
+                    rkey: desc1.rkey
+                });
+            end
+            CmdQueueOpcodeQpManagement: begin
+                CmdQueueReqDescQpManagementSeg0 desc0 = unpack(reqSegBuf[1]);
+                CmdQueueReqDescQpManagementSeg1 desc1 = unpack(reqSegBuf[0]);
+
+                metaDataReqQ.enq(tagged Req4QP ReqQP{
+                    qpReqType: desc0.qpReqType,
+                    pdHandler: desc0.pdHandler,
+                    qpn: desc0.qpn,
+                    qpAttrMask: FlagsType{flags: pack(desc0.qpAttrMask)},
+                    qpAttr: AttrQP{
+                        qpState: desc1.qpState,
+                        curQpState: desc1.curQpState,
+                        pmtu: desc1.pmtu,
+                        qkey: desc1.qkey,
+                        rqPSN: desc1.rqPSN,
+                        sqPSN: desc1.sqPSN,
+                        dqpn: desc1.dqpn,
+                        qpAccessFlags: desc1.qpAccessFlags,
+                        cap: QpCapacity {
+                            maxSendWR: desc1.maxSendWR,
+                            maxRecvWR: desc1.maxRecvWR,
+                            maxSendSGE: desc1.maxSendSGE,
+                            maxRecvSGE: desc1.maxRecvSGE,
+                            maxInlineData: desc1.maxInlineData
+                        },
+                        pkeyIndex: desc1.pkeyIndex,
+                        sqDraining: desc1.sqDraining,
+                        maxReadAtomic: desc1.maxReadAtomic,
+                        maxDestReadAtomic: desc1.maxDestReadAtomic,
+                        minRnrTimer: desc1.minRnrTimer,
+                        timeout: desc1.timeout,
+                        retryCnt: desc1.retryCnt,
+                        rnrRetry: desc1.rnrRetry
+                    },
+                    qpInitAttr: QpInitAttr{
+                        qpType: desc0.qpType,
+                        sqSigAll: desc0.sqSigAll
+                    }
                 });
             end
         endcase
 
     endrule
 
-    rule gatherResponse;
+    rule gatherResponse if (!isSendingRespDescReg);
         // TODO should we use a fair algorithm here?
         
+        RingbufRawDescriptor respRawDescSeg0 = ?;
+        RingbufRawDescriptor respRawDescSeg1 = ?;
+        DescriptorSegmentIndex extraDescCount = 0;
+
         if (pgtRespQ.notEmpty) begin
-            RingbufRawDescriptor respDesc = pgtInflightReqQ.first;
-            respDesc = setFieldFromRawRingbufDescriptor(respDesc, respDescFieldOffset_F_CMD_SUCCESS, pgtRespQ.first);
-            ringbufRespQ.enq(respDesc);
+            CmdQueueRespDescUpdatePGT respDesc = unpack(pgtInflightReqQ.first);
+            respDesc.commonHeader.isSuccessOrNeedSignalCplt = pgtRespQ.first;
             pgtInflightReqQ.deq;
             pgtRespQ.deq;
+            respRawDescSeg0 = pack(respDesc);
         end else if (metaDataRespQ.notEmpty) begin
-            RingbufRawDescriptor respDesc = metaDataInflightReqQ.first;
+            
             metaDataRespQ.deq;
             metaDataInflightReqQ.deq;
+           
 
             case (metaDataRespQ.first) matches 
                 tagged Resp4PD .resp: begin
-                    respDesc = setFieldFromRawRingbufDescriptor(respDesc, respDescFieldOffset_F_CMD_SUCCESS, resp.successOrNot);
-                    respDesc = setFieldFromRawRingbufDescriptor(respDesc, respDescFieldOffset_F_PD_ADMIN_HANDLER, resp.pdHandler);
+                    CmdQueueRespDescPdManagement respDesc = unpack(metaDataInflightReqQ.first);
+                    respDesc.commonHeader.isSuccessOrNeedSignalCplt = resp.successOrNot;
+                    respDesc.pdHandler = resp.pdHandler;
+                    respRawDescSeg0 = pack(respDesc);
+                end
+                tagged Resp4MR .resp: begin
+                    CmdQueueRespDescMrManagement respDesc = unpack(metaDataInflightReqQ.first);
+                    respDesc.commonHeader.extraSegmentCnt = 0;
+                    respDesc.commonHeader.isSuccessOrNeedSignalCplt = resp.successOrNot;
+                    respDesc.lkey = resp.lkey;
+                    respDesc.rkey = resp.rkey;
+                    respRawDescSeg0 = pack(respDesc);
+                end
+                tagged Resp4QP .resp: begin
+                    CmdQueueReqDescQpManagementSeg0 rawReq = unpack(metaDataInflightReqQ.first);
+                    CmdQueueRespDescQpManagementSeg0 respDesc0 = CmdQueueRespDescQpManagementSeg0{
+                        commonHeader: rawReq.commonHeader,
+                        pdHandler: resp.pdHandler,
+                        qpReqType: ?,
+                        qpn: resp.qpn,
+                        qpAttrMask: ?,
+                        qpType: resp.qpInitAttr.qpType,
+                        sqSigAll: resp.qpInitAttr.sqSigAll,
+                        reserved1: ?,
+                        reserved2: ?,
+                        reserved3: ?,
+                        reserved4: ?,
+                        reserved5: ?
+                    };
+                    respDesc0.commonHeader.isSuccessOrNeedSignalCplt = resp.successOrNot;
+                    
+                    CmdQueueRespDescQpManagementSeg1 respDesc1 = CmdQueueRespDescQpManagementSeg1{
+                        rnrRetry: resp.qpAttr.rnrRetry,
+                        timeout: resp.qpAttr.timeout,
+                        retryCnt: resp.qpAttr.retryCnt,
+                        minRnrTimer: resp.qpAttr.minRnrTimer,
+                        maxDestReadAtomic: resp.qpAttr.maxDestReadAtomic,
+                        maxReadAtomic: resp.qpAttr.maxReadAtomic,
+                        pkeyIndex: resp.qpAttr.pkeyIndex,
+                        sqDraining: resp.qpAttr.sqDraining,
+                        maxInlineData: resp.qpAttr.cap.maxInlineData,
+                        maxRecvSGE: resp.qpAttr.cap.maxRecvSGE,
+                        maxSendSGE: resp.qpAttr.cap.maxSendSGE,
+                        qpAccessFlags: resp.qpAttr.qpAccessFlags,
+                        dqpn: resp.qpAttr.dqpn,
+                        maxRecvWR: resp.qpAttr.cap.maxRecvWR,
+                        sqPSN: resp.qpAttr.sqPSN,
+                        maxSendWR: resp.qpAttr.cap.maxSendWR,
+                        rqPSN: resp.qpAttr.rqPSN,
+                        qkey: resp.qpAttr.qkey,
+                        pmtu: resp.qpAttr.pmtu,
+                        curQpState: resp.qpAttr.curQpState,
+                        qpState: resp.qpAttr.qpState,
+                        reserved1: ?,
+                        reserved2: ?,
+                        reserved3: ?
+                    };
+
+                    respRawDescSeg0 = pack(respDesc0);
+                    respRawDescSeg1 = pack(respDesc1);
                 end
             endcase 
-            
-            ringbufRespQ.enq(respDesc);
         end
-        
+
+        respSegBuf[0] <= respRawDescSeg0;
+        respSegBuf[1] <= respRawDescSeg1;
+        respSegCntReg <= extraDescCount;
+        isSendingRespDescReg <= True;
+    endrule
+
+    rule sendRespDesc if (isSendingRespDescReg);
+        ringbufRespQ.enq(respSegBuf[0]);
+        for (Integer i = 0; i < valueOf(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT) - 1; i=i+1) begin
+            respSegBuf [i] <= respSegBuf[i+1];
+        end
+        if (respSegCntReg == 0) begin
+            isSendingRespDescReg <= False;
+        end
+        respSegCntReg <= respSegCntReg - 1;
     endrule
 
     interface ringbufSrv = toGPServer(ringbufReqQ, ringbufRespQ);

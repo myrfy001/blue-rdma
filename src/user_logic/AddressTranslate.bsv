@@ -212,7 +212,7 @@ module mkPgtManager#(TLB tlb)(PgtManager);
         case (unpack(truncate(opcode)))
             CmdQueueOpcodeUpdateFirstStagePGT: begin
                 state <= PgtManagerFsmStateIdle;
-                CmdQueueDescUpdateFirstStagePGT desc = unpack(descRaw);
+                CmdQueueReqDescUpdateFirstStagePGT desc = unpack(descRaw);
                 let modifyReq = PgtModifyFirstStageReq {
                     asid: truncate(desc.index),
                     content: PgtFirstStagePayload{
@@ -226,7 +226,7 @@ module mkPgtManager#(TLB tlb)(PgtManager);
                 // $display("addr translate modify first stage finished.");
             end
             CmdQueueOpcodeUpdateSecondStagePGT: begin
-                CmdQueueDescUpdateSecondStagePGT desc = unpack(descRaw);
+                CmdQueueReqDescUpdateSecondStagePGT desc = unpack(descRaw);
                 dmaReadReqQ.enq(UserLogicDmaH2cReq{
                     addr: desc.dmaAddr,
                     len: truncate(desc.dmaReadLength)
