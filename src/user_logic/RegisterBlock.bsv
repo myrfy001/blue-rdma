@@ -7,15 +7,21 @@ import Ringbuf :: *;
 import ClientServer :: *;
 
 import UserLogicTypes :: *;
-
+import UserLogicSettings :: *;
 
 
 typedef enum {
-    CsrIdxRbBaseAddrLow = 'h0000,
-    CsrIdxRbBaseAddrHigh = 'h0001,
-    CsrIdxRbHead = 'h0002,
-    CsrIdxRbTail = 'h0003
-} CsrPageIndexForRingbuf deriving(Bits, Eq);
+    CsrIdxRbBaseAddrLow = 'h000,
+    CsrIdxRbBaseAddrHigh = 'h001,
+    CsrIdxRbHead = 'h002,
+    CsrIdxRbTail = 'h003
+} CsrPageIndexForRingbuf deriving(Bits, Eq, FShow);
+
+typedef struct {
+    Bool isH2c;
+    UInt#(RINGBUF_NUMBER_WIDTH) queueIndex;
+    CsrPageIndexForRingbuf regIndex;
+} CsrRingbufRegsAddress deriving (Bits, Eq, FShow);
 
 
 interface RegisterBlock#(type t_addr, type t_data);
@@ -37,14 +43,38 @@ module mkRegisterBlock(
     FIFOF#(CsrReadResponse#(CsrData)) readRespQ <- mkFIFOF;
 
     rule ruleHandleWrite;
-        CsrPageIndexForRingbuf regIdx = unpack(truncate(pack(writeReqQ.first.addr)>>2));
+        CsrRingbufRegsAddress regAddr = unpack(truncate(pack(writeReqQ.first.addr)>>2));
         let data = writeReqQ.first.data;
         writeReqQ.deq;
-        case (regIdx) matches
-            CsrIdxRbBaseAddrLow: h2cMetas[0].addr[31:0] <= unpack(data);
-            CsrIdxRbBaseAddrHigh: h2cMetas[0].addr[63:32] <= unpack(data);
-            CsrIdxRbHead: h2cMetas[0].head <= unpack(truncate(data));
-            CsrIdxRbTail: h2cMetas[0].tail <= unpack(truncate(data));
+        case (regAddr.regIndex) matches
+            CsrIdxRbBaseAddrLow: begin
+                if (regAddr.isH2c) begin
+                    h2cMetas[regAddr.queueIndex].addr[31:0] <= unpack(data);
+                end else begin
+                    c2hMetas[regAddr.queueIndex].addr[31:0] <= unpack(data);
+                end
+            end
+            CsrIdxRbBaseAddrHigh: begin
+                if (regAddr.isH2c) begin
+                    h2cMetas[regAddr.queueIndex].addr[63:32] <= unpack(data);
+                end else begin
+                    c2hMetas[regAddr.queueIndex].addr[63:32] <= unpack(data);
+                end
+            end 
+            CsrIdxRbHead: begin
+                if (regAddr.isH2c) begin
+                    h2cMetas[regAddr.queueIndex].head <= unpack(truncate(data));
+                end else begin
+                    c2hMetas[regAddr.queueIndex].head <= unpack(truncate(data));
+                end
+            end
+            CsrIdxRbTail: begin
+                if (regAddr.isH2c) begin
+                    h2cMetas[regAddr.queueIndex].tail <= unpack(truncate(data));
+                end else begin
+                    c2hMetas[regAddr.queueIndex].tail <= unpack(truncate(data));
+                end
+            end
             default: begin 
                 $display("unknown addr");
             end

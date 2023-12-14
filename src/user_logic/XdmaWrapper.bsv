@@ -896,7 +896,7 @@ module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
             len != 0,
             "DMA request len is 0 @ mkFakeXdma",
             $format(
-                "request should not be 0 in length, request = ", fshow(unionedReqQ.first)
+                "request should not be 0 in length, request = ", fshow(unionedReqQ.first), "isH2c=", fshow(isH2c)
             )
         );
 
@@ -1034,7 +1034,6 @@ module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
         
         prevMemReadRespReg <= tuple2(newMemReadResp, respBeatInfoQ.first);
         readRespHandleStateReg <= fromInteger(readRespHandleStateHandleMiddle);
-        
     endrule
 
 

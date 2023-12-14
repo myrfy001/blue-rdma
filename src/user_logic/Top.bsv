@@ -53,6 +53,9 @@ endinterface
 
 // if software and hardware try to move the same pointer, software won.
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_0.recvDmaResp" *) 
+(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_0.recvDmaResp_1" *) 
+(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp" *) 
+(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp_1" *) 
 module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrData) ifc);
     // TODO, make sure which reset to use.
     BluerdmaDmaProxy bluerdmaDmaProxy <- mkBluerdmaDmaProxy;
@@ -101,6 +104,11 @@ module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrDa
 
     mkConnection(cmdQController.pgtManagerClt, pgtManager.pgtModifySrv);
 
+    rule ttttt;
+        let t <- cmdQController.metaDataManagerClt.request.get;
+        $display("metaDataservice got:", fshow(t));
+        cmdQController.metaDataManagerClt.response.put(?);
+    endrule
     
     interface csrWriteSrv = regBlock.csrWriteSrv;
     interface csrReadSrv = regBlock.csrReadSrv;
@@ -121,7 +129,7 @@ module mkTbTop(Empty);
     mkConnection(fakeXdma.xdmaH2cSrv, bsvTopCore.dmaReadClt);
     mkConnection(fakeXdma.xdmaC2hSrv, bsvTopCore.dmaWriteClt);
 
-
+    CsrAddr h2cMark = 1 << (2+2+2);
 
 
 
@@ -131,14 +139,25 @@ module mkTbTop(Empty);
     Randomize#(Bit#(13)) startAddrRnd <- mkGenericRandomizer;
     Randomize#(Bit#(8)) lenRnd <- mkGenericRandomizer;
 
+    
+
 
     FSM runTest <- mkFSM(
         (seq
             bsvTopCore.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: 'h0002 << 2,
-                data: 2
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2,
+                data: 7
             });
-            
+
+            action
+                let t <- bsvTopCore.csrWriteSrv.response.get;
+            endaction
+
+            bsvTopCore.csrWriteSrv.request.put(CsrWriteRequest{
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 0, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+                data: 'h1000
+            });
+
             action
                 let t <- bsvTopCore.csrWriteSrv.response.get;
             endaction

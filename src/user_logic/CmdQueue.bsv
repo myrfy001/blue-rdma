@@ -44,6 +44,7 @@ module mkCommandQueueController(CommandQueueController ifc);
     Reg#(DescriptorSegmentIndex) respSegCntReg <- mkRegU;
 
     rule fillAllReqSegments if (isFillingReqSegmentsReg);
+        $display("---------");
         let rawDesc = ringbufReqQ.first;
         ringbufReqQ.deq;
         reqSegBuf[0] <= rawDesc;
@@ -53,18 +54,21 @@ module mkCommandQueueController(CommandQueueController ifc);
             CmdQueueDescCommonHead head = unpack(truncate(rawDesc));
             totalSegCnt = unpack(head.extraSegmentCnt);
             curSegCnt = 0;
+            $display("11111");
         end
-
+        $display("22222, totalSegCnt=", fshow(totalSegCnt), "curSegCnt=", fshow(curSegCnt));
         let hasMoreSegs = totalSegCnt != curSegCnt;
         if (!hasMoreSegs) begin
             isFirstReqSegmentsReg <= True;
             isFillingReqSegmentsReg <= False;
+            $display("33333");
         end else begin
             isFirstReqSegmentsReg <= False;
             isFillingReqSegmentsReg <= True;
-            for (Integer i = 0; i < valueOf(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT) - 1; i=i+1) begin
-                reqSegBuf [i+1] <= reqSegBuf[i];
-            end
+            $display("44444");
+        end
+        for (Integer i = 0; i < valueOf(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT) - 1; i=i+1) begin
+            reqSegBuf [i+1] <= reqSegBuf[i];
         end
 
         curSegCnt = curSegCnt + 1;
@@ -74,6 +78,7 @@ module mkCommandQueueController(CommandQueueController ifc);
     
     
     rule dispatchRingbufRequestDescriptors if (!isFillingReqSegmentsReg);
+        $display("555555");
         isFillingReqSegmentsReg <= True;
         let headDescIdx = totalReqSegCntReg;
         RingbufRawDescriptor rawDesc = reqSegBuf[headDescIdx];
@@ -88,8 +93,10 @@ module mkCommandQueueController(CommandQueueController ifc);
                 pgtInflightReqQ.enq(rawDesc); // TODO, we can simplify this to only include 32-bit user_data field
             end
             CmdQueueOpcodePdManagement: begin
+                $display("aaaaa");
                 CmdQueueReqDescPdManagement desc = unpack(rawDesc);
                 KeyPD pdKey = unpack(truncate(pack(desc.pdHandler)));
+                metaDataInflightReqQ.enq(rawDesc);
                 metaDataReqQ.enq(tagged Req4PD ReqPD{
                     allocOrNot: desc.isAlloc,
                     pdKey: pdKey,
@@ -97,10 +104,12 @@ module mkCommandQueueController(CommandQueueController ifc);
                 });
             end
             CmdQueueOpcodeMrManagement: begin
+                $display("bbbbb");
                 CmdQueueReqDescMrManagementSeg0 desc0 = unpack(reqSegBuf[1]);
                 CmdQueueReqDescMrManagementSeg1 desc1 = unpack(reqSegBuf[0]);
                 KeyPartMR lkeyPart = truncate(desc1.lkey);
                 KeyPartMR rkeyPart = truncate(desc1.rkey);
+                metaDataInflightReqQ.enq(rawDesc);
                 metaDataReqQ.enq(tagged Req4MR ReqMR{
                     allocOrNot: desc0.isAlloc,
                     lkeyOrNot: True,
@@ -117,9 +126,11 @@ module mkCommandQueueController(CommandQueueController ifc);
                 });
             end
             CmdQueueOpcodeQpManagement: begin
+                $display("ccccc");
                 CmdQueueReqDescQpManagementSeg0 desc0 = unpack(reqSegBuf[1]);
                 CmdQueueReqDescQpManagementSeg1 desc1 = unpack(reqSegBuf[0]);
 
+                metaDataInflightReqQ.enq(rawDesc);
                 metaDataReqQ.enq(tagged Req4QP ReqQP{
                     qpReqType: desc0.qpReqType,
                     pdHandler: desc0.pdHandler,
@@ -173,6 +184,7 @@ module mkCommandQueueController(CommandQueueController ifc);
             pgtInflightReqQ.deq;
             pgtRespQ.deq;
             respRawDescSeg0 = pack(respDesc);
+            isSendingRespDescReg <= True;
         end else if (metaDataRespQ.notEmpty) begin
             
             metaDataRespQ.deq;
@@ -241,14 +253,15 @@ module mkCommandQueueController(CommandQueueController ifc);
 
                     respRawDescSeg0 = pack(respDesc0);
                     respRawDescSeg1 = pack(respDesc1);
+                    
                 end
-            endcase 
+            endcase
+            isSendingRespDescReg <= True;
         end
 
         respSegBuf[0] <= respRawDescSeg0;
         respSegBuf[1] <= respRawDescSeg1;
         respSegCntReg <= extraDescCount;
-        isSendingRespDescReg <= True;
     endrule
 
     rule sendRespDesc if (isSendingRespDescReg);
