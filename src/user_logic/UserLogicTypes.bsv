@@ -265,3 +265,78 @@ typedef struct {
 
 typedef CmdQueueReqDescQpManagementSeg0 CmdQueueRespDescQpManagementSeg0;
 typedef CmdQueueReqDescQpManagementSeg1 CmdQueueRespDescQpManagementSeg1;
+
+
+typedef struct {
+    Bit#(1)         reserved1;
+    ADDR            len;
+    Bit#(20)        reserved2;
+    Bool            isSuccessOrNeedSignalCplt;
+    Bit#(4)         extraSegmentCnt;
+    Bit#(2)         reserved3;
+    WorkReqOpCode   opCode;
+    Bool            valid;
+}SendQueueDescCommonHead deriving(Bits, FShow);
+
+typedef struct {
+    RKEY rkey;
+    LKEY lkey;
+    ADDR raddr;
+    ADDR laddr;
+    SendQueueDescCommonHead     commonHeader;
+}SendQueueReqDescSeg0 deriving(Bits, FShow);
+
+typedef struct {
+    Bit#(64)        reserved1;
+    Bit#(64)        reserved2;
+    Bit#(64)        reserved3;
+    QPN sqpn;
+    Bool solicited;
+    Bit#(2)         reserved4;
+    WorkReqSendFlag flags;
+}SendQueueReqDescSeg1 deriving(Bits, FShow);
+
+typedef struct {
+    Bit#(1)         reserved1;
+    ADDR            len;
+    Bit#(20)        reserved2;
+    Bool            isSuccessOrNeedSignalCplt;
+    Bit#(4)         extraSegmentCnt;
+    Bit#(2)         reserved3;
+    WorkReqOpCode   opCode;
+    Bool            valid;
+}RecvQueueDescCommonHead deriving(Bits, FShow);
+
+typedef struct {
+    QPN                         sqpn;
+    LKEY                        lkey;
+    Bit#(64)                    reserved1;
+    ADDR                        laddr;
+    RecvQueueDescCommonHead     commonHeader;
+}RecvQueueReqDesc deriving(Bits, FShow);
+
+
+
+typedef struct {
+    Bit#(1)         reserved1;
+    ADDR            len;
+    Bit#(20)        reserved2;
+    Bool            isSuccessOrNeedSignalCplt;
+    Bit#(4)         extraSegmentCnt;
+    Bit#(7)         reserved3;
+    Bool            valid;
+}CompQueueDescCommonHead deriving(Bits, FShow);
+
+typedef struct {
+    Bit#(40)         reserved1;
+    QPN qpn;
+    Bit#(64)         reserved2;
+    Bit#(16)         reserved3;
+    PKEY pkey;
+    Bit#(11)         reserved4;
+    WorkCompStatus status;
+    Bit#(1)         reserved5;
+    WorkCompFlags flags;
+    WorkCompOpCode opcode;
+    CompQueueDescCommonHead     commonHeader;
+}CompQueueReqDesc deriving(Bits, FShow);

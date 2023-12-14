@@ -20,6 +20,8 @@ import Arbitration :: *;
 import UserLogicUtils :: *;
 import CmdQueue :: *;
 
+import TransportLayer :: *;
+
 
 interface BsvTop#(numeric type dataSz, numeric type userSz);
     interface XdmaChannel#(dataSz, userSz) xdmaChannel;
@@ -104,11 +106,9 @@ module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrDa
 
     mkConnection(cmdQController.pgtManagerClt, pgtManager.pgtModifySrv);
 
-    rule ttttt;
-        let t <- cmdQController.metaDataManagerClt.request.get;
-        $display("metaDataservice got:", fshow(t));
-        cmdQController.metaDataManagerClt.response.put(?);
-    endrule
+    let rdmaTransportLayer <- mkTransportLayer;
+
+    mkConnection(cmdQController.metaDataManagerClt, rdmaTransportLayer.srvPortMetaData);
     
     interface csrWriteSrv = regBlock.csrWriteSrv;
     interface csrReadSrv = regBlock.csrReadSrv;
@@ -129,7 +129,6 @@ module mkTbTop(Empty);
     mkConnection(fakeXdma.xdmaH2cSrv, bsvTopCore.dmaReadClt);
     mkConnection(fakeXdma.xdmaC2hSrv, bsvTopCore.dmaWriteClt);
 
-    CsrAddr h2cMark = 1 << (2+2+2);
 
 
 
@@ -144,6 +143,18 @@ module mkTbTop(Empty);
 
     FSM runTest <- mkFSM(
         (seq
+        
+
+            bsvTopCore.csrReadSrv.request.put(CsrReadRequest{
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2
+            });
+
+            action
+                let t <- bsvTopCore.csrReadSrv.response.get;
+                $display("tail pointer = %x", t);
+            endaction
+
+
             bsvTopCore.csrWriteSrv.request.put(CsrWriteRequest{
                 addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2,
                 data: 7
@@ -160,6 +171,15 @@ module mkTbTop(Empty);
 
             action
                 let t <- bsvTopCore.csrWriteSrv.response.get;
+            endaction
+
+            bsvTopCore.csrReadSrv.request.put(CsrReadRequest{
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2
+            });
+
+            action
+                let t <- bsvTopCore.csrReadSrv.response.get;
+                $display("tail pointer = %x", t);
             endaction
 
         endseq)

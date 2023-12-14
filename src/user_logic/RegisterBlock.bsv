@@ -76,17 +76,58 @@ module mkRegisterBlock(
                 end
             end
             default: begin 
-                $display("unknown addr");
+                $display("CSR write unknown addr: %x", writeReqQ.first.addr);
+                $finish;
             end
         endcase
 
         writeRespQ.enq(CsrWriteResponse{flag: 0});
     endrule
 
-    // rule ruleHandleRead;
-    //     let _ = readReqWire;
-    //     readRespWire <= unpack(0);
-    // endrule
+    rule ruleHandleRead;
+
+        CsrRingbufRegsAddress regAddr = unpack(truncate(pack(readReqQ.first.addr)>>2));
+        readReqQ.deq;
+        CsrData retData = ?;
+        case (regAddr.regIndex) matches
+            CsrIdxRbBaseAddrLow: begin
+                if (regAddr.isH2c) begin
+                    retData = zeroExtend(pack(h2cMetas[regAddr.queueIndex].addr[31:0]));
+                end else begin
+                    retData = zeroExtend(pack(c2hMetas[regAddr.queueIndex].addr[31:0]));
+                end
+            end
+            CsrIdxRbBaseAddrHigh: begin
+                if (regAddr.isH2c) begin
+                    retData = zeroExtend(pack(h2cMetas[regAddr.queueIndex].addr[63:32]));
+                end else begin
+                    retData = zeroExtend(pack(c2hMetas[regAddr.queueIndex].addr[63:32]));
+                end
+            end 
+            CsrIdxRbHead: begin
+                if (regAddr.isH2c) begin
+                    retData = zeroExtend(pack(h2cMetas[regAddr.queueIndex].head));
+                end else begin
+                    retData = zeroExtend(pack(c2hMetas[regAddr.queueIndex].head));
+                end
+            end
+            CsrIdxRbTail: begin
+                if (regAddr.isH2c) begin
+                    retData = zeroExtend(pack(h2cMetas[regAddr.queueIndex].tail));
+                end else begin
+                    retData = zeroExtend(pack(c2hMetas[regAddr.queueIndex].tail));
+                end
+            end
+            default: begin 
+                $display("CSR read unknown addr: %x", readReqQ.first.addr);
+                $finish;
+            end
+        endcase
+
+
+
+        readRespQ.enq(CsrReadResponse{data: retData});
+    endrule
 
     interface csrWriteSrv = toGPServer(writeReqQ, writeRespQ);
     interface csrReadSrv = toGPServer(readReqQ, readRespQ);
