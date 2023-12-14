@@ -10,7 +10,7 @@ import UserLogicTypes :: *;
 import MetaData :: *;
 import PrimUtils :: *;
 import Controller :: *;
-
+import Ringbuf :: *;
 
 interface CommandQueueController;
     interface Server#(RingbufRawDescriptor, RingbufRawDescriptor) ringbufSrv;
@@ -21,8 +21,7 @@ endinterface
 
 
 module mkCommandQueueController(CommandQueueController ifc);
-    FIFOF#(RingbufRawDescriptor) ringbufReqQ <- mkFIFOF;
-    FIFOF#(RingbufRawDescriptor) ringbufRespQ <- mkFIFOF;
+
     
     FIFOF#(RingbufRawDescriptor) pgtReqQ <- mkFIFOF;
     FIFOF#(RingbufRawDescriptor) pgtInflightReqQ <- mkFIFOF;
@@ -32,49 +31,11 @@ module mkCommandQueueController(CommandQueueController ifc);
     FIFOF#(RingbufRawDescriptor) metaDataInflightReqQ <- mkFIFOF;
     FIFOF#(MetaDataResp) metaDataRespQ <- mkFIFOF;
 
-    Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, Reg#(RingbufRawDescriptor)) reqSegBuf <- replicateM(mkRegU);
-    Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, Reg#(RingbufRawDescriptor)) respSegBuf <- replicateM(mkRegU);
 
-    Reg#(Bool) isFillingReqSegmentsReg <- mkReg(True); 
-    Reg#(Bool) isFirstReqSegmentsReg <- mkReg(True); 
-    Reg#(DescriptorSegmentIndex) totalReqSegCntReg <- mkRegU;
-    Reg#(DescriptorSegmentIndex) curReqSegCntReg <- mkReg(0);
-
-    Reg#(Bool) isSendingRespDescReg <- mkReg(False); 
-    Reg#(DescriptorSegmentIndex) respSegCntReg <- mkRegU;
-
-    rule fillAllReqSegments if (isFillingReqSegmentsReg);
-        let rawDesc = ringbufReqQ.first;
-        ringbufReqQ.deq;
-        reqSegBuf[0] <= rawDesc;
-        DescriptorSegmentIndex totalSegCnt = totalReqSegCntReg;
-        DescriptorSegmentIndex curSegCnt = curReqSegCntReg;
-        if (isFirstReqSegmentsReg) begin
-            CmdQueueDescCommonHead head = unpack(truncate(rawDesc));
-            totalSegCnt = unpack(head.extraSegmentCnt);
-            curSegCnt = 0;
-        end
-        let hasMoreSegs = totalSegCnt != curSegCnt;
-        if (!hasMoreSegs) begin
-            isFirstReqSegmentsReg <= True;
-            isFillingReqSegmentsReg <= False;
-        end else begin
-            isFirstReqSegmentsReg <= False;
-            isFillingReqSegmentsReg <= True;
-        end
-        for (Integer i = 0; i < valueOf(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT) - 1; i=i+1) begin
-            reqSegBuf [i+1] <= reqSegBuf[i];
-        end
-
-        curSegCnt = curSegCnt + 1;
-        curReqSegCntReg <= curSegCnt; 
-        totalReqSegCntReg <= totalSegCnt;
-    endrule
+    RingbufDescriptorProxy descProxy <- mkRingbufDescriptorProxy;
     
-    
-    rule dispatchRingbufRequestDescriptors if (!isFillingReqSegmentsReg);
-        isFillingReqSegmentsReg <= True;
-        let headDescIdx = totalReqSegCntReg;
+    rule dispatchRingbufRequestDescriptors;
+        let {reqSegBuf, headDescIdx} <- descProxy.getWideDesc;
         RingbufRawDescriptor rawDesc = reqSegBuf[headDescIdx];
         let opcode = getOpcodeFromRingbufDescriptor(rawDesc);
         case (unpack(truncate(opcode)))
@@ -162,32 +123,31 @@ module mkCommandQueueController(CommandQueueController ifc);
 
     endrule
 
-    rule gatherResponse if (!isSendingRespDescReg);
+    rule gatherResponse if (descProxy.canSetDesc);
         // TODO should we use a fair algorithm here?
         
-        RingbufRawDescriptor respRawDescSeg0 = ?;
-        RingbufRawDescriptor respRawDescSeg1 = ?;
-        DescriptorSegmentIndex extraDescCount = 0;
+        Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, RingbufRawDescriptor) respRawDescSeg = ?;
+        
 
         if (pgtRespQ.notEmpty) begin
             CmdQueueRespDescUpdatePGT respDesc = unpack(pgtInflightReqQ.first);
             respDesc.commonHeader.isSuccessOrNeedSignalCplt = pgtRespQ.first;
             pgtInflightReqQ.deq;
             pgtRespQ.deq;
-            respRawDescSeg0 = pack(respDesc);
-            isSendingRespDescReg <= True;
+            respRawDescSeg[0] = pack(respDesc);
+            descProxy.setWideDesc(respRawDescSeg, 0);
         end else if (metaDataRespQ.notEmpty) begin
             
             metaDataRespQ.deq;
             metaDataInflightReqQ.deq;
            
-
             case (metaDataRespQ.first) matches 
                 tagged Resp4PD .resp: begin
                     CmdQueueRespDescPdManagement respDesc = unpack(metaDataInflightReqQ.first);
                     respDesc.commonHeader.isSuccessOrNeedSignalCplt = resp.successOrNot;
                     respDesc.pdHandler = resp.pdHandler;
-                    respRawDescSeg0 = pack(respDesc);
+                    respRawDescSeg[0] = pack(respDesc);
+                    descProxy.setWideDesc(respRawDescSeg, 0);
                 end
                 tagged Resp4MR .resp: begin
                     CmdQueueRespDescMrManagement respDesc = unpack(metaDataInflightReqQ.first);
@@ -195,7 +155,8 @@ module mkCommandQueueController(CommandQueueController ifc);
                     respDesc.commonHeader.isSuccessOrNeedSignalCplt = resp.successOrNot;
                     respDesc.lkey = resp.lkey;
                     respDesc.rkey = resp.rkey;
-                    respRawDescSeg0 = pack(respDesc);
+                    respRawDescSeg[0] = pack(respDesc);
+                    descProxy.setWideDesc(respRawDescSeg, 0);
                 end
                 tagged Resp4QP .resp: begin
                     CmdQueueReqDescQpManagementSeg0 rawReq = unpack(metaDataInflightReqQ.first);
@@ -242,31 +203,15 @@ module mkCommandQueueController(CommandQueueController ifc);
                         reserved3: ?
                     };
 
-                    respRawDescSeg0 = pack(respDesc0);
-                    respRawDescSeg1 = pack(respDesc1);
-                    
+                    respRawDescSeg[0] = pack(respDesc0);
+                    respRawDescSeg[1] = pack(respDesc1);
+                    descProxy.setWideDesc(respRawDescSeg, 1);    
                 end
             endcase
-            isSendingRespDescReg <= True;
         end
-
-        respSegBuf[0] <= respRawDescSeg0;
-        respSegBuf[1] <= respRawDescSeg1;
-        respSegCntReg <= extraDescCount;
     endrule
 
-    rule sendRespDesc if (isSendingRespDescReg);
-        ringbufRespQ.enq(respSegBuf[0]);
-        for (Integer i = 0; i < valueOf(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT) - 1; i=i+1) begin
-            respSegBuf [i] <= respSegBuf[i+1];
-        end
-        if (respSegCntReg == 0) begin
-            isSendingRespDescReg <= False;
-        end
-        respSegCntReg <= respSegCntReg - 1;
-    endrule
-
-    interface ringbufSrv = toGPServer(ringbufReqQ, ringbufRespQ);
+    interface ringbufSrv = descProxy.ringbufSrv;
     interface pgtManagerClt = toGPClient(pgtReqQ, pgtRespQ);
     interface metaDataManagerClt = toGPClient(metaDataReqQ, metaDataRespQ);
 endmodule
