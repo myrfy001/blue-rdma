@@ -32,10 +32,11 @@ module mkCommandQueueController(CommandQueueController ifc);
     FIFOF#(MetaDataResp) metaDataRespQ <- mkFIFOF;
 
 
-    RingbufDescriptorProxy descProxy <- mkRingbufDescriptorProxy;
+    RingbufDescriptorReadProxy descReadProxy <- mkRingbufDescriptorReadProxy;
+    RingbufDescriptorWriteProxy descWriteProxy <- mkRingbufDescriptorWriteProxy;
     
     rule dispatchRingbufRequestDescriptors;
-        let {reqSegBuf, headDescIdx} <- descProxy.getWideDesc;
+        let {reqSegBuf, headDescIdx} <- descReadProxy.getWideDesc;
         RingbufRawDescriptor rawDesc = reqSegBuf[headDescIdx];
         let opcode = getOpcodeFromRingbufDescriptor(rawDesc);
         case (unpack(truncate(opcode)))
@@ -123,7 +124,7 @@ module mkCommandQueueController(CommandQueueController ifc);
 
     endrule
 
-    rule gatherResponse if (descProxy.canSetDesc);
+    rule gatherResponse if (descWriteProxy.canSetDesc);
         // TODO should we use a fair algorithm here?
         
         Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, RingbufRawDescriptor) respRawDescSeg = ?;
@@ -135,7 +136,7 @@ module mkCommandQueueController(CommandQueueController ifc);
             pgtInflightReqQ.deq;
             pgtRespQ.deq;
             respRawDescSeg[0] = pack(respDesc);
-            descProxy.setWideDesc(respRawDescSeg, 0);
+            descWriteProxy.setWideDesc(respRawDescSeg, 0);
         end else if (metaDataRespQ.notEmpty) begin
             
             metaDataRespQ.deq;
@@ -147,7 +148,7 @@ module mkCommandQueueController(CommandQueueController ifc);
                     respDesc.commonHeader.isSuccessOrNeedSignalCplt = resp.successOrNot;
                     respDesc.pdHandler = resp.pdHandler;
                     respRawDescSeg[0] = pack(respDesc);
-                    descProxy.setWideDesc(respRawDescSeg, 0);
+                    descWriteProxy.setWideDesc(respRawDescSeg, 0);
                 end
                 tagged Resp4MR .resp: begin
                     CmdQueueRespDescMrManagement respDesc = unpack(metaDataInflightReqQ.first);
@@ -156,7 +157,7 @@ module mkCommandQueueController(CommandQueueController ifc);
                     respDesc.lkey = resp.lkey;
                     respDesc.rkey = resp.rkey;
                     respRawDescSeg[0] = pack(respDesc);
-                    descProxy.setWideDesc(respRawDescSeg, 0);
+                    descWriteProxy.setWideDesc(respRawDescSeg, 0);
                 end
                 tagged Resp4QP .resp: begin
                     CmdQueueReqDescQpManagementSeg0 rawReq = unpack(metaDataInflightReqQ.first);
@@ -205,13 +206,13 @@ module mkCommandQueueController(CommandQueueController ifc);
 
                     respRawDescSeg[0] = pack(respDesc0);
                     respRawDescSeg[1] = pack(respDesc1);
-                    descProxy.setWideDesc(respRawDescSeg, 1);    
+                    descWriteProxy.setWideDesc(respRawDescSeg, 1);    
                 end
             endcase
         end
     endrule
 
-    interface ringbufSrv = descProxy.ringbufSrv;
+    interface ringbufSrv = toGPServer(descReadProxy.ringbufConnector, descWriteProxy.ringbufConnector);
     interface pgtManagerClt = toGPClient(pgtReqQ, pgtRespQ);
     interface metaDataManagerClt = toGPClient(metaDataReqQ, metaDataRespQ);
 endmodule

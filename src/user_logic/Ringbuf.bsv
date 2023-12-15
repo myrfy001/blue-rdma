@@ -591,35 +591,34 @@ module mkTestRingbufSynthesizeable(TestRingbufSynthesizeable) ;
     
 endmodule
 
-interface RingbufDescriptorProxy;
-    interface Server#(RingbufRawDescriptor, RingbufRawDescriptor) ringbufSrv;
+interface RingbufDescriptorReadProxy;
+    interface Put#(RingbufRawDescriptor) ringbufConnector;
     method ActionValue#(Tuple2#(Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, RingbufRawDescriptor), DescriptorSegmentIndex)) getWideDesc();
+endinterface
+
+interface RingbufDescriptorWriteProxy;
+    interface Get#(RingbufRawDescriptor) ringbufConnector;
     method Action setWideDesc(Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, RingbufRawDescriptor) descs, DescriptorSegmentIndex extraDescCount);
     method Bool canSetDesc();
 endinterface
 
-module mkRingbufDescriptorProxy(RingbufDescriptorProxy);
-    FIFOF#(RingbufRawDescriptor) ringbufReqQ <- mkFIFOF;
-    FIFOF#(RingbufRawDescriptor) ringbufRespQ <- mkFIFOF;
+module mkRingbufDescriptorReadProxy(RingbufDescriptorReadProxy);
+    FIFOF#(RingbufRawDescriptor) ringbufQ <- mkFIFOF;
 
 
-    Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, Reg#(RingbufRawDescriptor)) reqSegBuf <- replicateM(mkRegU);
-    Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, Reg#(RingbufRawDescriptor)) respSegBuf <- replicateM(mkRegU);
+    Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, Reg#(RingbufRawDescriptor)) segBuf <- replicateM(mkRegU);
 
     Reg#(Bool) isFillingReqSegmentsReg <- mkReg(True); 
     Reg#(Bool) isFirstReqSegmentsReg <- mkReg(True); 
-    Reg#(DescriptorSegmentIndex) totalReqSegCntReg <- mkRegU;
-    Reg#(DescriptorSegmentIndex) curReqSegCntReg <- mkReg(0);
-
-    Reg#(Bool) isSendingRespDescReg <- mkReg(False); 
-    Reg#(DescriptorSegmentIndex) respSegCntReg <- mkRegU;
+    Reg#(DescriptorSegmentIndex) totalSegCntReg <- mkRegU;
+    Reg#(DescriptorSegmentIndex) curSegCntReg <- mkReg(0);
 
     rule fillAllReqSegments if (isFillingReqSegmentsReg);
-        let rawDesc = ringbufReqQ.first;
-        ringbufReqQ.deq;
-        reqSegBuf[0] <= rawDesc;
-        DescriptorSegmentIndex totalSegCnt = totalReqSegCntReg;
-        DescriptorSegmentIndex curSegCnt = curReqSegCntReg;
+        let rawDesc = ringbufQ.first;
+        ringbufQ.deq;
+        segBuf[0] <= rawDesc;
+        DescriptorSegmentIndex totalSegCnt = totalSegCntReg;
+        DescriptorSegmentIndex curSegCnt = curSegCntReg;
         if (isFirstReqSegmentsReg) begin
             CmdQueueDescCommonHead head = unpack(truncate(rawDesc));
             totalSegCnt = unpack(head.extraSegmentCnt);
@@ -634,38 +633,52 @@ module mkRingbufDescriptorProxy(RingbufDescriptorProxy);
             isFillingReqSegmentsReg <= True;
         end
         for (Integer i = 0; i < valueOf(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT) - 1; i=i+1) begin
-            reqSegBuf [i+1] <= reqSegBuf[i];
+            segBuf [i+1] <= segBuf[i];
         end
 
         curSegCnt = curSegCnt + 1;
-        curReqSegCntReg <= curSegCnt; 
-        totalReqSegCntReg <= totalSegCnt;
-    endrule
-    
-    rule sendRespDesc if (isSendingRespDescReg);
-        ringbufRespQ.enq(respSegBuf[0]);
-        for (Integer i = 0; i < valueOf(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT) - 1; i=i+1) begin
-            respSegBuf [i] <= respSegBuf[i+1];
-        end
-        if (respSegCntReg == 0) begin
-            isSendingRespDescReg <= False;
-        end
-        respSegCntReg <= respSegCntReg - 1;
+        curSegCntReg <= curSegCnt; 
+        totalSegCntReg <= totalSegCnt;
     endrule
 
     method ActionValue#(Tuple2#(Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, RingbufRawDescriptor), DescriptorSegmentIndex)) getWideDesc() if (!isFillingReqSegmentsReg);
         isFillingReqSegmentsReg <= True;
-        let headDescIdx = totalReqSegCntReg;
-        return tuple2(readVReg(reqSegBuf), headDescIdx);
+        let headDescIdx = totalSegCntReg;
+        return tuple2(readVReg(segBuf), headDescIdx);
     endmethod
 
-    method Action setWideDesc(Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, RingbufRawDescriptor) descs, DescriptorSegmentIndex extraDescCount) if (!isSendingRespDescReg);
-        isSendingRespDescReg <= True;
-        respSegCntReg <= extraDescCount;
-        writeVReg(respSegBuf, descs);
+
+    interface ringbufConnector = toPut(ringbufQ);
+endmodule
+
+
+
+module mkRingbufDescriptorWriteProxy(RingbufDescriptorWriteProxy);
+    FIFOF#(RingbufRawDescriptor) ringbufQ <- mkFIFOF;
+
+    Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, Reg#(RingbufRawDescriptor)) segBuf <- replicateM(mkRegU);
+
+    Reg#(Bool) isSendingDescReg <- mkReg(False); 
+    Reg#(DescriptorSegmentIndex) segCntReg <- mkRegU;
+    
+    rule sendRespDesc if (isSendingDescReg);
+        ringbufQ.enq(segBuf[0]);
+        for (Integer i = 0; i < valueOf(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT) - 1; i=i+1) begin
+            segBuf [i] <= segBuf[i+1];
+        end
+        if (segCntReg == 0) begin
+            isSendingDescReg <= False;
+        end
+        segCntReg <= segCntReg - 1;
+    endrule
+
+    method Action setWideDesc(Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, RingbufRawDescriptor) descs, DescriptorSegmentIndex extraDescCount) if (!isSendingDescReg);
+        isSendingDescReg <= True;
+        segCntReg <= extraDescCount;
+        writeVReg(segBuf, descs);
     endmethod
 
-    method Bool canSetDesc = !isSendingRespDescReg;
+    method Bool canSetDesc = !isSendingDescReg;
 
-    interface ringbufSrv = toGPServer(ringbufReqQ, ringbufRespQ);
+    interface ringbufConnector = toGet(ringbufQ);
 endmodule
