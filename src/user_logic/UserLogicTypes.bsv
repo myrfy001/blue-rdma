@@ -132,6 +132,8 @@ typedef 1 XDMA_GEARBOX_NARROW_VECTOR_LEN;
 typedef Bit#(USER_LOGIC_DESCRIPTOR_BIT_WIDTH) RingbufRawDescriptor;
 typedef Bit#(RINGBUF_NUMBER_WIDTH) RingbufNumber;
 
+typedef 2 COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
+
 typedef enum {
     CmdQueueOpcodeUpdateFirstStagePGT = 'h0,
     CmdQueueOpcodeUpdateSecondStagePGT = 'h1,

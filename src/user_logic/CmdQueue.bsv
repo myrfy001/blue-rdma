@@ -32,8 +32,8 @@ module mkCommandQueueController(CommandQueueController ifc);
     FIFOF#(MetaDataResp) metaDataRespQ <- mkFIFOF;
 
 
-    RingbufDescriptorReadProxy descReadProxy <- mkRingbufDescriptorReadProxy;
-    RingbufDescriptorWriteProxy descWriteProxy <- mkRingbufDescriptorWriteProxy;
+    RingbufDescriptorReadProxy#(COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) descReadProxy <- mkRingbufDescriptorReadProxy;
+    RingbufDescriptorWriteProxy#(COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) descWriteProxy <- mkRingbufDescriptorWriteProxy;
     
     rule dispatchRingbufRequestDescriptors;
         let {reqSegBuf, headDescIdx} <- descReadProxy.getWideDesc;
@@ -127,7 +127,7 @@ module mkCommandQueueController(CommandQueueController ifc);
     rule gatherResponse if (descWriteProxy.canSetDesc);
         // TODO should we use a fair algorithm here?
         
-        Vector#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT, RingbufRawDescriptor) respRawDescSeg = ?;
+        Vector#(COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT, RingbufRawDescriptor) respRawDescSeg = ?;
         
 
         if (pgtRespQ.notEmpty) begin
