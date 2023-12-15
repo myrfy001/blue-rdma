@@ -133,6 +133,9 @@ typedef Bit#(USER_LOGIC_DESCRIPTOR_BIT_WIDTH) RingbufRawDescriptor;
 typedef Bit#(RINGBUF_NUMBER_WIDTH) RingbufNumber;
 
 typedef 2 COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
+typedef 2 SQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
+typedef 1 RQ_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
+typedef 1 CQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
 
 typedef enum {
     CmdQueueOpcodeUpdateFirstStagePGT = 'h0,
@@ -270,21 +273,20 @@ typedef CmdQueueReqDescQpManagementSeg1 CmdQueueRespDescQpManagementSeg1;
 
 
 typedef struct {
-    Bit#(1)         reserved1;
-    ADDR            len;
-    Bit#(20)        reserved2;
+    Length          len;
+    Bit#(20)        reserved1;
     Bool            isSuccessOrNeedSignalCplt;
     Bit#(4)         extraSegmentCnt;
-    Bit#(2)         reserved3;
+    Bit#(2)         reserved2;
     WorkReqOpCode   opCode;
     Bool            valid;
 }SendQueueDescCommonHead deriving(Bits, FShow);
 
 typedef struct {
-    RKEY rkey;
-    LKEY lkey;
-    ADDR raddr;
-    ADDR laddr;
+    RKEY                        rkey;
+    LKEY                        lkey;
+    ADDR                        raddr;
+    ADDR                        laddr;
     SendQueueDescCommonHead     commonHeader;
 }SendQueueReqDescSeg0 deriving(Bits, FShow);
 
@@ -292,27 +294,28 @@ typedef struct {
     Bit#(64)        reserved1;
     Bit#(64)        reserved2;
     Bit#(64)        reserved3;
-    QPN sqpn;
-    Bool solicited;
-    Bit#(2)         reserved4;
+    Bit#(32)        reserved4;
+    QPN             sqpn;
+    Bool            solicited;
+    Bit#(2)         reserved5;
     WorkReqSendFlag flags;
 }SendQueueReqDescSeg1 deriving(Bits, FShow);
 
 typedef struct {
-    Bit#(1)         reserved1;
-    ADDR            len;
-    Bit#(20)        reserved2;
+    Length          len;
+    Bit#(20)        reserved1;
     Bool            isSuccessOrNeedSignalCplt;
     Bit#(4)         extraSegmentCnt;
-    Bit#(2)         reserved3;
+    Bit#(2)         reserved2;
     WorkReqOpCode   opCode;
     Bool            valid;
 }RecvQueueDescCommonHead deriving(Bits, FShow);
 
 typedef struct {
+    Bit#(8)                     reserved1;
     QPN                         sqpn;
     LKEY                        lkey;
-    Bit#(64)                    reserved1;
+    Bit#(64)                    reserved2;
     ADDR                        laddr;
     RecvQueueDescCommonHead     commonHeader;
 }RecvQueueReqDesc deriving(Bits, FShow);
@@ -320,25 +323,23 @@ typedef struct {
 
 
 typedef struct {
-    Bit#(1)         reserved1;
-    ADDR            len;
-    Bit#(20)        reserved2;
-    Bool            isSuccessOrNeedSignalCplt;
+    Length          len;
+    Bit#(21)        reserved1;
     Bit#(4)         extraSegmentCnt;
-    Bit#(7)         reserved3;
+    Bit#(6)         reserved2;
     Bool            valid;
 }CompQueueDescCommonHead deriving(Bits, FShow);
 
 typedef struct {
-    Bit#(40)         reserved1;
-    QPN qpn;
-    Bit#(64)         reserved2;
-    Bit#(16)         reserved3;
-    PKEY pkey;
-    Bit#(11)         reserved4;
-    WorkCompStatus status;
-    Bit#(1)         reserved5;
-    WorkCompFlags flags;
-    WorkCompOpCode opcode;
+    Bit#(40)                    reserved1;
+    QPN                         qpn;
+    Bit#(64)                    reserved2;
+    Bit#(16)                    reserved3;
+    PKEY                        pkey;
+    Bit#(11)                    reserved4;
+    WorkCompStatus              status;
+    Bit#(1)                     reserved5;
+    WorkCompFlags               flags;
+    WorkCompOpCode              opcode;
     CompQueueDescCommonHead     commonHeader;
 }CompQueueReqDesc deriving(Bits, FShow);

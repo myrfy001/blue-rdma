@@ -11,10 +11,10 @@ import UserLogicSettings :: *;
 
 
 typedef enum {
-    CsrIdxRbBaseAddrLow = 'h000,
-    CsrIdxRbBaseAddrHigh = 'h001,
-    CsrIdxRbHead = 'h002,
-    CsrIdxRbTail = 'h003
+    CsrIdxRbBaseAddrLow = 'h0,
+    CsrIdxRbBaseAddrHigh = 'h1,
+    CsrIdxRbHead = 'h2,
+    CsrIdxRbTail = 'h3
 } CsrPageIndexForRingbuf deriving(Bits, Eq, FShow);
 
 typedef struct {

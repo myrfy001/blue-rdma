@@ -21,6 +21,7 @@ import UserLogicUtils :: *;
 import CmdQueue :: *;
 
 import TransportLayer :: *;
+import WorkAndCompleteQueue :: *;
 
 
 interface BsvTop#(numeric type dataSz, numeric type userSz);
@@ -58,6 +59,11 @@ endinterface
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_0.recvDmaResp_1" *) 
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp" *) 
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp_1" *) 
+(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp" *)
+(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp_1" *) 
+(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp" *)
+(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp_1" *) 
+
 module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrData) ifc);
     // TODO, make sure which reset to use.
     BluerdmaDmaProxy bluerdmaDmaProxy <- mkBluerdmaDmaProxy;
@@ -96,7 +102,7 @@ module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrDa
     mkConnection(xdmaWriteClt, xdmaGearbox.c2hStreamSrv);
 
 
-    CommandQueueController cmdQController<- mkCommandQueueController;
+    CommandQueueController cmdQController <- mkCommandQueueController;
     mkConnection(toGet(ringbufPool.h2cRings[0]), cmdQController.ringbufSrv.request);
     // TODO: use mkCOnnection for this and the line above
     rule forwardCmdQResponseToRingbuf;
@@ -104,12 +110,26 @@ module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrDa
         ringbufPool.c2hRings[0].enq(t);
     endrule
 
+    WorkRequestAndCompleteController workAndCompleteQController <- mkWorkRequestAndCompleteController;
+
+
     mkConnection(cmdQController.pgtManagerClt, pgtManager.pgtModifySrv);
 
     let rdmaTransportLayer <- mkTransportLayer;
 
     mkConnection(cmdQController.metaDataManagerClt, rdmaTransportLayer.srvPortMetaData);
     
+
+    mkConnection(workAndCompleteQController.rqRingBuf, toGet(ringbufPool.h2cRings[1]));
+    mkConnection(workAndCompleteQController.sqRingBuf, toGet(ringbufPool.h2cRings[2]));
+    mkConnection(workAndCompleteQController.rcqRingBuf.get, ringbufPool.c2hRings[1].enq);
+    mkConnection(workAndCompleteQController.scqRingBuf.get, ringbufPool.c2hRings[2].enq);
+    mkConnection(workAndCompleteQController.recvReq, rdmaTransportLayer.recvReqInput);
+    mkConnection(workAndCompleteQController.workReq, rdmaTransportLayer.workReqInput);
+    mkConnection(workAndCompleteQController.workCompRQ, toGet(rdmaTransportLayer.workCompPipeOutRQ));
+    mkConnection(workAndCompleteQController.workCompSQ, toGet(rdmaTransportLayer.workCompPipeOutSQ));
+
+
     interface csrWriteSrv = regBlock.csrWriteSrv;
     interface csrReadSrv = regBlock.csrReadSrv;
     interface dmaReadClt = xdmaGearbox.h2cStreamClt;
