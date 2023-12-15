@@ -7,6 +7,7 @@ import StmtFSM::*;
 import Randomizable :: * ;
 import Axi4LiteTypes :: *;
 import BRAM :: *;
+import PAClib::*;
 
 import DataTypes :: *;
 import UserLogicSettings :: *;
@@ -28,6 +29,8 @@ interface BsvTop#(numeric type dataSz, numeric type userSz);
     interface XdmaChannel#(dataSz, userSz) xdmaChannel;
     interface RawAxi4LiteSlave#(CSR_ADDR_WIDTH, CSR_DATA_STRB_WIDTH) axilRegBlock;
     interface Clock slowClockIfc;
+    interface Put#(DataStream) rdmaDataStreamInput;
+    interface DataStreamPipeOut rdmaDataStreamPipeOut;
 endinterface
 
 
@@ -43,6 +46,8 @@ module mkBsvTop(Clock slowClock, Reset slowReset, BsvTop#(USER_LOGIC_XDMA_KEEP_W
     interface xdmaChannel = xdmaWrap.xdmaChannel;
     interface slowClockIfc = slowClock;
     interface axilRegBlock = xdmaAxiLiteWrap.cntrlAxil;
+    interface rdmaDataStreamInput = bsvTopCore.rdmaDataStreamInput;
+    interface rdmaDataStreamPipeOut = bsvTopCore.rdmaDataStreamPipeOut;
 endmodule
 
 
@@ -51,6 +56,8 @@ interface BsvTopCore#(type t_csr_addr, type t_csr_data);
     interface UserLogicDmaWriteWideClt dmaWriteClt;
     interface Server#(CsrWriteRequest#(t_csr_addr, t_csr_data), CsrWriteResponse) csrWriteSrv;
     interface Server#(CsrReadRequest#(t_csr_addr), CsrReadResponse#(t_csr_data)) csrReadSrv;
+    interface Put#(DataStream) rdmaDataStreamInput;
+    interface DataStreamPipeOut rdmaDataStreamPipeOut;
 endinterface
 
 
@@ -134,6 +141,8 @@ module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrDa
     interface csrReadSrv = regBlock.csrReadSrv;
     interface dmaReadClt = xdmaGearbox.h2cStreamClt;
     interface dmaWriteClt = xdmaGearbox.c2hStreamClt;
+    interface rdmaDataStreamInput = rdmaTransportLayer.rdmaDataStreamInput;
+    interface rdmaDataStreamPipeOut = rdmaTransportLayer.rdmaDataStreamPipeOut;
 endmodule
 
 
@@ -164,26 +173,7 @@ module mkTbTop(Empty);
     FSM runTest <- mkFSM(
         (seq
         
-
-            bsvTopCore.csrReadSrv.request.put(CsrReadRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2
-            });
-
-            action
-                let t <- bsvTopCore.csrReadSrv.response.get;
-                $display("tail pointer = %x", t);
-            endaction
-
-
-            bsvTopCore.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2,
-                data: 7
-            });
-
-            action
-                let t <- bsvTopCore.csrWriteSrv.response.get;
-            endaction
-
+            // set cmd queue response ringbuf addr
             bsvTopCore.csrWriteSrv.request.put(CsrWriteRequest{
                 addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 0, regIndex: CsrIdxRbBaseAddrLow})) << 2,
                 data: 'h1000
@@ -193,19 +183,94 @@ module mkTbTop(Empty);
                 let t <- bsvTopCore.csrWriteSrv.response.get;
             endaction
 
-            bsvTopCore.csrReadSrv.request.put(CsrReadRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2
+            // set recv queue ringbuf addr
+            bsvTopCore.csrWriteSrv.request.put(CsrWriteRequest{
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 1, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+                data: 'h2000
             });
 
             action
-                let t <- bsvTopCore.csrReadSrv.response.get;
-                $display("tail pointer = %x", t);
+                let t <- bsvTopCore.csrWriteSrv.response.get;
             endaction
+
+
+            // set send queue ringbuf addr
+            bsvTopCore.csrWriteSrv.request.put(CsrWriteRequest{
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 2, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+                data: 'h3000
+            });
+
+            action
+                let t <- bsvTopCore.csrWriteSrv.response.get;
+            endaction
+
+
+            // set recv complete queue response ringbuf addr
+            bsvTopCore.csrWriteSrv.request.put(CsrWriteRequest{
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 1, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+                data: 'h4000
+            });
+
+            action
+                let t <- bsvTopCore.csrWriteSrv.response.get;
+            endaction
+
+            // set send complete queue response ringbuf addr
+            bsvTopCore.csrWriteSrv.request.put(CsrWriteRequest{
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 2, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+                data: 'h5000
+            });
+
+            action
+                let t <- bsvTopCore.csrWriteSrv.response.get;
+            endaction
+
+
+            // move cmd queue head to init RDMA
+            bsvTopCore.csrWriteSrv.request.put(CsrWriteRequest{
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2,
+                data: 13
+            });
+
+            action
+                let t <- bsvTopCore.csrWriteSrv.response.get;
+            endaction
+
+
+
+            // read cmd resp queue head pointer to check if all cmd executed
+            for (i <= 0; i<30; i<=i+1)
+            seq
+                bsvTopCore.csrReadSrv.request.put(CsrReadRequest{
+                    addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2
+                });
+                action
+                    let t <- bsvTopCore.csrReadSrv.response.get;
+                    $display("t=%d", t);
+                endaction
+                delay(10);
+            endseq
+
+
+
+            // move send queue head to emit rdma read
+            bsvTopCore.csrWriteSrv.request.put(CsrWriteRequest{
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 2, regIndex: CsrIdxRbHead})) << 2,
+                data: 2
+            });
+
+            action
+                let t <- bsvTopCore.csrWriteSrv.response.get;
+            endaction
+
 
         endseq)
     );
     
-
+    rule showRDMAOutput;
+        $display("rdma_out = ", fshow(bsvTopCore.rdmaDataStreamPipeOut.first));
+        bsvTopCore.rdmaDataStreamPipeOut.deq;
+    endrule
 
     rule doTest if (!startedUser);
         startedUser <= True;
