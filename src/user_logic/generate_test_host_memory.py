@@ -31,6 +31,9 @@ RECV_SIDE_LKEY = 0x6622
 RECV_SIDE_RKEY = RECV_SIDE_LKEY
 PKEY_INDEX = 0
 
+SEND_SIDE_QPN = 0x6611
+SEND_SIDE_PD_HANDLER = 0x6611  # in practise, this should be returned by hardware
+
 
 def batched(iterable, n):
     it = iter(iterable)
@@ -399,21 +402,20 @@ cmd_queue_common_header.F_OP_CODE = CmdQueueDescOperators.F_OPCODE_CMDQ_MANAGE_P
 cmd_queue_common_header.F_CMD_QUEUE_USER_DATA = 0x02
 obj = CmdQueueDescPdManagement(
     common_header=cmd_queue_common_header,
-    F_PD_ADMIN_PD_HANDLER=0x6611,
+    F_PD_ADMIN_PD_HANDLER=SEND_SIDE_PD_HANDLER,
     F_PD_ADMIN_IS_ALLOC=1,
 )
 memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
 cmd_queue_desc_current_write_addr += 0x20
 
 # generate create MR request
-pd_handler = 0x6611  # in practise, this should be returned by hardware
 
 cmd_queue_common_header.F_OP_CODE = CmdQueueDescOperators.F_OPCODE_CMDQ_MANAGE_MR
 cmd_queue_common_header.F_CMD_QUEUE_USER_DATA = 0x03
 cmd_queue_common_header.F_SEGMENT_CNT = 1
 obj = CmdQueueDescMrManagementSeg0(
     common_header=cmd_queue_common_header,
-    F_MR_ADMIN_PD_HANDLER=pd_handler,
+    F_MR_ADMIN_PD_HANDLER=SEND_SIDE_PD_HANDLER,
     F_MR_ADMIN_IS_ALLOC=1,
     F_MR_ADMIN_ADDR=PGT_MR_VASE_VA,
 )
@@ -435,7 +437,7 @@ cmd_queue_common_header.F_CMD_QUEUE_USER_DATA = 0x04
 cmd_queue_common_header.F_SEGMENT_CNT = 1
 obj = CmdQueueDescQpManagementSeg0(
     common_header=cmd_queue_common_header,
-    F_QP_ADMIN_PD_HANDLER=pd_handler,
+    F_QP_ADMIN_PD_HANDLER=SEND_SIDE_PD_HANDLER,
     F_QP_ADMIN_REQ_TYPE=QpReqType.REQ_QP_CREATE,
     F_QP_ADMIN_QP_TYPE=TypeQP.IBV_QPT_RC,
     F_QP_ADMIN_SQ_SIG_ALL=1,
@@ -454,7 +456,7 @@ cmd_queue_common_header.F_CMD_QUEUE_USER_DATA = 0x05
 cmd_queue_common_header.F_SEGMENT_CNT = 1
 obj = CmdQueueDescQpManagementSeg0(
     common_header=cmd_queue_common_header,
-    F_QP_ADMIN_PD_HANDLER=pd_handler,
+    F_QP_ADMIN_PD_HANDLER=SEND_SIDE_PD_HANDLER,
     F_QP_ADMIN_REQ_TYPE=QpReqType.REQ_QP_MODIFY,
     F_QP_ADMIN_ATTR_MASK=QpAttrMaskFlag.IBV_QP_STATE | QpAttrMaskFlag.IBV_QP_ACCESS_FLAGS | QpAttrMaskFlag.IBV_QP_PKEY_INDEX,
 )
@@ -477,7 +479,7 @@ cmd_queue_common_header.F_CMD_QUEUE_USER_DATA = 0x06
 cmd_queue_common_header.F_SEGMENT_CNT = 1
 obj = CmdQueueDescQpManagementSeg0(
     common_header=cmd_queue_common_header,
-    F_QP_ADMIN_PD_HANDLER=pd_handler,
+    F_QP_ADMIN_PD_HANDLER=SEND_SIDE_PD_HANDLER,
     F_QP_ADMIN_REQ_TYPE=QpReqType.REQ_QP_MODIFY,
     F_QP_ADMIN_ATTR_MASK=(
         QpAttrMaskFlag.IBV_QP_STATE | QpAttrMaskFlag.IBV_QP_PATH_MTU | QpAttrMaskFlag.IBV_QP_RQ_PSN |
@@ -504,7 +506,7 @@ cmd_queue_common_header.F_CMD_QUEUE_USER_DATA = 0x07
 cmd_queue_common_header.F_SEGMENT_CNT = 1
 obj = CmdQueueDescQpManagementSeg0(
     common_header=cmd_queue_common_header,
-    F_QP_ADMIN_PD_HANDLER=pd_handler,
+    F_QP_ADMIN_PD_HANDLER=SEND_SIDE_PD_HANDLER,
     F_QP_ADMIN_REQ_TYPE=QpReqType.REQ_QP_MODIFY,
     F_QP_ADMIN_ATTR_MASK=(
         QpAttrMaskFlag.IBV_QP_STATE | QpAttrMaskFlag.IBV_QP_TIMEOUT | QpAttrMaskFlag.IBV_QP_RETRY_CNT |
@@ -523,6 +525,7 @@ obj = CmdQueueDescQpManagementSeg1(
 memcpy(memory,  cmd_queue_desc_current_write_addr, bytes(obj))
 cmd_queue_desc_current_write_addr += 0x20
 
+print("CMD Req Queue Seg Cnt = ", cmd_queue_desc_current_write_addr/0x20)
 
 # generate second level PGT entry
 PgtEntries = c_longlong * 0x20
@@ -558,7 +561,7 @@ send_queue_desc_current_write_addr += 0x20
 obj = SendQueueDescSeg1(
     F_SQ_SEND_FLAG=WorkReqSendFlag.IBV_SEND_NO_FLAGS,
     F_SQ_SOLICITED=0,
-    F_SQ_SQPN=1,
+    F_SQ_SQPN=SEND_SIDE_QPN,
 )
 memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
 send_queue_desc_current_write_addr += 0x20

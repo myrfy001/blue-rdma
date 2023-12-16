@@ -2,6 +2,7 @@ import ClientServer :: *;
 import GetPut :: *;
 import FIFOF :: *;
 import Vector :: *;
+import Connectable :: *;
 
 import DataTypes :: *;
 import UserLogicSettings :: *;
@@ -41,9 +42,8 @@ module mkWorkRequestAndCompleteController(WorkRequestAndCompleteController ifc);
 
 
     RingbufDescriptorReadProxy#(SQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) sqDescReadProxy <- mkRingbufDescriptorReadProxy;
-    // RingbufDescriptorReadProxy#(RQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) rqDescReadProxy <- mkRingbufDescriptorReadProxy;
-    // RingbufDescriptorWriteProxy#(CQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) scqDescWriteProxy <- mkRingbufDescriptorWriteProxy;
-    // RingbufDescriptorWriteProxy#(CQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) rcqDescWriteProxy <- mkRingbufDescriptorWriteProxy;
+
+    mkConnection(sqDescReadProxy.ringbufConnector, toGet(sqRingBufQ));
     
     rule forwardSQ;
         let {reqSegBuf, headDescIdx} <- sqDescReadProxy.getWideDesc;

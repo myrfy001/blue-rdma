@@ -215,7 +215,7 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
             if (tailReg != tailShadowReg) begin
                 // the end of read block may contain invalid descriptors, don't handle descriptors beyond tailShadowReg
                 t_elem t = unpack(pack(resp.dataStream.data));
-                // $display(fshow(t));
+                // $display("Ringbuf H2c enqueue descriptor, qIdx=", fshow(qIdx), fshow(t));
                 fifoCntrl.fillBuf(t);
                 newTail = tailReg + 1;
                 tailReg <= newTail;
