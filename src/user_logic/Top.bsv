@@ -98,7 +98,6 @@ module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrDa
     dmaAccessC2hCltVec[0] = bluerdmaDmaProxy.userlogicSideWriteClt;
     dmaAccessC2hCltVec[1] = ringbufPool.dmaAccessC2hClt;
 
-    BluerdmaDmaProxy blueRdmaProxy <- mkBluerdmaDmaProxy;
     UserLogicDmaReadClt xdmaReadClt <- mkClientArbiter(dmaAccessH2cCltVec, isH2cDmaReqFinished, isH2cDmaRespFinished);
     UserLogicDmaWriteClt xdmaWriteClt <- mkClientArbiter(dmaAccessC2hCltVec, isC2hDmaReqFinished, isC2hDmaRespFinished);
 
@@ -124,6 +123,10 @@ module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrDa
 
     let rdmaTransportLayer <- mkTransportLayer;
 
+    mkConnection(rdmaTransportLayer.dmaReadClt, bluerdmaDmaProxy.blueSideReadSrv);
+    mkConnection(rdmaTransportLayer.dmaWriteClt, bluerdmaDmaProxy.blueSideWriteSrv);
+
+
     mkConnection(cmdQController.metaDataManagerClt, rdmaTransportLayer.srvPortMetaData);
     
 
@@ -134,7 +137,14 @@ module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrDa
     mkConnection(workAndCompleteQController.recvReq, rdmaTransportLayer.recvReqInput);
     mkConnection(workAndCompleteQController.workReq, rdmaTransportLayer.workReqInput);
     mkConnection(workAndCompleteQController.workCompRQ, toGet(rdmaTransportLayer.workCompPipeOutRQ));
-    mkConnection(workAndCompleteQController.workCompSQ, toGet(rdmaTransportLayer.workCompPipeOutSQ));
+    // mkConnection(workAndCompleteQController.workCompSQ, toGet(rdmaTransportLayer.workCompPipeOutSQ));
+
+    rule debugWorkCompSQ;
+        let t = rdmaTransportLayer.workCompPipeOutSQ.first;
+        rdmaTransportLayer.workCompPipeOutSQ.deq;
+        workAndCompleteQController.workCompSQ.put(t);
+        $display("WorkCompSQ Recv = ", fshow(t));
+    endrule
 
 
     interface csrWriteSrv = regBlock.csrWriteSrv;

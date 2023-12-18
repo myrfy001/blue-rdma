@@ -866,7 +866,7 @@ module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
             if (xdmaH2cReqQ.notEmpty) begin
                 xdmaH2cReqQ.deq;
                 let req = xdmaH2cReqQ.first;
-                
+                $display("dma arbiter receive H2C request: Addr=", fshow(req.addr), "Len=", fshow(req.len));
                 unionedReqQ.enq(tuple4(True, req.addr, req.len, ?));
                 if (xdmaC2hReqQ.notEmpty) begin
                     currentIsH2cReg <= !currentIsH2cReg;
@@ -878,7 +878,7 @@ module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
             if (xdmaC2hReqQ.notEmpty) begin
                 xdmaC2hReqQ.deq;
                 let req = xdmaC2hReqQ.first;
-                
+                $display("dma arbiter receive C2H request: Addr=", fshow(req.addr), "Len=", fshow(req.len), "Data=", fshow(req.dataStream));
                 unionedReqQ.enq(tuple4(False, req.addr, req.len, req.dataStream));
                 if (req.dataStream.isLast && xdmaH2cReqQ.notEmpty) begin
                     currentIsH2cReg <= !currentIsH2cReg;
