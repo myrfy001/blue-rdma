@@ -51,7 +51,7 @@ module mkWorkRequestAndCompleteController(WorkRequestAndCompleteController ifc);
         SendQueueReqDescSeg0 desc0 = unpack(reqSegBuf[1]);
         SendQueueReqDescSeg1 desc1 = unpack(reqSegBuf[0]);
 
-        workReqQ.enq(WorkReq{
+        let req = WorkReq{
             id: ?,
             opcode: desc0.commonHeader.opCode,
             flags: FlagsType{flags: pack(desc1.flags)},
@@ -69,7 +69,11 @@ module mkWorkRequestAndCompleteController(WorkRequestAndCompleteController ifc);
             srqn: tagged Invalid,
             dqpn: tagged Invalid,
             qkey: tagged Invalid
-        });
+        };
+
+        workReqQ.enq(req);
+
+        $display("SQ read a new descriptor: ", fshow(req));
     endrule
 
     rule forwardRQ;

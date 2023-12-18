@@ -44,7 +44,7 @@ proc addExtFiles {args} {
     read_verilog [ glob $dir_rtl/*.v ]
     read_verilog [ glob $dir_bsv_gen/*.v ]
     read_xdc [ glob $dir_xdc/*.xdc ]
-}
+    }
 
 
 proc runSynthDesign {args} {
@@ -54,8 +54,8 @@ proc runSynthDesign {args} {
     write_checkpoint -force $dir_output/post_synth_design.dcp
     write_xdc -force -exclude_physical $dir_output/post_synth.xdc
 
-    source batch_insert_ila.tcl
-    batch_insert_ila 8192
+    # source batch_insert_ila.tcl
+    # batch_insert_ila 8192
 }
 
 
@@ -236,5 +236,5 @@ runPostSynthReport -open_checkpoint false
 runPlacement -open_checkpoint false
 runRoute -open_checkpoint false
 runPostRouteReport -open_checkpoint false
-runWriteBitStream -open_checkpoint false
+# runWriteBitStream -open_checkpoint false
 # runProgramDevice -open_checkpoint false

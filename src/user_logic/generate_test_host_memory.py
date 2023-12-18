@@ -5,10 +5,13 @@ from itertools import islice
 
 TOTAL_MEMORY_SIZE = 1024 * 1024 * 64
 
+DESCRIPTOR_SIZE = 0x20
+
 PGT_ENTRY_OFFSET = 0x200
 PGT_ENTRY_CNT = 0x20
 PGT_ENTRY_SIZE = 0x08
-PGT_MR_VASE_VA = 0xFBABCDCEEEEE0001
+# PGT_MR0_BASE_VA = 0xFBABCDCEEEEE0001
+PGT_MR0_BASE_VA = 0x0000000000000000
 
 CMD_QUEUE_H2C_RINGBUF_START_PA = 0x00
 CMD_QUEUE_C2H_RINGBUF_START_PA = 0x1000
@@ -19,11 +22,18 @@ SCQ_RINGBUF_START_PA = 0x5000
 
 PGT_TABLE_START_ADDR = 0x10000
 
+HUGEPAGE_2M_ADDR_MASK = 0xFFFFFFFFFFE00000
+HUGEPAGE_2M_BYTE_CNT = 0x200000
+
 MR_0_PA_START = 0x100000
+MR_0_PTE_COUNT = 0x20
+MR_0_LENGTH = MR_0_PTE_COUNT * HUGEPAGE_2M_BYTE_CNT
 
-REQ_SIDE_VA_ADDR = PGT_MR_VASE_VA & 0xFFFFFFFFFFE00000 + 0x200
 
-RESP_SIDE_VA_ADDR = PGT_MR_VASE_VA & 0xFFFFFFFFFFE00000 + 0x90000
+REQ_SIDE_VA_ADDR = (PGT_MR0_BASE_VA & HUGEPAGE_2M_ADDR_MASK) + 0x1FFFFE
+# REQ_SIDE_VA_ADDR = (PGT_MR0_BASE_VA & HUGEPAGE_2M_ADDR_MASK) + 0x0
+
+RESP_SIDE_VA_ADDR = (PGT_MR0_BASE_VA & HUGEPAGE_2M_ADDR_MASK) + 0x90000
 
 SEND_SIDE_LKEY = 0x6622
 SEND_SIDE_RKEY = SEND_SIDE_LKEY
@@ -111,8 +121,9 @@ class CmdQueueDescMrManagementSeg0(Structure):
                 ("F_RESERVED_0", c_int, 7),
                 ("F_MR_ADMIN_ACCESS_FLAG", c_int, 8),
                 ("F_RESERVED_1", c_int, 16),
-                ("F_RESERVED_2", c_longlong, 64),
-                ("F_RESERVED_3", c_longlong, 64),
+                ("F_MR_ADMIN_ADDR", c_longlong, 64),
+                ("F_MR_ADMIN_LEN", c_int, 32),
+                ("F_RESERVED_2", c_int, 32),
                 ]
 
 
@@ -376,13 +387,13 @@ cmd_queue_common_header.F_OP_CODE = CmdQueueDescOperators.F_OPCODE_CMDQ_UPDATE_F
 cmd_queue_common_header.F_CMD_QUEUE_USER_DATA = 0x00
 obj = CmdQueueDescUpdateFirstStagePGT(
     common_header=cmd_queue_common_header,
-    F_PGT_FIRST_STAGE_BASE_VA=PGT_MR_VASE_VA,
+    F_PGT_FIRST_STAGE_BASE_VA=PGT_MR0_BASE_VA,
     F_PGT_FIRST_STAGE_POINTED_TO_OFFSET=PGT_ENTRY_OFFSET,
     F_PGT_FIRST_STAGE_POINTED_TO_COUNT=PGT_ENTRY_CNT,
     F_PGT_FIRST_STAGE_INDEX=0x00
 )
 memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += 0x20
+cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 # generate pgt second level modify descriptor
 
@@ -395,7 +406,7 @@ obj = CmdQueueDescUpdateSecondStagePGT(
     F_PGT_SECOND_STAGE_SRC_DATA_LEN=PGT_ENTRY_SIZE * PGT_ENTRY_CNT,
 )
 memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += 0x20
+cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 # generate create PD request
 cmd_queue_common_header.F_OP_CODE = CmdQueueDescOperators.F_OPCODE_CMDQ_MANAGE_PD
@@ -406,7 +417,7 @@ obj = CmdQueueDescPdManagement(
     F_PD_ADMIN_IS_ALLOC=1,
 )
 memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += 0x20
+cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 # generate create MR request
 
@@ -417,17 +428,19 @@ obj = CmdQueueDescMrManagementSeg0(
     common_header=cmd_queue_common_header,
     F_MR_ADMIN_PD_HANDLER=SEND_SIDE_PD_HANDLER,
     F_MR_ADMIN_IS_ALLOC=1,
-    F_MR_ADMIN_ADDR=PGT_MR_VASE_VA,
+    F_MR_ADMIN_ADDR=PGT_MR0_BASE_VA,
+    F_MR_ADMIN_ACCESS_FLAG=MemAccessTypeFlag.IBV_ACCESS_LOCAL_WRITE | MemAccessTypeFlag.IBV_ACCESS_REMOTE_READ | MemAccessTypeFlag.IBV_ACCESS_REMOTE_WRITE,
+    F_MR_ADMIN_LEN=MR_0_LENGTH,
 )
 memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += 0x20
+cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 obj = CmdQueueDescMrManagementSeg1(
     F_MR_ADMIN_LKEY=SEND_SIDE_LKEY,
     F_MR_ADMIN_RKEY=SEND_SIDE_RKEY,
 )
 memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += 0x20
+cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 
 # generate create QP request
@@ -443,11 +456,11 @@ obj = CmdQueueDescQpManagementSeg0(
     F_QP_ADMIN_SQ_SIG_ALL=1,
 )
 memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += 0x20
+cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 obj = CmdQueueDescQpManagementSeg1()
 memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += 0x20
+cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 
 # generate QP modify to init request
@@ -461,16 +474,16 @@ obj = CmdQueueDescQpManagementSeg0(
     F_QP_ADMIN_ATTR_MASK=QpAttrMaskFlag.IBV_QP_STATE | QpAttrMaskFlag.IBV_QP_ACCESS_FLAGS | QpAttrMaskFlag.IBV_QP_PKEY_INDEX,
 )
 memcpy(memory,   cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += 0x20
+cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 obj = CmdQueueDescQpManagementSeg1(
     F_QP_ADMIN_QP_STATE=StateQP.IBV_QPS_INIT,
-    F_QP_ADMIN_ACCESS_FLAG=MemAccessTypeFlag.IBV_ACCESS_LOCAL_WRITE,
+    F_QP_ADMIN_ACCESS_FLAG=MemAccessTypeFlag.IBV_ACCESS_LOCAL_WRITE | MemAccessTypeFlag.IBV_ACCESS_REMOTE_READ | MemAccessTypeFlag.IBV_ACCESS_REMOTE_WRITE,
     F_QP_ADMIN_PKEY_INDEX=PKEY_INDEX,
 
 )
 memcpy(memory,  cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += 0x20
+cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 
 # generate QP modify to RTR request
@@ -486,18 +499,18 @@ obj = CmdQueueDescQpManagementSeg0(
         QpAttrMaskFlag.IBV_QP_DEST_QPN | QpAttrMaskFlag.IBV_QP_MAX_DEST_RD_ATOMIC | QpAttrMaskFlag.IBV_QP_MIN_RNR_TIMER),
 )
 memcpy(memory,   cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += 0x20
+cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 obj = CmdQueueDescQpManagementSeg1(
     F_QP_ADMIN_QP_STATE=StateQP.IBV_QPS_RTR,
     F_QP_ADMIN_PMTU=PMTU.IBV_MTU_1024,
-    F_QP_ADMIN_RQ_PSN=1,
+    F_QP_ADMIN_RQ_PSN=0,
     F_QP_ADMIN_DQPN=1,
     F_QP_ADMIN_MAX_DEST_READ_ATOMIC=1,
     F_QP_ADMIN_MIN_RNR_TIMER=1,
 )
 memcpy(memory,  cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += 0x20
+cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 
 # generate QP modify to RTS request
@@ -513,7 +526,7 @@ obj = CmdQueueDescQpManagementSeg0(
         QpAttrMaskFlag.IBV_QP_RNR_RETRY | QpAttrMaskFlag.IBV_QP_SQ_PSN | QpAttrMaskFlag.IBV_QP_MAX_QP_RD_ATOMIC),
 )
 memcpy(memory,   cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += 0x20
+cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 obj = CmdQueueDescQpManagementSeg1(
     F_QP_ADMIN_QP_STATE=StateQP.IBV_QPS_RTS,
@@ -523,12 +536,13 @@ obj = CmdQueueDescQpManagementSeg1(
     F_QP_ADMIN_RNR_RETRY=1,
 )
 memcpy(memory,  cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += 0x20
+cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
-print("CMD Req Queue Seg Cnt = ", cmd_queue_desc_current_write_addr/0x20)
+print("CMD Req Queue Seg Cnt = ",
+      cmd_queue_desc_current_write_addr / DESCRIPTOR_SIZE)
 
 # generate second level PGT entry
-PgtEntries = c_longlong * 0x20
+PgtEntries = c_longlong * MR_0_PTE_COUNT
 entries = PgtEntries()
 
 
@@ -542,10 +556,10 @@ memcpy(memory, PGT_TABLE_START_ADDR, bytes(entries))
 send_queue_desc_current_write_addr = SQ_RINGBUF_START_PA
 send_queue_common_header = SendQueueDescCommonHeader(
     F_VALID=1,
-    F_OP_CODE=WorkReqOpCode.IBV_WR_RDMA_READ,
+    F_OP_CODE=WorkReqOpCode.IBV_WR_RDMA_WRITE,
     F_SEGMENT_CNT=1,
-    F_SIGNAL_CPLT=0,
-    F_DATA_LEN=0xF000
+    F_SIGNAL_CPLT=1,
+    F_DATA_LEN=0x0003
 )
 
 obj = SendQueueDescSeg0(
@@ -556,7 +570,7 @@ obj = SendQueueDescSeg0(
     F_RKEY=SEND_SIDE_RKEY,
 )
 memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
-send_queue_desc_current_write_addr += 0x20
+send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 obj = SendQueueDescSeg1(
     F_SQ_SEND_FLAG=WorkReqSendFlag.IBV_SEND_NO_FLAGS,
@@ -564,6 +578,12 @@ obj = SendQueueDescSeg1(
     F_SQ_SQPN=SEND_SIDE_QPN,
 )
 memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
-send_queue_desc_current_write_addr += 0x20
+send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
+
+
+# Put some data at send side memory to debug
+memory[REQ_SIDE_VA_ADDR] = 0xBB
+memory[REQ_SIDE_VA_ADDR+1] = 0xCC
+memory[REQ_SIDE_VA_ADDR+2] = 0xDD
 
 dump_to_str(memory)

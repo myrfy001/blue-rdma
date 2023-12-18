@@ -10,11 +10,26 @@ DIR_GENERATE = generate
 DIR_BSV_GENERATED = $(DIR_GENERATE)/bsv
 DIR_IP_GENERATED = $(DIR_GENERATE)/ip
 
+# TARGETFILE ?= $(DIR_BSV_SRC)/user_logic/Ringbuf.bsv
 TARGETFILE ?= $(DIR_BSV_SRC)/user_logic/Top.bsv
+# TARGETFILE ?= $(DIR_BSV_SRC)/user_logic/XdmaWrapper.bsv
+# TARGETFILE ?= $(DIR_BSV_SRC)/user_logic/UserLogicUtils.bsv
+
+# BSV_TOPMODULE ?= mkTestRingbufSynthesizeable
 BSV_TOPMODULE ?= mkBsvTop
-SIM_TOPMODULE ?= mkTB
+# BSV_TOPMODULE ?= mkTestRingbuf
+# BSV_TOPMODULE ?= mkTbGearbox
+
+# SIM_TOPMODULE ?= mkTestRingbuf
+# SIM_TOPMODULE ?= mkBsvTop
+# SIM_TOPMODULE ?= mkTbGearbox
+# SIM_TOPMODULE ?= mkTbFakeXdma
+SIM_TOPMODULE ?= mkTbTop
+
+
+# VERILOG_TOPMODULE ?= mkTestRingbuf
 VERILOG_TOPMODULE ?= top
-TARGET_CLOCKS ?= user_clk
+TARGET_CLOCKS ?= sys_clk
 MAX_NET_PATH_NUM ?= 1000
 
 export DIR_OUTPUT
@@ -43,7 +58,8 @@ DEBUGFLAGS = -check-assert \
 	-show-stats \
 	-warn-action-shadowing \
 	-warn-method-urgency \
-	-promote-warnings ALL
+	-promote-warnings ALL \
+	-demote-errors S0015
 VERILOGFLAGS = -verilog -remove-dollar -remove-unused-modules # -use-dpi -verilog-filter cmd
 BLUESIMFLAGS = -parallel-sim-link 16 # -systemc
 DIR_FLAG_OUTDIR = -bdir $(DIR_BUILD) -info-dir $(DIR_BUILD) -simdir $(DIR_BUILD) -vdir $(DIR_BUILD)
@@ -64,6 +80,8 @@ compile:
 link: compile
 	bsc -elab -sim -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIR_FLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(SIM_TOPMODULE) $(TARGETFILE)
 	bsc -sim $(BLUESIMFLAGS) $(DIR_FLAGS) $(RECOMPILEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -e $(SIM_TOPMODULE) -o $(SIMEXE)
+	
+	./$(SIMEXE)
 
 
 verilog: compile
