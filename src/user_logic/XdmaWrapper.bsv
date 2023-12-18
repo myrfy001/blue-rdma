@@ -265,7 +265,8 @@ module mkStreamReqProxy(
         Bits#(t_in_resp, sz_in_resp),
         Bits#(t_out_req, sz_out_req),
         Bits#(t_out_resp, sz_out_resp),
-        Bits#(t_custom, sz_custom)
+        Bits#(t_custom, sz_custom),
+        FShow#(t_in_req),FShow#(t_in_resp),FShow#(t_out_req),FShow#(t_out_resp), FShow#(t_custom)
     );
 
     FIFOF#(t_in_req) inReqQ <- mkFIFOF;
@@ -293,6 +294,7 @@ module mkStreamReqProxy(
             customDataQ.deq;
         end
         inRespQ.enq(inResp);
+        $display("==========,", fshow(inResp), fshow(customData));
     endrule
 
     interface inSrv = toGPServer(inReqQ, inRespQ);
@@ -387,15 +389,32 @@ typedef struct {
     DmaReqSrcType initiator;
     QPN sqpn;
     WorkReqID wrID;
-} UserLogicBluerdmaDmaProxyCustomDataH2c deriving(Bits);
+} UserLogicBluerdmaDmaProxyCustomDataH2c deriving(Bits, FShow);
 
 typedef struct {
     DmaReqSrcType initiator;
     QPN sqpn;
     PSN psn;
-} UserLogicBluerdmaDmaProxyCustomDataC2h deriving(Bits);
+} UserLogicBluerdmaDmaProxyCustomDataC2h deriving(Bits, FShow);
 
 module mkBluerdmaDmaProxy(BluerdmaDmaProxy);
+
+    function Bit#(width) swapEndian(Bit#(width) data) provisos(Mul#(8, byteNum, width));
+        Vector#(byteNum, Bit#(BYTE_WIDTH)) dataVec = unpack(data);
+        return pack(reverse(dataVec));
+    endfunction
+
+    function Bit#(width) swapEndianBit(Bit#(width) data) provisos(Mul#(1, byteNum, width));
+        Vector#(byteNum, Bit#(1)) dataVec = unpack(data);
+        return pack(reverse(dataVec));
+    endfunction
+
+    function DataStream reverseStream(DataStream st);
+        st.data = swapEndian(st.data);
+        st.byteEn = swapEndianBit(st.byteEn);
+        return st;
+    endfunction
+
     function Tuple2#(UserLogicDmaH2cReq, Maybe#(UserLogicBluerdmaDmaProxyCustomDataH2c)) reqTransFnH2c(DmaReadReq req);
         return tuple2(
             UserLogicDmaH2cReq{
@@ -417,7 +436,7 @@ module mkBluerdmaDmaProxy(BluerdmaDmaProxy);
                 sqpn: customData.sqpn,
                 wrID: customData.wrID,
                 isRespErr: False,
-                dataStream: resp.dataStream
+                dataStream: reverseStream(resp.dataStream)
             },
             resp.dataStream.isLast
         );
@@ -430,7 +449,7 @@ module mkBluerdmaDmaProxy(BluerdmaDmaProxy);
             UserLogicDmaC2hReq{
                 addr: req.metaData.startAddr,
                 len: zeroExtend(pack(req.metaData.len)),
-                dataStream: req.dataStream
+                dataStream: reverseStream(req.dataStream)
             },
             req.dataStream.isFirst ? 
                 (tagged Valid UserLogicBluerdmaDmaProxyCustomDataC2h {
@@ -866,7 +885,7 @@ module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
             if (xdmaH2cReqQ.notEmpty) begin
                 xdmaH2cReqQ.deq;
                 let req = xdmaH2cReqQ.first;
-                $display("dma arbiter receive H2C request: Addr=", fshow(req.addr), "Len=", fshow(req.len));
+                $display("dma %d arbiter receive H2C request: Addr=", id, fshow(req.addr), "Len=", fshow(req.len));
                 unionedReqQ.enq(tuple4(True, req.addr, req.len, ?));
                 if (xdmaC2hReqQ.notEmpty) begin
                     currentIsH2cReg <= !currentIsH2cReg;
@@ -878,7 +897,7 @@ module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
             if (xdmaC2hReqQ.notEmpty) begin
                 xdmaC2hReqQ.deq;
                 let req = xdmaC2hReqQ.first;
-                $display("dma arbiter receive C2H request: Addr=", fshow(req.addr), "Len=", fshow(req.len), "Data=", fshow(req.dataStream));
+                $display("dma %d arbiter receive C2H request: Addr=", id, fshow(req.addr), "Len=", fshow(req.len), "Data=", fshow(req.dataStream));
                 unionedReqQ.enq(tuple4(False, req.addr, req.len, req.dataStream));
                 if (req.dataStream.isLast && xdmaH2cReqQ.notEmpty) begin
                     currentIsH2cReg <= !currentIsH2cReg;
