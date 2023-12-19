@@ -40,6 +40,7 @@ module mkBsvTop(Clock slowClock, Reset slowReset, BsvTop#(USER_LOGIC_XDMA_KEEP_W
     XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(slowClock, slowReset);
     BsvTopCore#(CsrAddr, CsrData) bsvTopCore <- mkBsvTopCore(slowClock, slowReset);
     mkConnection(xdmaAxiLiteWrap.csrWriteClt, bsvTopCore.csrWriteSrv);
+    mkConnection(xdmaAxiLiteWrap.csrReadClt, bsvTopCore.csrReadSrv);
     mkConnection(xdmaWrap.dmaReadSrv, bsvTopCore.dmaReadClt);
     mkConnection(xdmaWrap.dmaWriteSrv, bsvTopCore.dmaWriteClt);
 
@@ -70,7 +71,6 @@ endinterface
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp_1" *) 
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp" *)
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp_1" *) 
-
 module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrData) ifc);
     // TODO, make sure which reset to use.
     BluerdmaDmaProxy bluerdmaDmaProxy <- mkBluerdmaDmaProxy;

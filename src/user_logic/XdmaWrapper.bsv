@@ -315,9 +315,8 @@ module mkXdmaAxiLiteBridgeWrapper(Clock slowClock, Reset slowReset, XdmaAxiLiteB
         Bits#(t_csr_data, sz_csr_data),
         Mul#(sz_csr_strb, BYTE_WIDTH, sz_csr_data),
         Div#(sz_csr_data, BYTE_WIDTH, sz_csr_strb),
-        Div#(TMul#(sz_csr_strb, 8), 8, sz_csr_strb)
+        Div#(TMul#(sz_csr_strb, BYTE_WIDTH), BYTE_WIDTH, sz_csr_strb)
     );
-    ClockDividerIfc divClk <- mkClockDivider(2);
 
     Clock fastClock <- exposeCurrentClock;
     Reset fastReset <- exposeCurrentReset;
@@ -345,16 +344,18 @@ module mkXdmaAxiLiteBridgeWrapper(Clock slowClock, Reset slowReset, XdmaAxiLiteB
         reset_by slowReset
     );
 
-    // rule handleRead;
-    //     cntrlRdAddrFifo.deq;
+    rule handleRead;
+        cntrlRdAddrFifo.deq;
 
-    //     let resp <- regBlock.readReg(
-    //         CsrReadRequest{
-    //             addr: unpack(cntrlRdAddrFifo.first.arAddr)
-    //         });
-    //     cntrlRdDataFifo.enq(Axi4LiteRdData{rData: unpack(pack(resp.data)), rResp: 0});
-    // endrule
+        readReqQ.enq(CsrReadRequest{
+            addr: unpack(cntrlRdAddrFifo.first.arAddr)
+        });
+    endrule
 
+    rule forwardReadResp;
+        readRespQ.deq;
+        cntrlRdDataFifo.enq(Axi4LiteRdData{rResp: 0, rData: unpack(pack(readRespQ.first.data))});
+    endrule
 
     rule handleWrite;
         cntrlWrAddrFifo.deq;
