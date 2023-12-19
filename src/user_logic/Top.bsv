@@ -23,7 +23,8 @@ import CmdQueue :: *;
 
 import TransportLayer :: *;
 import WorkAndCompleteQueue :: *;
-
+import FIFOF :: *;
+import SemiFifo :: *;
 
 interface BsvTop#(numeric type dataSz, numeric type userSz);
     interface XdmaChannel#(dataSz, userSz) xdmaChannel;
@@ -156,6 +157,48 @@ module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrDa
 endmodule
 
 
+
+
+module mkTmp(RawAxi4LiteMaster#(12, 4));
+
+    FIFOF#(Axi4LiteWrAddr#(12)) cntrlWrAddrFifo <- mkFIFOF;
+    FIFOF#(Axi4LiteWrData#(4)) cntrlWrDataFifo <- mkFIFOF;
+    FIFOF#(Axi4LiteWrResp) cntrlWrRespFifo <- mkFIFOF;
+    FIFOF#(Axi4LiteRdAddr#(12)) cntrlRdAddrFifo <- mkFIFOF;
+    FIFOF#(Axi4LiteRdData#(4)) cntrlRdDataFifo <- mkFIFOF;
+
+
+
+    let cntrlAxilMaster <- mkPipeToRawAxi4LiteMaster(
+        convertFifoToPipeOut(cntrlWrAddrFifo),
+        convertFifoToPipeOut(cntrlWrDataFifo),
+        convertFifoToPipeIn(cntrlWrRespFifo),
+
+        convertFifoToPipeOut(cntrlRdAddrFifo),
+        convertFifoToPipeIn(cntrlRdDataFifo)
+    );
+
+
+    Reg#(Bit#(12)) addr <- mkReg(0);
+
+    rule send;
+        if (addr <= 16) begin
+            cntrlRdAddrFifo.enq(Axi4LiteRdAddr{arAddr: addr, arProt: 0});
+            addr <= addr + 4;
+        end
+    endrule
+
+    rule recv;
+        let t = cntrlRdDataFifo.first;
+        cntrlRdDataFifo.deq;
+        $display("read = ", fshow(t));
+    endrule
+
+    return cntrlAxilMaster;
+
+endmodule
+
+
 (*synthesize*)
 module mkTbTop(Empty);
     ClockDividerIfc divClk <- mkClockDivider(2);
@@ -179,6 +222,30 @@ module mkTbTop(Empty);
     // mkConnection(toGet(bsvTopCoreA.rdmaDataStreamPipeOut), bsvTopCoreB.rdmaDataStreamInput);
     // mkConnection(bsvTopCoreA.rdmaDataStreamInput, toGet(bsvTopCoreB.rdmaDataStreamPipeOut));
 
+    let tmp <- mkTmp(clocked_by slowClock, reset_by slowReset);
+
+    XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(slowClock, slowReset);
+    mkConnection(xdmaAxiLiteWrap.csrWriteClt, bsvTopCoreA.csrWriteSrv);
+    mkConnection(xdmaAxiLiteWrap.csrReadClt, bsvTopCoreA.csrReadSrv);
+
+
+
+    rule t1;
+        xdmaAxiLiteWrap.cntrlAxil.rdSlave.arValidData(tmp.rdMaster.arValid, tmp.rdMaster.arAddr, tmp.rdMaster.arProt);
+        xdmaAxiLiteWrap.cntrlAxil.rdSlave.rReady(tmp.rdMaster.rReady);
+
+        xdmaAxiLiteWrap.cntrlAxil.wrSlave.awValidData(tmp.wrMaster.awValid, tmp.wrMaster.awAddr, tmp.wrMaster.awProt);
+        xdmaAxiLiteWrap.cntrlAxil.wrSlave.wValidData(tmp.wrMaster.wValid, tmp.wrMaster.wData, tmp.wrMaster.wStrb);
+        xdmaAxiLiteWrap.cntrlAxil.wrSlave.bReady(tmp.wrMaster.bReady);
+
+        tmp.rdMaster.arReady(xdmaAxiLiteWrap.cntrlAxil.rdSlave.arReady);
+        tmp.rdMaster.rValidData(xdmaAxiLiteWrap.cntrlAxil.rdSlave.rValid, xdmaAxiLiteWrap.cntrlAxil.rdSlave.rResp, xdmaAxiLiteWrap.cntrlAxil.rdSlave.rData);
+
+        tmp.wrMaster.awReady(xdmaAxiLiteWrap.cntrlAxil.wrSlave.awReady);
+        tmp.wrMaster.wReady(xdmaAxiLiteWrap.cntrlAxil.wrSlave.wReady);
+        tmp.wrMaster.bValidData(xdmaAxiLiteWrap.cntrlAxil.wrSlave.bValid, xdmaAxiLiteWrap.cntrlAxil.wrSlave.bResp);
+
+    endrule
 
 
     Reg#(UInt#(32)) i <- mkReg(0);
@@ -190,153 +257,153 @@ module mkTbTop(Empty);
     
 
 
-    FSM runTest <- mkFSM(
-        (seq
+    // FSM runTest <- mkFSM(
+    //     (seq
         
-            // set cmd queue response ringbuf addr
-            bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 0, regIndex: CsrIdxRbBaseAddrLow})) << 2,
-                data: 'h1000
-            });
-            bsvTopCoreB.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 0, regIndex: CsrIdxRbBaseAddrLow})) << 2,
-                data: 'h1000
-            });
+    //         // set cmd queue response ringbuf addr
+    //         bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
+    //             addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 0, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+    //             data: 'h1000
+    //         });
+    //         bsvTopCoreB.csrWriteSrv.request.put(CsrWriteRequest{
+    //             addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 0, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+    //             data: 'h1000
+    //         });
 
-            action
-                let t1 <- bsvTopCoreA.csrWriteSrv.response.get;
-                let t2 <- bsvTopCoreB.csrWriteSrv.response.get;
-            endaction
+    //         action
+    //             let t1 <- bsvTopCoreA.csrWriteSrv.response.get;
+    //             let t2 <- bsvTopCoreB.csrWriteSrv.response.get;
+    //         endaction
 
-            // set recv queue ringbuf addr
-            bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 1, regIndex: CsrIdxRbBaseAddrLow})) << 2,
-                data: 'h2000
-            });
-            bsvTopCoreB.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 1, regIndex: CsrIdxRbBaseAddrLow})) << 2,
-                data: 'h2000
-            });
+    //         // set recv queue ringbuf addr
+    //         bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
+    //             addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 1, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+    //             data: 'h2000
+    //         });
+    //         bsvTopCoreB.csrWriteSrv.request.put(CsrWriteRequest{
+    //             addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 1, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+    //             data: 'h2000
+    //         });
 
-            action
-                let t1 <- bsvTopCoreA.csrWriteSrv.response.get;
-                let t2 <- bsvTopCoreB.csrWriteSrv.response.get;
-            endaction
-
-
-            // set send queue ringbuf addr
-            bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 2, regIndex: CsrIdxRbBaseAddrLow})) << 2,
-                data: 'h3000
-            });
-            bsvTopCoreB.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 2, regIndex: CsrIdxRbBaseAddrLow})) << 2,
-                data: 'h3000
-            });
-
-            action
-                let t1 <- bsvTopCoreA.csrWriteSrv.response.get;
-                let t2 <- bsvTopCoreB.csrWriteSrv.response.get;
-            endaction
+    //         action
+    //             let t1 <- bsvTopCoreA.csrWriteSrv.response.get;
+    //             let t2 <- bsvTopCoreB.csrWriteSrv.response.get;
+    //         endaction
 
 
-            // set recv complete queue response ringbuf addr
-            bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 1, regIndex: CsrIdxRbBaseAddrLow})) << 2,
-                data: 'h4000
-            });
-            bsvTopCoreB.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 1, regIndex: CsrIdxRbBaseAddrLow})) << 2,
-                data: 'h4000
-            });
+    //         // set send queue ringbuf addr
+    //         bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
+    //             addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 2, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+    //             data: 'h3000
+    //         });
+    //         bsvTopCoreB.csrWriteSrv.request.put(CsrWriteRequest{
+    //             addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 2, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+    //             data: 'h3000
+    //         });
 
-            action
-                let t1 <- bsvTopCoreA.csrWriteSrv.response.get;
-                let t2 <- bsvTopCoreB.csrWriteSrv.response.get;
-            endaction
-
-            // set send complete queue response ringbuf addr
-            bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 2, regIndex: CsrIdxRbBaseAddrLow})) << 2,
-                data: 'h5000
-            });
-            bsvTopCoreB.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 2, regIndex: CsrIdxRbBaseAddrLow})) << 2,
-                data: 'h5000
-            });
-
-            action
-                let t1 <- bsvTopCoreA.csrWriteSrv.response.get;
-                let t2 <- bsvTopCoreB.csrWriteSrv.response.get;
-            endaction
+    //         action
+    //             let t1 <- bsvTopCoreA.csrWriteSrv.response.get;
+    //             let t2 <- bsvTopCoreB.csrWriteSrv.response.get;
+    //         endaction
 
 
-            // move cmd queue head to init RDMA
-            bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2,
-                data: 13
-            });
-            bsvTopCoreB.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2,
-                data: 13
-            });
+    //         // set recv complete queue response ringbuf addr
+    //         bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
+    //             addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 1, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+    //             data: 'h4000
+    //         });
+    //         bsvTopCoreB.csrWriteSrv.request.put(CsrWriteRequest{
+    //             addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 1, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+    //             data: 'h4000
+    //         });
 
-            action
-                let t1 <- bsvTopCoreA.csrWriteSrv.response.get;
-                let t2 <- bsvTopCoreB.csrWriteSrv.response.get;
-            endaction
+    //         action
+    //             let t1 <- bsvTopCoreA.csrWriteSrv.response.get;
+    //             let t2 <- bsvTopCoreB.csrWriteSrv.response.get;
+    //         endaction
+
+    //         // set send complete queue response ringbuf addr
+    //         bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
+    //             addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 2, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+    //             data: 'h5000
+    //         });
+    //         bsvTopCoreB.csrWriteSrv.request.put(CsrWriteRequest{
+    //             addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 2, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+    //             data: 'h5000
+    //         });
+
+    //         action
+    //             let t1 <- bsvTopCoreA.csrWriteSrv.response.get;
+    //             let t2 <- bsvTopCoreB.csrWriteSrv.response.get;
+    //         endaction
 
 
+    //         // move cmd queue head to init RDMA
+    //         bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
+    //             addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2,
+    //             data: 13
+    //         });
+    //         bsvTopCoreB.csrWriteSrv.request.put(CsrWriteRequest{
+    //             addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2,
+    //             data: 13
+    //         });
 
-            // read cmd resp queue head pointer to check if all cmd executed
-            for (i <= 0; i<30; i<=i+1)
-            seq
-                bsvTopCoreA.csrReadSrv.request.put(CsrReadRequest{
-                    addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2
-                });
-                action
-                    let t <- bsvTopCoreA.csrReadSrv.response.get;
-                    $display("t=%d", t);
-                endaction
-                delay(10);
-            endseq
+    //         action
+    //             let t1 <- bsvTopCoreA.csrWriteSrv.response.get;
+    //             let t2 <- bsvTopCoreB.csrWriteSrv.response.get;
+    //         endaction
 
 
 
-            // move A's send queue head to emit rdma read
-            bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
-                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 2, regIndex: CsrIdxRbHead})) << 2,
-                data: 2
-            });
+    //         // read cmd resp queue head pointer to check if all cmd executed
+    //         for (i <= 0; i<30; i<=i+1)
+    //         seq
+    //             bsvTopCoreA.csrReadSrv.request.put(CsrReadRequest{
+    //                 addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2
+    //             });
+    //             action
+    //                 let t <- bsvTopCoreA.csrReadSrv.response.get;
+    //                 $display("t=%d", t);
+    //             endaction
+    //             delay(10);
+    //         endseq
 
-            action
-                let t <- bsvTopCoreA.csrWriteSrv.response.get;
-            endaction
 
 
-        endseq)
-    );
+    //         // move A's send queue head to emit rdma read
+    //         bsvTopCoreA.csrWriteSrv.request.put(CsrWriteRequest{
+    //             addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 2, regIndex: CsrIdxRbHead})) << 2,
+    //             data: 2
+    //         });
+
+    //         action
+    //             let t <- bsvTopCoreA.csrWriteSrv.response.get;
+    //         endaction
+
+
+    //     endseq)
+    // );
     
 
-    // mkConnection(toGet(bsvTopCoreA.rdmaDataStreamPipeOut), bsvTopCoreB.rdmaDataStreamInput);
-    // mkConnection(bsvTopCoreA.rdmaDataStreamInput, toGet(bsvTopCoreB.rdmaDataStreamPipeOut));
+    // // mkConnection(toGet(bsvTopCoreA.rdmaDataStreamPipeOut), bsvTopCoreB.rdmaDataStreamInput);
+    // // mkConnection(bsvTopCoreA.rdmaDataStreamInput, toGet(bsvTopCoreB.rdmaDataStreamPipeOut));
 
-    rule monitAndShowLineData;
-        if (bsvTopCoreA.rdmaDataStreamPipeOut.notEmpty) begin
-            bsvTopCoreB.rdmaDataStreamInput.put(bsvTopCoreA.rdmaDataStreamPipeOut.first);
-            bsvTopCoreA.rdmaDataStreamPipeOut.deq;
-            $display("rdma_A_out = ", fshow(bsvTopCoreA.rdmaDataStreamPipeOut.first));
-        end
+    // rule monitAndShowLineData;
+    //     if (bsvTopCoreA.rdmaDataStreamPipeOut.notEmpty) begin
+    //         bsvTopCoreB.rdmaDataStreamInput.put(bsvTopCoreA.rdmaDataStreamPipeOut.first);
+    //         bsvTopCoreA.rdmaDataStreamPipeOut.deq;
+    //         $display("rdma_A_out = ", fshow(bsvTopCoreA.rdmaDataStreamPipeOut.first));
+    //     end
 
-        if (bsvTopCoreB.rdmaDataStreamPipeOut.notEmpty) begin
-            bsvTopCoreA.rdmaDataStreamInput.put(bsvTopCoreB.rdmaDataStreamPipeOut.first);
-            bsvTopCoreB.rdmaDataStreamPipeOut.deq;
-            $display("rdma_B_out = ", fshow(bsvTopCoreB.rdmaDataStreamPipeOut.first));
-        end
-    endrule
+    //     if (bsvTopCoreB.rdmaDataStreamPipeOut.notEmpty) begin
+    //         bsvTopCoreA.rdmaDataStreamInput.put(bsvTopCoreB.rdmaDataStreamPipeOut.first);
+    //         bsvTopCoreB.rdmaDataStreamPipeOut.deq;
+    //         $display("rdma_B_out = ", fshow(bsvTopCoreB.rdmaDataStreamPipeOut.first));
+    //     end
+    // endrule
 
-    rule doTest if (!startedUser);
-        startedUser <= True;
-        runTest.start;
-    endrule
+    // rule doTest if (!startedUser);
+    //     startedUser <= True;
+    //     runTest.start;
+    // endrule
 endmodule
