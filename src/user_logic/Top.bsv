@@ -121,11 +121,21 @@ module mkBsvTopCore(Clock slowClock, Reset slowReset, BsvTopCore#(CsrAddr, CsrDa
 
     mkConnection(cmdQController.pgtManagerClt, pgtManager.pgtModifySrv);
 
+    DmaReqAddrTranslator addrTranslator <- mkDmaReadReqAddrTranslator;
+
     let rdmaTransportLayer <- mkTransportLayer;
 
-    mkConnection(rdmaTransportLayer.dmaReadClt, bluerdmaDmaProxy.blueSideReadSrv);
-    mkConnection(rdmaTransportLayer.dmaWriteClt, bluerdmaDmaProxy.blueSideWriteSrv);
+    // mkConnection(rdmaTransportLayer.dmaReadClt, bluerdmaDmaProxy.blueSideReadSrv);   
+    // mkConnection(rdmaTransportLayer.dmaWriteClt, bluerdmaDmaProxy.blueSideWriteSrv);
+    mkConnection(rdmaTransportLayer.dmaReadClt.request, tpl_2(addrTranslator.readReqTranslator));
+    mkConnection(tpl_1(addrTranslator.readReqTranslator), bluerdmaDmaProxy.blueSideReadSrv.request);
+    mkConnection(rdmaTransportLayer.dmaReadClt.response, bluerdmaDmaProxy.blueSideReadSrv.response);
+    mkConnection(rdmaTransportLayer.dmaWriteClt.request, tpl_2(addrTranslator.writeReqTranslator));
+    mkConnection(tpl_1(addrTranslator.writeReqTranslator), bluerdmaDmaProxy.blueSideWriteSrv.request);
+    mkConnection(rdmaTransportLayer.dmaWriteClt.response, bluerdmaDmaProxy.blueSideWriteSrv.response);
 
+    
+    mkConnection(addrTranslator.tlbClt, tlb.find);
 
     mkConnection(cmdQController.metaDataManagerClt, rdmaTransportLayer.srvPortMetaData);
     

@@ -389,7 +389,6 @@ endinterface
 typedef struct {
     DmaReqSrcType initiator;
     QPN sqpn;
-    WorkReqID wrID;
 } UserLogicBluerdmaDmaProxyCustomDataH2c deriving(Bits, FShow);
 
 typedef struct {
@@ -424,8 +423,7 @@ module mkBluerdmaDmaProxy(BluerdmaDmaProxy);
             },
             tagged Valid UserLogicBluerdmaDmaProxyCustomDataH2c {
                 initiator: req.initiator,
-                sqpn: req.sqpn,
-                wrID: req.wrID
+                sqpn: req.sqpn
             }
         );
     endfunction
@@ -435,7 +433,6 @@ module mkBluerdmaDmaProxy(BluerdmaDmaProxy);
             DmaReadResp{
                 initiator: customData.initiator,
                 sqpn: customData.sqpn,
-                wrID: customData.wrID,
                 isRespErr: False,
                 dataStream: reverseStream(resp.dataStream)
             },
@@ -497,7 +494,7 @@ interface XdmaGearbox;
     interface UserLogicDmaWriteSrv c2hStreamSrv;
 endinterface
 
-
+(* synthesize *)
 module mkXdmaGearbox(Clock slowClock, Reset slowReset, XdmaGearbox ifc);
     
     Clock fastClock <- exposeCurrentClock;

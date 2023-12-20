@@ -152,13 +152,6 @@ endmodule
 
 // MR related
 
-typedef TDiv#(MAX_MR, MAX_PD) MAX_MR_PER_PD;
-typedef TLog#(MAX_MR_PER_PD) MR_INDEX_WIDTH;
-typedef TSub#(KEY_WIDTH, MR_INDEX_WIDTH) MR_KEY_PART_WIDTH;
-
-typedef UInt#(MR_INDEX_WIDTH) IndexMR;
-typedef Bit#(MR_KEY_PART_WIDTH) KeyPartMR;
-
 typedef struct {
     ADDR laddr;
     Length len;
@@ -254,12 +247,6 @@ module mkMetaDataMRs(MetaDataMRs) provisos(
 endmodule
 
 // PD related
-
-typedef TLog#(MAX_PD) PD_INDEX_WIDTH;
-typedef TSub#(PD_HANDLE_WIDTH, PD_INDEX_WIDTH) PD_KEY_WIDTH;
-
-typedef Bit#(PD_KEY_WIDTH)    KeyPD;
-typedef UInt#(PD_INDEX_WIDTH) IndexPD;
 
 typedef struct {
     Bool allocOrNot;

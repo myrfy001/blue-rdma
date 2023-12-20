@@ -97,7 +97,7 @@ function ADDR getPageAlignedAddr(ADDR addr);
     return unpack(addr);
 endfunction
 
-
+(* synthesize *)
 module mkTLB(TLB);
     BramCache#(PgtFirstStageIndex, PgtFirstStagePayload) firstStageCache <- mkBramCache;
     BramCache#(PgtSecondStageIndex, PgtSecondStagePayload) secondStageCache <- mkBramCache;
@@ -113,6 +113,8 @@ module mkTLB(TLB);
         findReqQ.deq;
         firstStageCache.read.request.put(tpl_1(req));
         vaInputQ.enq(tpl_2(req));
+
+        // $display("first stage TLB query, req=", fshow(req));
     endrule
 
     rule handleSecondStageQuery;
@@ -122,7 +124,7 @@ module mkTLB(TLB);
         PgtFirstStagePayload firstStageResp <- firstStageCache.read.response.get;
 
         let vaOffset = va - firstStageResp.baseVA;
-        let secondStageIndexOffset = truncate(vaOffset >> valueOf(PAGE_OFFSET_WIDTH));
+        PgtSecondStageIndex secondStageIndexOffset = truncate(vaOffset >> valueOf(PAGE_OFFSET_WIDTH));
 
         PgtSecondStageIndex secondStageIndex = firstStageResp.secondStageOffset + secondStageIndexOffset;
         let addrToRead = secondStageIndex;
@@ -133,6 +135,14 @@ module mkTLB(TLB);
         let pteValid = firstStageResp.secondStageEntryCnt != 0;
 
         offsetInputQ.enq(pteValid ? tagged Valid pageOffset : tagged Invalid);
+        // $display("first stage TLB query result, va=", fshow(va), 
+        //         "vaOffset=", fshow(vaOffset),
+        //         "secondStageIndexOffset=", fshow(secondStageIndexOffset),
+        //         "secondStageIndex=", fshow(secondStageIndex),
+        //         "pageOffset=", fshow(pageOffset),
+        //         "pteValid=", fshow(pteValid),
+        //         "firstStageResp=", fshow(firstStageResp)
+        //  );
     endrule
 
     rule handleFindResp;
@@ -148,6 +158,7 @@ module mkTLB(TLB);
             findRespQ.enq(tuple2(False, ?));
         end
         
+        // $display("second stage TLB query result =", fshow(secondStageResp));
         
     endrule
 
@@ -255,7 +266,7 @@ module mkPgtManager#(TLB tlb)(PgtManager);
             let modifyReq = PgtModifySecondStageReq{
                 index: curSecondStagePgtWriteIdxReg,
                 content: PgtSecondStagePayload {
-                    paPart: truncate(curBeatOfDataReg.data)
+                    paPart: truncate(curBeatOfDataReg.data >> valueOf(PAGE_OFFSET_WIDTH))
                 }
             };
             tlb.modify(tagged Req4SecondStage modifyReq);
@@ -270,4 +281,84 @@ module mkPgtManager#(TLB tlb)(PgtManager);
 
     interface pgtModifySrv = toGPServer(reqQ, respQ);
     interface pgtDmaReadClt = toGPClient(dmaReadReqQ, dmaReadRespQ);
+endmodule
+
+
+interface DmaReqAddrTranslator;
+    interface GetPut#(DmaReadReq) readReqTranslator;
+    interface GetPut#(DmaWriteReq) writeReqTranslator;
+    interface Client#(FindReqTLB, FindRespTLB) tlbClt;
+endinterface
+
+
+typedef union tagged {
+    DmaReadReq AddressTranslatePendingRead;
+    DmaWriteReq AddressTranslatePendingWrite;
+} AddressTranslatePendingReqEntry deriving(Bits, FShow);
+
+
+(* synthesize *)
+module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
+    FIFOF#(DmaReadReq) readInQ <- mkFIFOF;
+    FIFOF#(DmaReadReq) readOutQ <- mkFIFOF;
+    FIFOF#(DmaWriteReq) writeInQ <- mkFIFOF;
+    FIFOF#(DmaWriteReq) writeOutQ <- mkFIFOF;
+
+    FIFOF#(AddressTranslatePendingReqEntry) pendingReqQ <- mkSizedFIFOF(3);
+
+    Reg#(Bool) isNextRead <- mkReg(False);
+    
+    interface readReqTranslator = tuple2(toGet(readOutQ), toPut(readInQ));
+    interface writeReqTranslator = tuple2(toGet(writeOutQ), toPut(writeInQ));
+    interface Client tlbClt;
+        interface Get request;
+            method ActionValue#(FindReqTLB) get() if (readInQ.notEmpty || writeInQ.notEmpty);
+                Bool grantRead = False;
+                Bool grantWrite = False;
+
+                if (isNextRead) begin
+                    if (readInQ.notEmpty) begin
+                        grantRead = True;
+                    end else if (writeInQ.notEmpty) begin
+                        grantWrite = True;
+                    end
+                end else begin
+                    if (writeInQ.notEmpty) begin
+                        grantWrite = True;   
+                    end else if (readInQ.notEmpty) begin
+                        grantRead = True;
+                    end
+                end
+
+                if (grantRead) begin
+                    isNextRead <= False;
+                    pendingReqQ.enq(tagged AddressTranslatePendingRead readInQ.first);  // TODO: need not to store address and mrID anymore
+                    return tuple2(zeroExtend(pack(readInQ.first.mrID)), readInQ.first.startAddr);
+                end else begin
+                    isNextRead <= True;
+                    pendingReqQ.enq(tagged AddressTranslatePendingWrite writeInQ.first);  // TODO: need not to store address and mrID anymore
+                    return tuple2(zeroExtend(pack(writeInQ.first.metaData.mrID)), writeInQ.first.metaData.startAddr);
+                end
+
+            endmethod
+        endinterface
+        
+        interface Put response;
+            method Action put(FindRespTLB ret);
+                pendingReqQ.deq;
+                if (pendingReqQ.first matches tagged AddressTranslatePendingRead .resp) begin
+                    let t = resp;
+                    t.startAddr = tpl_2(ret);
+                    readOutQ.enq(t);
+                    // $display("DMA H2C Translate, %x -> %x", resp.startAddr, tpl_2(ret));
+                end else if (pendingReqQ.first matches tagged AddressTranslatePendingWrite .resp) begin
+                    let t = resp;
+                    t.metaData.startAddr = tpl_2(ret);
+                    writeOutQ.enq(t);
+                    // $display("DMA C2CH Translate, %x -> %x", resp.metaData.startAddr, tpl_2(ret));
+                end
+            endmethod
+        endinterface
+    endinterface
+
 endmodule
