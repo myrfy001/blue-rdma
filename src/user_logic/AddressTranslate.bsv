@@ -331,10 +331,12 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
                 end
 
                 if (grantRead) begin
+                    readInQ.deq;
                     isNextRead <= False;
                     pendingReqQ.enq(tagged AddressTranslatePendingRead readInQ.first);  // TODO: need not to store address and mrID anymore
                     return tuple2(zeroExtend(pack(readInQ.first.mrID)), readInQ.first.startAddr);
                 end else begin
+                    writeInQ.deq;
                     isNextRead <= True;
                     pendingReqQ.enq(tagged AddressTranslatePendingWrite writeInQ.first);  // TODO: need not to store address and mrID anymore
                     return tuple2(zeroExtend(pack(writeInQ.first.metaData.mrID)), writeInQ.first.metaData.startAddr);
