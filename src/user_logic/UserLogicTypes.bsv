@@ -7,7 +7,7 @@ import ClientServer :: *;
 import Controller :: *;
 import PrimUtils :: *;
 
-typedef 12 CSR_ADDR_WIDTH;
+typedef 20 CSR_ADDR_WIDTH;
 typedef 4 CSR_DATA_STRB_WIDTH;
 typedef TMul#(CSR_DATA_STRB_WIDTH, BYTE_WIDTH) CSR_DATA_WIDTH;
 typedef 64 HOST_ADDR_WIDTH;

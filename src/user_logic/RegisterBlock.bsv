@@ -14,7 +14,8 @@ typedef enum {
     CsrIdxRbBaseAddrLow = 'h0,
     CsrIdxRbBaseAddrHigh = 'h1,
     CsrIdxRbHead = 'h2,
-    CsrIdxRbTail = 'h3
+    CsrIdxRbTail = 'h3,
+    CsrIdxMaxGuard = 'h3FF
 } CsrPageIndexForRingbuf deriving(Bits, Eq, FShow);
 
 typedef struct {
