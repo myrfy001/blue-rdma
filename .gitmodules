@@ -1,9 +1,0 @@
-[submodule "src/blue-wrapper"]
-	path = src/blue-wrapper
-	url = https://github.com/wengwz/blue-wrapper.git
-[submodule "src/blue-ethernet"]
-	path = src/blue-ethernet
-	url = https://github.com/wengwz/blue-ethernet.git
-[submodule "src/blue-crc"]
-	path = src/blue-crc
-	url = https://github.com/datenlord/blue-crc.git
