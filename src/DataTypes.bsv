@@ -342,9 +342,8 @@ typedef enum {
     DMA_SRC_SQ_RD,
     DMA_SRC_SQ_WR,
     DMA_SRC_SQ_ATOMIC,
-    DMA_SRC_SQ_DISCARD,
+    DMA_SRC_SQ_DISCARD
     // DMA_SRC_SQ_CANCEL
-    DMA_SRC_CONTROL_PATH_LOGIC
 } DmaReqSrcType deriving(Bits, Eq, FShow);
 
 typedef struct {

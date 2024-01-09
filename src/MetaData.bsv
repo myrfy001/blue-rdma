@@ -696,18 +696,15 @@ module mkMetaDataSrv#(
             tagged Req4MR .mrReq: begin
                 mrReqReg <= mrReq;
                 stateReg <= META_DATA_MR_REQ;
-                $display("Recv MR req===", fshow(mrReq));
-                            end
+            end
             tagged Req4PD .pdReq: begin
                 pdReqReg <= pdReq;
                 stateReg <= META_DATA_PD_REQ;
-                $display("Recv PD req===", fshow(pdReq));
-                            end
+            end
             tagged Req4QP .qpReq: begin
                 qpReqReg <= qpReq;
                 stateReg <= META_DATA_QP_REQ;
-                $display("Recv QP req===", fshow(qpReq));
-                            end
+            end
         endcase
     endrule
 
@@ -750,7 +747,6 @@ module mkMetaDataSrv#(
         if (maybeMRs matches tagged Valid .mrMetaData) begin
             mrResp <- mrMetaData.srvPort.response.get;
         end
-        $display("Gen QP resp===", fshow(mrResp));
         metaDataRespQ.enq(tagged Resp4MR mrResp);
         stateReg <= META_DATA_RECV_REQ;
     endrule
@@ -758,7 +754,6 @@ module mkMetaDataSrv#(
     rule genResp4PD if (stateReg == META_DATA_PD_RESP);
         let pdReq = pdReqReg;
         let pdResp <- pdMetaData.srvPort.response.get;
-        $display("Gen QP resp===", fshow(pdResp));
         metaDataRespQ.enq(tagged Resp4PD pdResp);
         stateReg <= META_DATA_RECV_REQ;
     endrule
@@ -777,7 +772,6 @@ module mkMetaDataSrv#(
         if (isValidPD) begin
             qpResp <- qpMetaData.srvPort.response.get;
         end
-        $display("Gen QP resp===", fshow(qpResp));
         metaDataRespQ.enq(tagged Resp4QP qpResp);
         stateReg <= META_DATA_RECV_REQ;
     endrule

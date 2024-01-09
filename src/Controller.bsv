@@ -416,11 +416,11 @@ module mkCntrlQP(CntrlQP);
         sqSigAllReg <= qpReq.qpInitAttr.sqSigAll;
 
         respQ.enq(qpResp);
-        $display(
-            "time=%0t: onReset", $time,
-            ", qpReq.qpn=%h", qpReq.qpn,
-            ", successOrNot=", fshow(qpResp.successOrNot)
-        );
+        // $display(
+        //     "time=%0t: onReset", $time,
+        //     ", qpReq.qpn=%h", qpReq.qpn,
+        //     ", successOrNot=", fshow(qpResp.successOrNot)
+        // );
     endrule
 
     rule onCreate if (stateReg == IBV_QPS_CREATE);

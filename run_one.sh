@@ -13,14 +13,13 @@ TEST_LOG=test.log
 TEST_DIR=test
 cd $TEST_DIR
 truncate -s 0 $TEST_LOG
-FILES=`ls TestAddressTranslate.bsv`
+FILES=`ls TestReqHandleRQ.bsv`
 for FILE in $FILES; do
     # echo $FILE
     TESTCASES=`grep -Phzo 'doc.*?\nmodule\s+\S+(?=\()' $FILE | xargs -0  -I {}  echo "{}" | grep module | cut -d ' ' -f 2`
-    make -j8 TESTFILE=$FILE TOPMODULE=mkTestTLB 2>&1 | tee -a $TEST_LOG
-    # for TESTCASE in $TESTCASES; do
-    #     make -j8 TESTFILE=$FILE TOPMODULE=$TESTCASE 2>&1 | tee -a $TEST_LOG
-    # done
+    for TESTCASE in $TESTCASES; do
+        make -j8 TESTFILE=$FILE TOPMODULE=$TESTCASE 2>&1 | tee -a $TEST_LOG
+    done
 done
 
 ###########################################################
