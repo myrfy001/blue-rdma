@@ -1,9 +1,10 @@
 import ClientServer :: *;
 import PAClib :: *;
 import PrimUtils :: *;
+import PipeIn :: *;
+import Vector :: *;
 
 import Headers :: *;
-import SpecialFIFOF :: *;
 import Settings :: *;
 
 typedef 8 BYTE_WIDTH;
@@ -74,11 +75,14 @@ typedef TLog#(MAX_RNR_WAIT_CYCLES)              RNR_WAIT_CYCLE_CNT_WIDTH;
 typedef TDiv#(MAX_TIMEOUT_NS, TARGET_CYCLE_NS)  MAX_TIMEOUT_CYCLES;
 typedef TAdd#(1, TLog#(MAX_TIMEOUT_CYCLES))     TIMEOUT_CYCLE_CNT_WIDTH;
 
-typedef 48   PHYSICAL_ADDR_WIDTH; // X86 physical address width
+typedef 48                                            PHYSICAL_ADDR_WIDTH; // X86 physical address width
+typedef TLog#(PAGE_SIZE_CAP)                          PAGE_OFFSET_WIDTH;
+typedef TSub#(PHYSICAL_ADDR_WIDTH, PAGE_OFFSET_WIDTH) PAGE_NUMBER_WIDTH;   // 48-21=27
+typedef Bit#(PAGE_OFFSET_WIDTH)  PageOffset;
+typedef Bit#(PAGE_NUMBER_WIDTH)  PageNumber;
+
 typedef TExp#(14) TLB_CACHE_SIZE; // TLB cache size 16K
-typedef TLog#(PAGE_SIZE_CAP)  PAGE_OFFSET_WIDTH;
 typedef TLog#(TLB_CACHE_SIZE) TLB_CACHE_INDEX_WIDTH; // 14
-typedef TSub#(PHYSICAL_ADDR_WIDTH, PAGE_OFFSET_WIDTH) TLB_CACHE_PA_DATA_WIDTH; // 48-21=27
 typedef TSub#(TSub#(ADDR_WIDTH, TLB_CACHE_INDEX_WIDTH), PAGE_OFFSET_WIDTH) TLB_CACHE_TAG_WIDTH; // 64-14-21=29
 
 typedef TDiv#(MAX_MR, MAX_PD) MAX_MR_PER_PD;
@@ -133,19 +137,55 @@ typedef Bit#(TIMEOUT_CYCLE_CNT_WIDTH)  TimeOutCycleCnt;
 typedef Bit#(PD_HANDLE_WIDTH) HandlerPD;
 
 typedef PipeOut#(DataStream) DataStreamPipeOut;
+typedef PipeIn#(DataStream) DataStreamPipeIn;
 
-typedef ScanFIFOF#(MAX_QP_WR, PendingWorkReq) PendingWorkReqBuf;
 typedef PipeOut#(RecvReq)                     RecvReqBuf;
 
+
+typedef Bit#(TLog#(MAX_PTE_ENTRY_CNT)) PTEIndex;
+
 typedef struct {
-    Bit#(TLB_CACHE_PA_DATA_WIDTH) data;
-    Bit#(TLB_CACHE_TAG_WIDTH)     tag;
-} PayloadTLB deriving(Bits);
+    PTEIndex pgtOffset;
+    ADDR baseVA;
+    Length len;
+    FlagsType#(MemAccessTypeFlag) accFlags;
+    HandlerPD pdHandler;
+    KeyPartMR keyPart;
+} MemRegionTableEntry deriving(Bits, FShow);
 
-typedef SizeOf#(PayloadTLB) TLB_PAYLOAD_WIDTH;
+typedef struct {
+    PageNumber pn;
+} PageTableEntry deriving(Bits, FShow);
 
-typedef UInt#(MR_INDEX_WIDTH) IndexMR;
-typedef Bit#(MR_KEY_PART_WIDTH) KeyPartMR;
+typedef struct {
+    IndexMR idx;
+    Maybe#(MemRegionTableEntry) entry;
+} MrTableModifyReq deriving(Bits, FShow);
+
+typedef struct {
+    Bool success;
+} MrTableModifyResp deriving(Bits, FShow);
+
+typedef struct {
+    IndexMR idx;
+} MrTableQueryReq deriving(Bits, FShow);
+
+typedef struct {
+    PTEIndex idx;
+    PageTableEntry pte;
+} PgtModifyReq deriving(Bits, FShow);
+
+typedef struct {
+    Bool success;
+} PgtModifyResp deriving(Bits, FShow);
+
+typedef struct {
+    MemRegionTableEntry mrEntry;
+    ADDR addrToTrans;
+} PgtAddrTranslateReq deriving(Bits, FShow);
+
+
+
 
 // Common types
 
@@ -157,8 +197,8 @@ typedef Client#(DmaWriteReq, DmaWriteResp) DmaWriteClt;
 typedef Server#(PermCheckReq, Bool) PermCheckSrv;
 typedef Client#(PermCheckReq, Bool) PermCheckClt;
 
-interface RdmaPktMetaDataAndPayloadPipeOut;
-    interface PipeOut#(RdmaPktMetaData) pktMetaData;
+interface RdmaPktMetaDataAndQpcAndPayloadPipeOut;
+    interface PipeOut#(RdmaPktMetaDataAndQPCtx) pktMetaData;
     interface DataStreamPipeOut payload;
 endinterface
 
@@ -223,7 +263,6 @@ typedef struct {
     PktFragNum pktFragNum;
     Bool isZeroPayloadLen;
     RdmaHeader pktHeader;
-    HandlerPD pdHandler;
     Bool pktValid;
     PktVeriStatus pktStatus;
 } RdmaPktMetaData deriving(Bits, Bounded);
@@ -280,12 +319,8 @@ typedef struct {
 } DmaReadResp deriving(Bits, FShow);
 
 typedef struct {
-    DmaReqSrcType initiator;
-    QPN sqpn;
     ADDR startAddr;
     PktLen len;
-    PSN psn;
-    IndexMR mrID;
 } DmaWriteMetaData deriving(Bits, Eq, FShow);
 
 typedef struct {
@@ -294,9 +329,6 @@ typedef struct {
 } DmaWriteReq deriving(Bits, FShow);
 
 typedef struct {
-    DmaReqSrcType initiator;
-    QPN sqpn;
-    PSN psn;
     Bool isRespErr;
 } DmaWriteResp deriving(Bits, FShow);
 
@@ -489,6 +521,22 @@ typedef enum {
 instance Flags#(QpAttrMaskFlag);
     function Bool isOneHotOrZero(QpAttrMaskFlag inputVal) = 1 >= countOnes(pack(inputVal));
 endinstance
+
+
+typedef TLog#(MAX_QP) QP_INDEX_WIDTH;
+typedef TSub#(QPN_WIDTH, QP_INDEX_WIDTH) QPN_KEY_PART_WIDTH;
+
+typedef UInt#(QP_INDEX_WIDTH)     IndexQP;
+typedef UInt#(QPN_KEY_PART_WIDTH) KeyQP;
+
+
+function IndexQP getIndexQP(QPN qpn) = unpack(truncateLSB(qpn));
+function KeyQP   getKeyQP  (QPN qpn) = unpack(truncate(qpn));
+
+function QPN genQPN(IndexQP qpIndex, KeyQP qpKey);
+    return { pack(qpIndex), pack(qpKey) };
+endfunction
+
 
 // WorkReq related
 
@@ -727,9 +775,142 @@ typedef Bit#(PD_KEY_WIDTH)    KeyPD;
 typedef UInt#(PD_INDEX_WIDTH) IndexPD;
 
 // MR related
-typedef TDiv#(MAX_MR, MAX_PD) MAX_MR_PER_PD;
-typedef TLog#(MAX_MR_PER_PD) MR_INDEX_WIDTH;
+typedef TLog#(MAX_MR) MR_INDEX_WIDTH;
 typedef TSub#(KEY_WIDTH, MR_INDEX_WIDTH) MR_KEY_PART_WIDTH;
 
 typedef UInt#(MR_INDEX_WIDTH) IndexMR;
 typedef Bit#(MR_KEY_PART_WIDTH) KeyPartMR;
+
+
+// QP Context Related
+
+typedef 8 QPC_QUERY_RESP_MAX_DELAY;
+
+// TODO: Now, put all context data into one big COMMON entry. Maybe one day we should
+// split context data into common, sq only and rq only. A big BRAM is not friendly to P&R 
+typedef struct {
+    QPN  qpn;
+} QPCReadReqCommon deriving(Bits, Eq, FShow);
+
+typedef struct {
+    QPN  qpn;
+    Maybe#(QPCEntryCommon)  ent;
+} QPCWriteReqCommon deriving(Bits, Eq, FShow);
+
+typedef struct {
+    Bool      isValid;
+    Bool      isError;
+    KeyQP     qpnKeyPart;
+    HandlerPD pdHandler;
+    TypeQP    qpType;
+    FlagsType#(MemAccessTypeFlag) rqAccessFlags;
+    PMTU      pmtu;
+} QPCEntryCommon deriving(Bits, Eq, FShow);
+
+
+typedef struct {
+    RdmaPktMetaData metadata;
+    QPCEntryCommon  qpc;
+} RdmaPktMetaDataAndQPCtx deriving(Bits);
+
+// typedef struct {
+//     QPN  qpn;
+// } QPCReadReqRQ;
+
+// typedef struct {
+//     QPN  qpn;
+//     QPCEntryRQ ent;
+// } QPCWriteReqRQ;
+
+// typedef struct {
+
+// } QPCEntryRQ;
+
+
+typedef struct {
+    // Fields from BTH
+    TransType trans;    // 3
+    RdmaOpCode opcode;  // 5
+    Bool solicited;     // 1
+    QPN dqpn;           // 24
+    Bool ackReq;        // 1
+    PSN psn;            // 24
+
+    // Fields from RETH
+    ADDR va;            // 64
+    RKEY rkey;          // 32
+    Length dlen;        // 32
+
+    // Fields from Secondary RETH
+    ADDR secondaryVa;            // 64
+    RKEY secondaryRkey;          // 32
+} C2hReportEntry;
+
+
+
+typedef Bit#(32)  IPv4;
+typedef Bit#(128) IPv6;
+
+typedef union tagged {
+    IPv4 Ipv4;
+    IPv6 Ipv6;
+} IP deriving(Bits);
+
+instance FShow#(IP);
+    function Fmt fshow(IP ipAddr);
+        case (ipAddr) matches
+            tagged Ipv4 .ipv4: begin
+                return $format(
+                    "ipv4=%d.%d.%d.%d",
+                    ipv4[31 : 24], ipv4[23: 16], ipv4[15 : 8], ipv4[7 : 0]
+                );
+            end
+            tagged Ipv6 .ipv6: begin
+                return $format(
+                    "ipv6=%h:%h:%h:%h:%h:%h:%h:%h",
+                    ipv6[127 : 112], ipv6[111: 96], ipv6[95 : 80], ipv6[79 : 64],
+                    ipv6[63 : 48], ipv6[47: 32], ipv6[31 : 16], ipv6[15 : 0]
+                );
+            end
+        endcase
+    endfunction
+endinstance
+
+typedef union tagged {
+    IMM ImmDt;
+    RKEY Rkey2Inv;
+} ImmDtOrInvRKey deriving(Bits, FShow);
+
+typedef struct {
+    WorkReqID id; // TODO: remove it
+    WorkReqOpCode opcode;                // 1B
+    FlagsType#(WorkReqSendFlag) flags;   // 5b
+    TypeQP qpType;          // 4b
+    PSN curPSN;             // 3B
+    PMTU pmtu;              // 3b
+    IP dqpIP;               // 16B
+    ScatterGatherList sgl;  // 16B
+    ADDR raddr;  // 8B
+    RKEY rkey;   // 4B
+    // ADDR laddr;
+    // Length len;
+    // LKEY lkey;
+    QPN sqpn; // TODO: remove it  3B
+    Bool solicited; // Relevant only for the Send and RDMA Write with immediate data
+    // Maybe#(Long) comp;
+    // Maybe#(Long) swap;
+    Maybe#(ImmDtOrInvRKey) immDtOrInvRKey;
+    Maybe#(QPN) srqn; // for XRC
+    Maybe#(QPN) dqpn; // for UD
+    Maybe#(QKEY) qkey; // for UD
+} WorkQueueElem deriving(Bits);
+
+typedef struct {
+    ADDR   laddr;
+    Length len;
+    LKEY   lkey;
+    Bool   isFirst;
+    Bool   isLast;
+} ScatterGatherElem deriving(Bits, FShow);
+
+typedef Vector#(MAX_SGE, ScatterGatherElem) ScatterGatherList;

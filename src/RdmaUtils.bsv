@@ -1,14 +1,184 @@
-import ClientServer :: *;
-import Cntrs :: *;
-import Connectable :: *;
 import FIFOF :: *;
+import SpecialFIFOs :: *;
+import ClientServer :: *;
 import GetPut :: *;
-import PAClib :: *;
-
 import DataTypes :: *;
 import Headers :: *;
+
+import PAClib :: *;
+import PipeIn :: *;
 import PrimUtils :: *;
 import Settings :: *;
+
+function PipeOut#(anytype) toPipeOut(FIFOF#(anytype) queue);
+    return f_FIFOF_to_PipeOut(queue);
+endfunction
+
+function PipeIn#(anytype) toPipeIn(FIFOF#(anytype) queue);
+    return f_FIFOF_to_PipeIn(queue);
+endfunction
+
+interface BypassClient#(type t_req, type t_resp);
+    interface Client#(t_req, t_resp) clt;
+    method Action putReq(t_req req);
+    method Bool canPutReq;
+
+    method ActionValue#(t_resp) getResp();
+    method Bool hasResp;
+endinterface
+
+module mkBypassClient(BypassClient#(t_req, t_resp)) provisos (
+    Bits#(t_req, sz_req),
+    Bits#(t_resp, sz_resp)
+);
+    FIFOF#(t_req) reqQ <- mkFIFOF;
+    // FIFOF#(t_req) reqQ <- mkBypassFIFOF;
+    // FIFOF#(t_resp) respQ <- mkFIFOF;
+    FIFOF#(t_resp) respQ <- mkBypassFIFOF;
+
+    interface Client clt;
+        interface Get request;
+            method ActionValue#(t_req) get();
+                reqQ.deq;
+                return reqQ.first;
+            endmethod
+        endinterface
+        interface Put response;
+            method Action put(t_resp resp);
+                respQ.enq(resp);
+            endmethod
+        endinterface
+    endinterface
+
+    method Action putReq(t_req req);
+        reqQ.enq(req);
+    endmethod
+
+    method Bool canPutReq = reqQ.notFull;
+
+    method ActionValue#(t_resp) getResp();
+        respQ.deq;
+        return respQ.first;
+    endmethod
+
+    method Bool hasResp = respQ.notEmpty;
+endmodule
+
+
+interface BypassServer#(type t_req, type t_resp);
+    interface Server#(t_req, t_resp) srv;
+
+    method ActionValue#(t_req) getReq();
+    method Bool hasReq;
+
+    method Action putResp(t_resp resp);
+    method Bool canPutResp;
+endinterface
+
+module mkBypassServer(BypassServer#(t_req, t_resp)) provisos (
+    Bits#(t_req, sz_req),
+    Bits#(t_resp, sz_resp)
+);
+    // FIFOF#(t_req) reqQ <- mkFIFOF;
+    FIFOF#(t_req) reqQ <- mkBypassFIFOF;
+    // FIFOF#(t_resp) respQ <- mkBypassFIFOF;
+    FIFOF#(t_resp) respQ <- mkFIFOF;
+
+    interface Server srv;
+        interface Get response;
+            method ActionValue#(t_resp) get();
+                respQ.deq;
+                return respQ.first;
+            endmethod
+        endinterface
+        interface Put request;
+            method Action put(t_req req);
+                reqQ.enq(req);
+            endmethod
+        endinterface
+    endinterface
+
+    method Action putResp(t_resp resp);
+        respQ.enq(resp);
+    endmethod
+
+    method Bool canPutResp = respQ.notFull;
+
+    method ActionValue#(t_req) getReq();
+        reqQ.deq;
+        return reqQ.first;
+    endmethod
+
+    method Bool hasReq = reqQ.notEmpty;
+
+endmodule
+
+
+function BTH extractBTH(HeaderData headerData);
+    let bth = unpack(headerData[
+        valueOf(HEADER_MAX_DATA_WIDTH)-1 :
+        valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH)
+    ]);
+    return bth;
+endfunction
+
+function RETH extractPriRETH(HeaderData headerData, TransType transType);
+    let reth = case (transType)
+        TRANS_TYPE_XRC: unpack(headerData[
+            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(XRCETH_WIDTH) -1 :
+            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(XRCETH_WIDTH) - valueOf(RETH_WIDTH)
+        ]);
+        default: unpack(headerData[
+            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) -1 :
+            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(RETH_WIDTH)
+        ]);
+    endcase;
+    return reth;
+endfunction
+
+function RETH extractSecRETH(HeaderData headerData, TransType transType, RdmaOpCode opcode);
+    let reth = case (transType)
+        TRANS_TYPE_XRC: unpack(headerData[
+            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(XRCETH_WIDTH) -1 :
+            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(XRCETH_WIDTH) - valueOf(RETH_WIDTH)
+        ]);
+        default: begin
+            case (opcode)
+                RDMA_READ_REQUEST:
+                    unpack(headerData[
+                        valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(RETH_WIDTH) -1 :
+                        valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(RETH_WIDTH) - valueOf(RETH_WIDTH)
+                    ]);
+                // RDMA_READ_RESPONSE_MIDDLE:
+                //     unpack(headerData[
+                //         valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) -1 :
+                //         valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(RETH_WIDTH)
+                //     ]);
+                // RDMA_READ_RESPONSE_FIRST, RDMA_READ_RESPONSE_LAST, RDMA_READ_RESPONSE_ONLY:
+                //     unpack(headerData[
+                //         valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(AETH_BYTE_WIDTH) -1 :
+                //         valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(AETH_BYTE_WIDTH) - valueOf(RETH_WIDTH)
+                //     ]);
+                default: unpack(0);  // error("Opcode does not support secondary RETH");
+            endcase
+        end
+    endcase;
+    return reth;
+endfunction
+
+function Tuple2#(HeaderByteNum, HeaderBitNum) calcHeaderInvalidFragByteAndBitNum(
+    HeaderFragNum headerValidFragNum
+);
+    HeaderFragNum headerInvalidFragNum =
+        fromInteger(valueOf(HEADER_MAX_FRAG_NUM)) - headerValidFragNum;
+    HeaderByteNum headerInvalidFragByteNum =
+        zeroExtend(headerInvalidFragNum) << valueOf(DATA_BUS_BYTE_NUM_WIDTH);
+    HeaderBitNum headerInvalidFragBitNum =
+        zeroExtend(headerInvalidFragNum) << valueOf(DATA_BUS_BIT_NUM_WIDTH);
+    return tuple2(headerInvalidFragByteNum, headerInvalidFragBitNum);
+endfunction
+
+
 
 // Timeout related
 
@@ -578,6 +748,40 @@ function Bool lenGtEqPktLen(Length len, PktLen pktLen, PMTU pmtu);
         end
     endcase;
 endfunction
+
+// In the modified version of RDMA protocol, the first packet's (e.g., WriteFirst, SendFirst) last byte will be aligned to 
+// PMTU boundary, so this packet length will be less or equal to PMTU, which is different from the original RDMA spec.
+function PktLen calcFirstPktLenFromAddrAndPMTU(ADDR va, PMTU pmtu);
+
+    PktLen mask = case (pmtu)
+        IBV_MTU_256 : begin
+            // 8 = log2(256)
+            ((1 << 8) - 1);
+        end
+        IBV_MTU_512 : begin
+            // 9 = log2(512)
+            ((1 << 9) - 1);
+        end
+        IBV_MTU_1024: begin
+            // 10 = log2(1024)
+            ((1 << 10) - 1);
+        end
+        IBV_MTU_2048: begin
+            // 11 = log2(2048)
+            ((1 << 11) - 1);
+        end
+        IBV_MTU_4096: begin
+            // 12 = log2(4096)
+            ((1 << 12) - 1);
+        end
+    endcase;
+
+    PktLen addrLowPart = truncate(va) & mask;
+    addrLowPart = calcPmtuLen(pmtu) - addrLowPart;
+
+    return addrLowPart;
+endfunction
+
 /*
 function Bool lenGtEqPktLen4LastOrOnlyPkt(Length len, PktLen pktLen, PMTU pmtu);
     return case (pmtu)
@@ -751,7 +955,6 @@ endfunction
 
 function Bool transTypeMatchQpType(TransType tt, TypeQP qpt, Bool isRecvSide);
     return case (tt)
-        TRANS_TYPE_CNP: True;
         TRANS_TYPE_RC : (qpt == IBV_QPT_RC);
         TRANS_TYPE_UC : (qpt == IBV_QPT_UC);
         TRANS_TYPE_UD : (qpt == IBV_QPT_UD);
@@ -780,28 +983,6 @@ endfunction
 
 function Bool isSupportedReqOpCodeRQ(TypeQP qpt, RdmaOpCode opcode);
     case (qpt)
-        IBV_QPT_UC: return case (opcode)
-            SEND_FIRST                    ,
-            SEND_MIDDLE                   ,
-            SEND_LAST                     ,
-            SEND_LAST_WITH_IMMEDIATE      ,
-            SEND_ONLY                     ,
-            SEND_ONLY_WITH_IMMEDIATE      : True;
-            RDMA_WRITE_FIRST              ,
-            RDMA_WRITE_MIDDLE             ,
-            RDMA_WRITE_LAST               ,
-            RDMA_WRITE_LAST_WITH_IMMEDIATE,
-            RDMA_WRITE_ONLY               ,
-            RDMA_WRITE_ONLY_WITH_IMMEDIATE: True;
-            default                       : False;
-        endcase;
-        IBV_QPT_UD: return case (opcode)
-            SEND_ONLY                     ,
-            SEND_ONLY_WITH_IMMEDIATE      : True;
-            default                       : False;
-        endcase;
-        // IBV_QPT_XRC_SEND,
-        IBV_QPT_XRC_RECV,
         IBV_QPT_RC      : return case (opcode)
             SEND_FIRST                    ,
             SEND_MIDDLE                   ,
@@ -852,13 +1033,7 @@ function Tuple2#(TransType, RdmaOpCode) extractTranTypeAndRdmaOpCode(
     return tuple2(transType, rdmaOpCode);
 endfunction
 
-function BTH extractBTH(HeaderData headerData);
-    let bth = unpack(headerData[
-        valueOf(HEADER_MAX_DATA_WIDTH)-1 :
-        valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH)
-    ]);
-    return bth;
-endfunction
+
 
 function AETH extractAETH(HeaderData headerData);
     let aeth = unpack(headerData[
@@ -884,19 +1059,7 @@ function XRCETH extractXRCETH(HeaderData headerData);
     return xrceth;
 endfunction
 
-function RETH extractRETH(HeaderData headerData, TransType transType);
-    let reth = case (transType)
-        TRANS_TYPE_XRC: unpack(headerData[
-            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(XRCETH_WIDTH) -1 :
-            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(XRCETH_WIDTH) - valueOf(RETH_WIDTH)
-        ]);
-        default: unpack(headerData[
-            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) -1 :
-            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(RETH_WIDTH)
-        ]);
-    endcase;
-    return reth;
-endfunction
+
 
 function LETH extractLETH(HeaderData headerData, TransType transType);
     let reth = case (transType)
@@ -1056,7 +1219,7 @@ function Bool isLastOrOnlyRdmaOpCode(RdmaOpCode opcode);
 endfunction
 
 function Bool isMiddleOrLastRdmaOpCode(RdmaOpCode opcode);
-    return isLastRdmaOpCode(opcode) || isOnlyRdmaOpCode(opcode);
+    return isMiddleRdmaOpCode(opcode) || isLastRdmaOpCode(opcode);
 endfunction
 
 function Bool isSendReqRdmaOpCode(RdmaOpCode opcode);
@@ -1166,6 +1329,18 @@ function Bool rdmaRespNeedDmaWrite(RdmaOpCode opcode);
         RDMA_READ_RESPONSE_ONLY  ,
         ATOMIC_ACKNOWLEDGE       : True;
         default                  : False;
+    endcase;
+endfunction
+
+function Bool rdmaReqNeedDmaWrite(RdmaOpCode opcode);
+    return case (opcode)
+        RDMA_WRITE_FIRST              ,
+        RDMA_WRITE_MIDDLE             ,
+        RDMA_WRITE_LAST               ,
+        RDMA_WRITE_ONLY               ,
+        RDMA_WRITE_LAST_WITH_IMMEDIATE,
+        RDMA_WRITE_ONLY_WITH_IMMEDIATE: True;
+        default                       : False;
     endcase;
 endfunction
 
@@ -1500,7 +1675,8 @@ endmodule
 function IndexMR wr2IndexMR(WorkReq wr) = lkey2IndexMR(wr.lkey);
 function IndexMR lkey2IndexMR(LKEY lkey) = unpack(truncateLSB(lkey));
 function IndexMR rkey2IndexMR(RKEY rkey) = unpack(truncateLSB(rkey));
-
+function RKEY    rkeyFromKeyAndIndexPart(IndexMR idx, KeyPartMR key) = {pack(idx), key};
+function LKEY    lkeyFromKeyAndIndexPart(IndexMR idx, KeyPartMR key) = {pack(idx), key};
 
 
 
@@ -1722,12 +1898,7 @@ endfunction
 // no response from PayloadConsumer will not incur bugs.
 function ActionValue#(PayloadConReq) genDiscardPayloadReq(
     PktFragNum fragNum,
-    DmaReqSrcType initiator,
-    QPN sqpn,
-    ADDR startAddr,
-    PktLen len,
-    PSN psn,
-    IndexMR mrID
+    PktLen len
 );
     actionvalue
         immAssert(
@@ -1738,47 +1909,14 @@ function ActionValue#(PayloadConReq) genDiscardPayloadReq(
         let discardReq = PayloadConReq {
             fragNum    : fragNum,
             consumeInfo: tagged DiscardPayloadInfo DmaWriteMetaData {
-                initiator: initiator,
-                sqpn     : sqpn,
-                startAddr: startAddr,
-                len      : len,
-                psn      : psn,
-                mrID    : mrID       
+                startAddr: 0,
+                len      : len     
             }
         };
         return discardReq;
     endactionvalue
 endfunction
-/*
-function Action genDiscardPayloadReq(
-    PktFragNum fragNum,
-    DmaReqSrcType initiator,
-    QPN sqpn,
-    ADDR startAddr,
-    PktLen len,
-    PSN psn,
-    FIFOF#(PayloadConReq) payloadConReqQ
-);
-    action
-        immAssert(
-            !isZero(fragNum),
-            "fragNum non-zero assertion @ genDiscardPayloadReq()",
-            $format("fragNum=%0d", fragNum, " should be non-zero")
-        );
-        let discardReq = PayloadConReq {
-            fragNum    : fragNum,
-            consumeInfo: tagged DiscardPayloadInfo DmaWriteMetaData {
-                initiator: initiator,
-                sqpn     : sqpn,
-                startAddr: startAddr,
-                len      : len,
-                psn      : psn
-            }
-        };
-        payloadConReqQ.enq(discardReq);
-    endaction
-endfunction
-*/
+
 module mkConnectionWithAction#(
     Get#(anytype) getIn,
     Put#(anytype) putOut,
