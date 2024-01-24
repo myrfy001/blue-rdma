@@ -205,7 +205,7 @@ module mkRQ(RQ ifc);
         if (needIssueDMARequest) begin
             payloadConsumerControlClt.putReq(PayloadConReq{
                 fragNum: pktMetaData.pktFragNum,
-                consumeInfo: tagged SendWriteReqReadRespInfo DmaWriteMetaData {
+                consumeInfo: tagged SendWriteReqReadRespInfo DmaWriteMetaDataNew {
                     startAddr: phyAddr,
                     len      : pktMetaData.pktPayloadLen
                 }
@@ -217,7 +217,6 @@ module mkRQ(RQ ifc);
         end
 
         waitDMARespPipeQ.enq(tuple3(pktMetaDataAndQpc, reqStatus, needIssueDMARequest));
-        $display("qqqqqqqqq, reqStatus=", fshow(reqStatus));
     endrule
 
     rule waitDMAFinishAndWriteMetaToHost;

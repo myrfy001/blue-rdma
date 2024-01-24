@@ -1908,7 +1908,7 @@ function ActionValue#(PayloadConReq) genDiscardPayloadReq(
         );
         let discardReq = PayloadConReq {
             fragNum    : fragNum,
-            consumeInfo: tagged DiscardPayloadInfo DmaWriteMetaData {
+            consumeInfo: tagged DiscardPayloadInfo DmaWriteMetaDataNew {
                 startAddr: 0,
                 len      : len     
             }

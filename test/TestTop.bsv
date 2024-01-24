@@ -3,6 +3,8 @@ import ClientServer :: *;
 import GetPut :: *;
 import FIFOF :: *;
 import PAClib :: *;
+import Clocks :: *;
+import BRAM :: *;
 
 import PipeIn :: *;
 import RQ :: *;
@@ -13,6 +15,7 @@ import InputPktHandle :: *;
 import RdmaUtils :: *;
 import PrimUtils :: *;
 import StmtFSM::*;
+import Axi4LiteTypes :: *;
 
 import ExtractAndPrependPipeOut :: *;
 
@@ -20,6 +23,9 @@ import MemRegionAndAddressTranslate :: *;
 import PayloadConAndGen :: *;
 import RecvStreamMocker :: *;
 import Headers :: *;
+
+import XdmaWrapper :: *;
+
 
 import Top :: *;
 
@@ -32,7 +38,7 @@ import Top :: *;
 `define TEST_MR_LENGTH   1026
 `define TEST_MR_FIRST_PGT_IDX   2048
 
-`define TEST_PGT_FIRST_ENTRY_PN 'hCCCC
+`define TEST_PGT_FIRST_ENTRY_PN 'h000C
 
 `define TEST_PD_HANDLER   'h7890
 
@@ -43,10 +49,20 @@ import Top :: *;
 (* doc = "testcase" *)
 module mkTestTop(Empty);
 
-    RecvStreamMocker rsMocker <- mkRecvStreamMocker;
-    TopCoreIfc top <- mkTopCore;
+    ClockDividerIfc divClk <- mkClockDivider(2);
+    Clock slowClock = divClk.slowClock;
+    Reset slowReset <- mkInitialReset(1, clocked_by slowClock);
 
-    mkConnection(toGet(rsMocker.streamPipeOut), top.rdmaDataStreamInput);
+    RecvStreamMocker rsMocker <- mkRecvStreamMocker;
+    TopCoreIfc topA <- mkTopCore(slowClock, slowReset);
+
+    FakeXdma fakeXdmaA <- mkFakeXdma(1, tagged Hex "test_host_memory.hex", clocked_by slowClock, reset_by slowReset);
+
+    mkConnection(fakeXdmaA.xdmaH2cSrv, topA.dmaReadClt);
+    mkConnection(fakeXdmaA.xdmaC2hSrv, topA.dmaWriteClt);
+
+    mkConnection(toGet(rsMocker.streamPipeOut), topA.rdmaDataStreamInput);
+
 
     Reg#(Bool) stopReg <- mkReg(False);
 
@@ -55,7 +71,7 @@ module mkTestTop(Empty);
         (seq
             
             // Insert QPC
-            top.qpcWriteCommonSrv.request.put(QPCWriteReqCommon{
+            topA.qpcWriteCommonSrv.request.put(QPCWriteReqCommon{
                     qpn: genQPN(`TEST_QPN_IDX_PART, `TEST_QPN_KEY_PART),
                     ent: tagged Valid QPCEntryCommon {
                         isValid: True,
@@ -68,11 +84,11 @@ module mkTestTop(Empty);
                     }
             });
             action
-                let _ <- top.qpcWriteCommonSrv.response.get;
+                let _ <- topA.qpcWriteCommonSrv.response.get;
             endaction
 
             // Insert into MR table
-            top.mrModifySrv.request.put(MrTableModifyReq{
+            topA.mrModifySrv.request.put(MrTableModifyReq{
                 idx: `TEST_MR_IDX_PART,
                 entry: tagged Valid MemRegionTableEntry{
                     pgtOffset: `TEST_MR_FIRST_PGT_IDX,
@@ -84,19 +100,19 @@ module mkTestTop(Empty);
                 }
             });
             action
-                let _ <- top.mrModifySrv.response.get;
+                let _ <- topA.mrModifySrv.response.get;
             endaction
 
 
             // Insert into PGT
-            top.pgtModifySrv.request.put(PgtModifyReq{
+            topA.pgtModifySrv.request.put(PgtModifyReq{
                 idx: `TEST_MR_FIRST_PGT_IDX,
                 pte: PageTableEntry{
                     pn: `TEST_PGT_FIRST_ENTRY_PN
                 }
             });
             action
-                let _ <- top.pgtModifySrv.response.get;
+                let _ <- topA.pgtModifySrv.response.get;
             endaction
 
             action

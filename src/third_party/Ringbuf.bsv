@@ -12,7 +12,7 @@ import GetPut :: *;
 import ConfigReg :: * ;
 import Randomizable :: *;
 import PrimUtils :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 
 
 

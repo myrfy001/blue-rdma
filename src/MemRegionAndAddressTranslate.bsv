@@ -263,24 +263,24 @@ endmodule
 
 
 // interface DmaReqAddrTranslator;
-//     interface GetPut#(DmaReadReq) readReqTranslator;
-//     interface GetPut#(DmaWriteReq) writeReqTranslator;
+//     interface GetPut#(DmaReadReqNew) readReqTranslator;
+//     interface GetPut#(DmaWriteReqNew) writeReqTranslator;
 //     interface Client#(FindReqTLB, FindRespTLB) tlbClt;
 // endinterface
 
 
 // typedef union tagged {
-//     DmaReadReq AddressTranslatePendingRead;
-//     DmaWriteReq AddressTranslatePendingWrite;
+//     DmaReadReqNew AddressTranslatePendingRead;
+//     DmaWriteReqNew AddressTranslatePendingWrite;
 // } AddressTranslatePendingReqEntry deriving(Bits, FShow);
 
 
 // (* synthesize *)
 // module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
-//     FIFOF#(DmaReadReq) readInQ <- mkFIFOF;
-//     FIFOF#(DmaReadReq) readOutQ <- mkFIFOF;
-//     FIFOF#(DmaWriteReq) writeInQ <- mkFIFOF;
-//     FIFOF#(DmaWriteReq) writeOutQ <- mkFIFOF;
+//     FIFOF#(DmaReadReqNew) readInQ <- mkFIFOF;
+//     FIFOF#(DmaReadReqNew) readOutQ <- mkFIFOF;
+//     FIFOF#(DmaWriteReqNew) writeInQ <- mkFIFOF;
+//     FIFOF#(DmaWriteReqNew) writeOutQ <- mkFIFOF;
 
 //     FIFOF#(AddressTranslatePendingReqEntry) pendingReqQ <- mkSizedFIFOF(3);
 

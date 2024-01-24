@@ -133,12 +133,12 @@ import RdmaUtils :: *;
 // endmodule
 
 // typedef struct {
-//     DmaReadMetaData dmaReadMetaData;
+//     DmaReadMetaDataNew dmaReadMetaData;
 //     PMTU pmtu;
 // } DmaReadCntrlReq deriving(Bits, FShow);
 
 // typedef struct {
-//     DmaReadResp dmaReadResp;
+//     DmaReadRespNew dmaReadResp;
 //     Bool isOrigFirst;
 //     Bool isOrigLast;
 // } DmaReadCntrlResp deriving(Bits, FShow);
@@ -164,7 +164,7 @@ import RdmaUtils :: *;
 //     FIFOF#(DmaReadCntrlResp) respQ <- mkFIFOF;
 
 //     FIFOF#(DmaReadCntrlReq)                pendingDmaCntrlReqQ <- mkFIFOF;
-//     FIFOF#(Tuple3#(DmaReadReq, Bool, Bool)) pendingDmaReadReqQ <- mkFIFOF;
+//     FIFOF#(Tuple3#(DmaReadReqNew, Bool, Bool)) pendingDmaReadReqQ <- mkFIFOF;
 
 //     let clearAll = cntrlStatus.comm.isReset;
 //     let addrChunkSrv <- mkAddrChunkSrv(clearAll, cntrlStatus.isSQ);
@@ -254,7 +254,7 @@ import RdmaUtils :: *;
 //         // dmaReadReq.startAddr = addrChunkResp.chunkAddr;
 //         // dmaReadReq.len       = zeroExtend(addrChunkResp.chunkLen);
 //         let dmaReadMetaData = pendingDmaReadCntrlReq.dmaReadMetaData;
-//         let dmaReadReq = DmaReadReq {
+//         let dmaReadReq = DmaReadReqNew {
 //             initiator: dmaReadMetaData.initiator,
 //             sqpn     : dmaReadMetaData.sqpn,
 //             startAddr: addrChunkResp.chunkAddr,
@@ -583,7 +583,7 @@ typedef Server#(PayloadConReq, PayloadConResp) PayloadConsumer;
 module mkPayloadConsumer(PayloadConsumer);
 
     BypassServer#(PayloadConReq, PayloadConResp) controlPortSrvInst <- mkBypassServer;
-    BypassClient#(DmaWriteReq, DmaWriteResp) dmaWriteCltInst <- mkBypassClient;
+    BypassClient#(DmaWriteReqNew, DmaWriteRespNew) dmaWriteCltInst <- mkBypassClient;
     FIFOF#(DataStream) payloadInBufQ <- mkFIFOF;
 
     // Pipeline FIFO
@@ -656,12 +656,10 @@ module mkPayloadConsumer(PayloadConsumer);
 
         let isFragNumLessOrEqOne = isLessOrEqOne(consumeReq.fragNum);
         countReqFragQ.enq(tuple3(consumeReq, isFragNumLessOrEqOne, isDiscardReq));
-        // $display(
-        //     "time=%0t: PayloadConsumer recvReq", $time,
-        //     ", qpn=%h", cntrlStatus.comm.getSQPN,
-        //     ", isSQ=", fshow(cntrlStatus.isSQ),
-        //     ", consumeReq=", fshow(consumeReq)
-        // );
+        $display(
+            "time=%0t: PayloadConsumer recvReq", $time,
+            ", consumeReq=", fshow(consumeReq)
+        );
     endrule
 
     rule countReqFrag;
@@ -694,14 +692,14 @@ module mkPayloadConsumer(PayloadConsumer);
         pendingConReqQ.enq(tuple4(
             consumeReq, isFragNumLessOrEqOne, isFirstOrOnlyFragReg, isLastReqFrag
         ));
-        // $display(
-        //     "time=%0t: countReqFrag", $time,
-        //     ", consumeReq.fragNum=%0d", consumeReq.fragNum,
-        //     ", remainingFragNumReg=%0d", remainingFragNumReg,
-        //     ", isRemainingFragNumZeroReg=", fshow(isRemainingFragNumZeroReg),
-        //     ", isFirstOrOnlyFragReg=", fshow(isFirstOrOnlyFragReg),
-        //     ", isLastReqFrag=", fshow(isLastReqFrag)
-        // );
+        $display(
+            "time=%0t: countReqFrag", $time,
+            ", consumeReq.fragNum=%0d", consumeReq.fragNum,
+            ", remainingFragNumReg=%0d", remainingFragNumReg,
+            ", isRemainingFragNumZeroReg=", fshow(isRemainingFragNumZeroReg),
+            ", isFirstOrOnlyFragReg=", fshow(isFirstOrOnlyFragReg),
+            ", isLastReqFrag=", fshow(isLastReqFrag)
+        );
     endrule
 
     rule consumePayload;
@@ -723,19 +721,19 @@ module mkPayloadConsumer(PayloadConsumer);
                 payloadBufPipeOut.deq;
                 if (isFragNumLessOrEqOne) begin
                     checkIsOnlyPayloadFragment(payload, consumeReq.consumeInfo);
-                    // $display(
-                    //     "time=%0t: single packet response consumeReq.fragNum=%0d",
-                    //     $time, consumeReq.fragNum
-                    // );
+                    $display(
+                        "time=%0t: single packet response consumeReq.fragNum=%0d",
+                        $time, consumeReq.fragNum
+                    );
                 end
-                // $display(
-                //     "time=%0t: SendWriteReqReadRespInfo", $time,
-                //     ", consumeReq=", fshow(consumeReq),
-                //     ", isFirstOrOnlyFrag=", fshow(isFirstOrOnlyFrag),
-                //     ", isLastReqFrag=", fshow(isLastReqFrag),
-                //     ", payload.isFirst=", fshow(payload.isFirst),
-                //     ", payload.isLast=", fshow(payload.isLast)
-                // );
+                $display(
+                    "time=%0t: SendWriteReqReadRespInfo", $time,
+                    ", consumeReq=", fshow(consumeReq),
+                    ", isFirstOrOnlyFrag=", fshow(isFirstOrOnlyFrag),
+                    ", isLastReqFrag=", fshow(isLastReqFrag),
+                    ", payload.isFirst=", fshow(payload.isFirst),
+                    ", payload.isLast=", fshow(payload.isLast)
+                );
 
                 if (isFirstOrOnlyFrag) begin
                     immAssert(
@@ -806,7 +804,7 @@ module mkPayloadConsumer(PayloadConsumer);
 
         case (consumeReq.consumeInfo) matches
             tagged SendWriteReqReadRespInfo .sendWriteReqReadRespInfo: begin
-                let dmaWriteReq = DmaWriteReq {
+                let dmaWriteReq = DmaWriteReqNew {
                     metaData  : sendWriteReqReadRespInfo,
                     dataStream: payload
                 };
@@ -834,7 +832,7 @@ module mkPayloadConsumer(PayloadConsumer);
         case (consumeReq.consumeInfo) matches
             tagged SendWriteReqReadRespInfo .sendWriteReqReadRespInfo: begin
                 let consumeResp = PayloadConResp {
-                    dmaWriteResp : DmaWriteResp {
+                    dmaWriteResp : DmaWriteRespNew {
                         isRespErr: dmaWriteResp.isRespErr
                     }
                 };
@@ -847,11 +845,11 @@ module mkPayloadConsumer(PayloadConsumer);
                 );
             end
         endcase
-        // $display(
-        //     "time=%0t: genConResp", $time,
-        //     ", dmaWriteResp=", fshow(dmaWriteResp),
-        //     ", consumeReq=", fshow(consumeReq)
-        // );
+        $display(
+            "time=%0t: genConResp", $time,
+            ", dmaWriteResp=", fshow(dmaWriteResp),
+            ", consumeReq=", fshow(consumeReq)
+        );
     endrule
 
     interface controlPortSrv = controlPortSrvInst.srv;

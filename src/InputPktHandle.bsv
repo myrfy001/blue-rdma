@@ -26,14 +26,16 @@ function Bool padCntCheckReqHeader(BTH bth);
     let zeroPadCntCheck = isZero(bth.padCnt);
 
     return case (bth.opcode)
-        SEND_FIRST, SEND_MIDDLE            : zeroPadCntCheck;
+        SEND_MIDDLE            : zeroPadCntCheck;
+        SEND_FIRST                         ,
         SEND_LAST, SEND_ONLY               ,
         SEND_LAST_WITH_IMMEDIATE           ,
         SEND_ONLY_WITH_IMMEDIATE           ,
         SEND_LAST_WITH_INVALIDATE          ,
         SEND_ONLY_WITH_INVALIDATE          : True;
 
-        RDMA_WRITE_FIRST, RDMA_WRITE_MIDDLE: zeroPadCntCheck;
+        RDMA_WRITE_MIDDLE: zeroPadCntCheck ;
+        RDMA_WRITE_FIRST                   ,
         RDMA_WRITE_LAST, RDMA_WRITE_ONLY   ,
         RDMA_WRITE_LAST_WITH_IMMEDIATE     ,
         RDMA_WRITE_ONLY_WITH_IMMEDIATE     : True;
@@ -364,8 +366,8 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
     endrule
 
     rule discardInvalidFrag if (pktBufStateReg == RDMA_PKT_BUF_ST_DISCARD_FRAG);
-        let payload = payloadPipeInQ.first;
-        payloadPipeInQ.deq;
+        let payload = payloadRecvQ.first;
+        payloadRecvQ.deq;
         if (payload.isLast) begin
             pktBufStateReg <= RDMA_PKT_BUT_ST_PRE_CHECK_FRAG;
         end

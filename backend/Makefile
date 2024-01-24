@@ -11,7 +11,7 @@ PARTNAME = xcvu13p-fhgb2104-2-i
 # TARGETFILE ?= ../src/QueuePair.bsv
 # TOPMODULE ?= mkQP
 TARGETFILE ?= ../src/third_party/Top.bsv
-TOPMODULE ?= mkTop
+TOPMODULE ?= mkBsvTop
 
 export TOP = $(TOPMODULE)
 export RTL = $(VLOGDIR)
