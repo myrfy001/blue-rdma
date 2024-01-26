@@ -170,12 +170,13 @@ typedef struct {
 typedef SizeOf#(BTH)        BTH_WIDTH;
 typedef TDiv#(BTH_WIDTH, 8) BTH_BYTE_WIDTH;
 
-// 4 bytes
+// 8 bytes
 typedef struct {
-    ReservedZero#(1) rsvd;
+    ReservedZero#(9) rsvd;
     AethCode code;
     AethValue value;
     MSN msn;
+    PSN lastRetryPSN;
 } AETH deriving(Bits, Bounded, FShow);
 
 typedef SizeOf#(AETH)        AETH_WIDTH;
@@ -269,7 +270,7 @@ typedef TDiv#(CNP_PAYLOAD_WIDTH, 8) CNP_PAYLOAD_BYTE_WIDTH;
 // BTH + RETH + LETH = 44 bytes
 // BTH + RETH + ImmDT = 32 bytes
 // BTH + AtomicEth = 40 bytes
-// BTH + AETH + AtomicAckEth = 24 bytes
+// BTH + 28 + AtomicAckEth = 24 bytes
 
 // XRC headers:
 // BTH + XRCETH + IETH = 24 bytes
@@ -277,11 +278,11 @@ typedef TDiv#(CNP_PAYLOAD_WIDTH, 8) CNP_PAYLOAD_BYTE_WIDTH;
 // BTH + XRCETH + RETH + LETH = 48 bytes
 // BTH + XRCETH + RETH + ImmDT = 36 bytes
 // BTH + XRCETH + AtomicEth = 44 bytes
-// BTH + AETH + AtomicAckEth = 24 bytes
+// BTH + AETH + AtomicAckEth = 28 bytes
 
 // UD headers:
 // BTH + DETH + ImmDT = 24 bytes
-// BTH + AETH = 16 bytes
+// BTH + AETH = 20 bytes
 
 function Integer calcHeaderLenByTransTypeAndRdmaOpCode(
     TransType transType, RdmaOpCode rdmaOpCode
@@ -295,9 +296,9 @@ function Integer calcHeaderLenByTransTypeAndRdmaOpCode(
         fromInteger(valueOf(RC_SEND_ONLY))                     : valueOf(BTH_BYTE_WIDTH);
         fromInteger(valueOf(RC_SEND_ONLY_WITH_IMMEDIATE))      : valueOf(BTH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH);
         fromInteger(valueOf(RC_RDMA_WRITE_FIRST))              : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
-        fromInteger(valueOf(RC_RDMA_WRITE_MIDDLE))             : valueOf(BTH_BYTE_WIDTH);
-        fromInteger(valueOf(RC_RDMA_WRITE_LAST))               : valueOf(BTH_BYTE_WIDTH);
-        fromInteger(valueOf(RC_RDMA_WRITE_LAST_WITH_IMMEDIATE)): valueOf(BTH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH);
+        fromInteger(valueOf(RC_RDMA_WRITE_MIDDLE))             : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
+        fromInteger(valueOf(RC_RDMA_WRITE_LAST))               : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
+        fromInteger(valueOf(RC_RDMA_WRITE_LAST_WITH_IMMEDIATE)): valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH);
         fromInteger(valueOf(RC_RDMA_WRITE_ONLY))               : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
         fromInteger(valueOf(RC_RDMA_WRITE_ONLY_WITH_IMMEDIATE)): valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH);
         fromInteger(valueOf(RC_RDMA_READ_REQUEST))             : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);

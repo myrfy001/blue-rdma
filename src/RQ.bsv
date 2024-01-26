@@ -6,17 +6,11 @@ import RdmaUtils :: *;
 import MetaData :: *;
 import DataTypes :: *;
 import Headers :: *;
-
+import PAClib :: *;
+import PipeIn :: *;
 import PrimUtils :: *;
 
-typedef enum {
-    RDMA_REQ_ST_NORMAL,
-    RDMA_REQ_ST_INV_ACC_FLAG,
-    RDMA_REQ_ST_INV_OPCODE,
-    RDMA_REQ_ST_INV_MR_KEY,
-    RDMA_REQ_ST_INV_MR_REGION,
-    RDMA_REQ_ST_UNKNOWN
-} RdmaReqStatus deriving(Bits, Eq, FShow);
+import UserLogicTypes :: *;
 
 
 interface RQ;
@@ -24,12 +18,14 @@ interface RQ;
     interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
     interface Client#(PgtAddrTranslateReq, ADDR) pgtQueryClt;
     interface Client#(PayloadConReq, PayloadConResp) payloadXonsumerControlPortClt;
+    interface PipeOut#(C2hReportEntry) pktReportEntryPipeOut;
 endinterface
 
 
 (* synthesize *)
 module mkRQ(RQ ifc);
-    FIFOF#(RdmaPktMetaDataAndQPCtx) rdmaPktMetaDataInQ <- mkFIFOF;
+    FIFOF#(RdmaPktMetaDataAndQPCtx)     rdmaPktMetaDataInQ  <- mkFIFOF;
+    FIFOF#(C2hReportEntry)              pktReportEntryQ     <- mkFIFOF;
 
     BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkBypassClient;
     BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient;
@@ -229,8 +225,9 @@ module mkRQ(RQ ifc);
 
         let bth   = extractBTH(rdmaHeader.headerData);
         let reth  = extractPriRETH(rdmaHeader.headerData, bth.trans);
-        let rethSecondary  = extractSecRETH(rdmaHeader.headerData, bth.trans);
-
+        let rethSecondary  = extractSecRETH(rdmaHeader.headerData, bth.trans, bth.opcode);
+        let aeth  = extractAETH(rdmaHeader.headerData);
+        let immDT  = extractImmDt(rdmaHeader.headerData, bth.opcode, bth.trans);
 
 
         if (needIssueDMARequest) begin
@@ -239,26 +236,189 @@ module mkRQ(RQ ifc);
 
         C2hReportEntry rptEntry = ?;
 
-        rptEntry.trans = bth.trans;
-        rptEntry.opcode = bth.opcode;
-        rptEntry.solicited = bth.solicited;
-        rptEntry.dqpn = bth.dqpn;
-        rptEntry.psn = bth.psn;
+        rptEntry.reqStatus      = reqStatus;
 
-        rptEntry.va = reth.va;
-        rptEntry.rkey = reth.rkey;
-        rptEntry.dlen = reth.dlen;
+        rptEntry.trans          = bth.trans;
+        rptEntry.opcode         = bth.opcode;
+        rptEntry.solicited      = bth.solicited;
+        rptEntry.dqpn           = bth.dqpn;
+        rptEntry.psn            = bth.psn;
+
+        rptEntry.va             = reth.va;
+        rptEntry.rkey           = reth.rkey;
+        rptEntry.dlen           = reth.dlen;
+
+        rptEntry.secondaryVa    = rethSecondary.va;
+        rptEntry.secondaryRkey  = rethSecondary.rkey;
+
+        rptEntry.code           = aeth.code;
+        rptEntry.value          = aeth.value;
+        rptEntry.msn            = aeth.msn;
+        rptEntry.lastRetryPSN   = aeth.lastRetryPSN;
+
+        rptEntry.immDt          = immDT.data;
 
 
-
-
+        pktReportEntryQ.enq(rptEntry);
     endrule
 
 
 
-    interface pktMetaDataPipeIn = toPipeIn(rdmaPktMetaDataInQ);
-    interface mrTableQueryClt   = mrTableQueryCltInst.clt;
-    interface pgtQueryClt       = pgtQueryCltInst.clt;
+    interface pktMetaDataPipeIn             = toPipeIn(rdmaPktMetaDataInQ);
+    interface mrTableQueryClt               = mrTableQueryCltInst.clt;
+    interface pgtQueryClt                   = pgtQueryCltInst.clt;
     interface payloadXonsumerControlPortClt = payloadConsumerControlClt.clt;
-    
+    interface pktReportEntryPipeOut         = toPipeOut(pktReportEntryQ);
+endmodule
+
+
+interface RQReportEntryToRingbufDesc;
+    interface PipeIn#(C2hReportEntry) pktReportEntryPipeIn;
+    interface PipeOut#(RingbufRawDescriptor) ringbufDescPipeOut;
+endinterface
+
+typedef enum {
+    RQReportEntryToRingbufDescStatusOutputBasicInfo,
+    RQReportEntryToRingbufDescStatusOutputExtraInfo
+} RQReportEntryToRingbufDescStatus deriving(Bits, Eq);
+
+module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
+    FIFOF#(C2hReportEntry) pktReportEntryPipeInQ <- mkFIFOF;
+    FIFOF#(RingbufRawDescriptor) ringbufDescPipeOutQ <- mkFIFOF;
+
+    Reg#(RQReportEntryToRingbufDescStatus) state <- mkReg(RQReportEntryToRingbufDescStatusOutputBasicInfo);
+
+    rule outputDesc ;
+        let reportEntry = pktReportEntryPipeInQ.first;
+        RingbufRawDescriptor ent;
+
+        let bth = PktMeatReportQueueDescFragBTH {
+            trans:      reportEntry.trans,
+            opcode:     reportEntry.opcode,
+            dqpn:       reportEntry.dqpn,
+            psn:        reportEntry.psn,
+            solicited:  reportEntry.solicited,
+            ackReq:     reportEntry.ackReq,
+            reserved1:  0
+        };
+
+        let reth = PktMeatReportQueueDescFragRETH {
+            va: reportEntry.va,
+            rkey: reportEntry.rkey,
+            dlen: reportEntry.dlen
+        };
+
+        let secReth = PktMeatReportQueueDescFragSecondaryRETH {
+            secondaryRkey: reportEntry.secondaryRkey,
+            secondaryVa  : reportEntry.secondaryVa
+        };
+
+        let aeth = PktMeatReportQueueDescFragAETH {
+            code:           reportEntry.code,
+            value:          reportEntry.value,
+            msn:            reportEntry.msn,
+            lastRetryPSN:   reportEntry.lastRetryPSN
+        };
+
+        let immDt = PktMeatReportQueueDescFragImmDT {
+            data:           reportEntry.immDt
+        };
+
+        let opcode = {pack(reportEntry.trans), pack(reportEntry.opcode)};
+        if (state == RQReportEntryToRingbufDescStatusOutputBasicInfo) begin
+            case (opcode)
+                fromInteger(valueOf(RC_SEND_FIRST)),
+                fromInteger(valueOf(RC_SEND_MIDDLE)),
+                fromInteger(valueOf(RC_SEND_LAST)),
+                fromInteger(valueOf(RC_SEND_ONLY)):
+                begin
+                    ent = pack(PktMeatReportQueueDescBth{
+                        reqStatus   :   reportEntry.reqStatus,
+                        bth         :   bth,
+                        reserved1   :   unpack(0)
+                    });
+                    ringbufDescPipeOutQ.enq(pack(ent));
+                    pktReportEntryPipeInQ.deq;
+                end
+                fromInteger(valueOf(RC_RDMA_WRITE_FIRST)),
+                fromInteger(valueOf(RC_RDMA_WRITE_MIDDLE)),
+                fromInteger(valueOf(RC_RDMA_WRITE_LAST)),
+                fromInteger(valueOf(RC_RDMA_WRITE_LAST_WITH_IMMEDIATE)),
+                fromInteger(valueOf(RC_RDMA_WRITE_ONLY)),
+                fromInteger(valueOf(RC_RDMA_WRITE_ONLY_WITH_IMMEDIATE)),
+                fromInteger(valueOf(RC_RDMA_READ_REQUEST)),
+                fromInteger(valueOf(RC_RDMA_READ_RESPONSE_FIRST)),
+                fromInteger(valueOf(RC_RDMA_READ_RESPONSE_MIDDLE)),
+                fromInteger(valueOf(RC_RDMA_READ_RESPONSE_LAST)),
+                fromInteger(valueOf(RC_RDMA_READ_RESPONSE_ONLY)),
+                fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_FIRST)),
+                fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_MIDDLE)),
+                fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_LAST)),
+                fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_ONLY)):
+                begin
+                    ent = pack(PktMeatReportQueueDescBthRethImmDT{
+                        reqStatus   :   reportEntry.reqStatus,
+                        bth         :   bth,
+                        reth        :   reth,
+                        immDt       :   immDt,
+                        reserved1   :   unpack(0)
+                    });
+                    if (opcode == fromInteger(valueOf(RC_RDMA_READ_REQUEST))) begin
+                        state <= RQReportEntryToRingbufDescStatusOutputExtraInfo;
+                    end
+                    else begin
+                        pktReportEntryPipeInQ.deq;
+                    end
+                    ringbufDescPipeOutQ.enq(pack(ent));
+                end
+                fromInteger(valueOf(RC_ACKNOWLEDGE)),
+                fromInteger(valueOf(RC_ATOMIC_ACKNOWLEDGE)),
+                fromInteger(valueOf(XRC_ACKNOWLEDGE)),
+                fromInteger(valueOf(XRC_ATOMIC_ACKNOWLEDGE)):
+                begin
+                    ent = pack(PktMeatReportQueueDescBthAeth{
+                        reqStatus   :   reportEntry.reqStatus,
+                        bth         :   bth,
+                        aeth        :   aeth,
+                        reserved1   :   unpack(0)
+                    });
+                    pktReportEntryPipeInQ.deq;
+                    ringbufDescPipeOutQ.enq(pack(ent));
+                end
+
+                default: begin
+                    pktReportEntryPipeInQ.deq;
+                    $display("Warn: Received Not Supported Packet, Will not report to software.");
+                end
+            endcase
+        end 
+        else if (state == RQReportEntryToRingbufDescStatusOutputExtraInfo) begin
+            case (reportEntry.opcode)
+                RDMA_READ_REQUEST: begin
+                    ent = pack(PktMeatReportQueueDescSecondaryReth{
+                        secReth     :   secReth,
+                        reserved1   :   unpack(0)
+                    });
+                    
+                    state <= RQReportEntryToRingbufDescStatusOutputBasicInfo;
+                    ringbufDescPipeOutQ.enq(pack(ent));
+                    pktReportEntryPipeInQ.deq;
+                end
+                default: begin
+                    $display("Warn: Received Not Supported Packet, Will not report to software.");
+                end
+            endcase
+        end
+
+        
+    endrule
+
+
+
+
+
+
+    interface pktReportEntryPipeIn  = toPipeIn(pktReportEntryPipeInQ);
+    interface ringbufDescPipeOut    = toPipeOut(ringbufDescPipeOutQ);
+
 endmodule

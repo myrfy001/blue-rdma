@@ -15,12 +15,19 @@ import PrimUtils :: *;
 import RdmaUtils :: *;
 
 
+typedef struct {
+    PageNumber4k rbStartPN;
+    RingbufPointer#(sz_rbp) head;
+    RingbufPointer#(sz_rbp) tail;
+    RingbufPointer#(sz_rbp) shadow;
+} RingbufCtxEntry#(numeric type sz_rbp) deriving(Bits, FShow);
 
-function Bool isRingbufNotEmpty(Fix4kBRingBufPointer head, Fix4kBRingBufPointer tail);
+
+function Bool isRingbufNotEmpty(RingbufPointer#(sz_rbp) head, RingbufPointer#(sz_rbp) tail);
     return !(head == tail);
 endfunction
 
-function Bool isRingbufNotFull(Fix4kBRingBufPointer head, Fix4kBRingBufPointer tail);
+function Bool isRingbufNotFull(RingbufPointer#(sz_rbp) head, RingbufPointer#(sz_rbp) tail);
     return !((head.idx == tail.idx) && (head.guard != tail.guard));
 endfunction
 

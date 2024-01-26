@@ -196,7 +196,7 @@ typedef Server#(ReqMR, RespMR) SrvPortMR;
 
 //     // function IndexMR lkey2IndexMR(LKEY lkey) = unpack(truncateLSB(lkey));
 //     // function IndexMR rkey2IndexMR(RKEY rkey) = unpack(truncateLSB(rkey));
-//     function IndexMR key2IndexMR(Bit#(KEY_WIDTH) key) = unpack(truncateLSB(key));
+    function IndexMR key2IndexMR(Bit#(KEY_WIDTH) key) = unpack(truncateLSB(key));
 
 //     interface srvPort = interface SrvPortMR;
 //         interface request = interface Put#(ReqMR);

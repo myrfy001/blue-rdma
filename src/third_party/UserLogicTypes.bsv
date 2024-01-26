@@ -1,4 +1,4 @@
-
+import Reserved :: *;
 import Settings :: *;
 import DataTypes :: *;
 import Headers :: *;
@@ -131,8 +131,8 @@ typedef 1 RQ_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
 typedef 1 CQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
 
 typedef enum {
-    CmdQueueOpcodeUpdateFirstStagePGT = 'h0,
-    CmdQueueOpcodeUpdateSecondStagePGT = 'h1,
+    CmdQueueOpcodeUpdateMrTable = 'h0,
+    CmdQueueOpcodeUpdatePGT = 'h1,
     CmdQueueOpcodePdManagement = 'h2,
     CmdQueueOpcodeMrManagement = 'h3,
     CmdQueueOpcodeQpManagement = 'h4
@@ -150,13 +150,15 @@ typedef struct {
 } CmdQueueDescCommonHead deriving(Bits, FShow);
 
 typedef struct {
-    Bit#(32)                reserved1;
-    Bit#(32)                index;
-    Bit#(32)                pointedToSecondStageCount;
-    Bit#(32)                pointedToSecondStageIndex;
-    Bit#(64)                baseVA;
-    CmdQueueDescCommonHead  commonHeader;
-} CmdQueueReqDescUpdateFirstStagePGT deriving(Bits, FShow);
+    Bit#(7)                  reserved1;
+    Bit#(17)                 pgtOffset;
+    Bit#(8)                  accFlags;
+    Bit#(32)                 pdHandler;
+    Bit#(32)                 mrKey;
+    Bit#(32)                 mrLength;
+    Bit#(64)                 mrBaseVA;
+    CmdQueueDescCommonHead   commonHeader;
+} CmdQueueReqDescUpdateMrTable deriving(Bits, FShow);
 
 typedef struct {
     Bit#(64)                reserved1;
@@ -164,7 +166,7 @@ typedef struct {
     Bit#(32)                startIndex;
     Bit#(64)                dmaAddr;
     CmdQueueDescCommonHead  commonHeader;
-} CmdQueueReqDescUpdateSecondStagePGT deriving(Bits, FShow);
+} CmdQueueReqDescUpdatePGT deriving(Bits, FShow);
 
 typedef struct {
     Bit#(64)                reserved1;
@@ -336,3 +338,63 @@ typedef struct {
     WorkCompOpCode              opcode;
     CompQueueDescCommonHead     commonHeader;
 } CompQueueReqDesc deriving(Bits, FShow);
+
+
+typedef struct {
+    Bit#(6)                 reserved1;    // 6
+    Bool                    ackReq;       // 1
+    Bool                    solicited;    // 1
+    PSN                     psn;          // 24
+    QPN                     dqpn;         // 24
+    RdmaOpCode              opcode;       // 5
+    TransType               trans;        // 3
+} PktMeatReportQueueDescFragBTH deriving(Bits, FShow);
+
+typedef struct {
+    Length                  dlen;         // 32
+    RKEY                    rkey;         // 32
+    ADDR                    va;           // 64
+} PktMeatReportQueueDescFragRETH deriving(Bits, FShow);
+
+typedef struct {
+    AethCode                code;         // 2
+    AethValue               value;        // 5
+    MSN                     msn;          // 24
+    PSN                     lastRetryPSN; // 24
+} PktMeatReportQueueDescFragAETH deriving(Bits, FShow);
+
+typedef struct {
+    RKEY                            secondaryRkey;   // 32
+    ADDR                            secondaryVa;     // 64 
+} PktMeatReportQueueDescFragSecondaryRETH deriving(Bits, FShow);
+
+typedef struct {
+    IMM                             data;           // 32
+} PktMeatReportQueueDescFragImmDT deriving(Bits, FShow);
+
+typedef struct {
+    ReservedZero#(184)              reserved1;      // 184
+    PktMeatReportQueueDescFragBTH   bth;            // 64
+    RdmaReqStatus                   reqStatus;      // 8 
+} PktMeatReportQueueDescBth deriving(Bits, FShow);
+
+typedef struct {
+    ReservedZero#(24)               reserved1;      // 24
+    PktMeatReportQueueDescFragImmDT immDt;          // 32
+    PktMeatReportQueueDescFragRETH  reth;           // 128
+    PktMeatReportQueueDescFragBTH   bth;            // 64
+    RdmaReqStatus                   reqStatus;      // 8 
+} PktMeatReportQueueDescBthRethImmDT deriving(Bits, FShow);
+
+typedef struct {
+    ReservedZero#(129)              reserved1;      // 129
+    PktMeatReportQueueDescFragAETH  aeth;           // 55
+    PktMeatReportQueueDescFragBTH   bth;            // 64
+    RdmaReqStatus                   reqStatus;      // 8 
+} PktMeatReportQueueDescBthAeth deriving(Bits, FShow);
+
+typedef struct {
+    ReservedZero#(160)                          reserved1;       // 160
+    PktMeatReportQueueDescFragSecondaryRETH     secReth;         // 96
+} PktMeatReportQueueDescSecondaryReth deriving(Bits, FShow);
+

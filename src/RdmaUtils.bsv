@@ -1103,32 +1103,18 @@ function Bool isAlignedAtomicAddr(ADDR atomicAddr);
 endfunction
 
 function ImmDt extractImmDt(HeaderData headerData, RdmaOpCode opcode, TransType transType);
-    case (opcode)
-        RDMA_WRITE_ONLY_WITH_IMMEDIATE: begin
-            return case (transType)
-                TRANS_TYPE_XRC: unpack(headerData[
-                    valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(XRCETH_WIDTH) - valueOf(RETH_WIDTH) -1 :
-                    valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(XRCETH_WIDTH) - valueOf(RETH_WIDTH) - valueOf(IMM_DT_WIDTH)
-                ]);
-                default: unpack(headerData[
-                    valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(RETH_WIDTH) -1 :
-                    valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(RETH_WIDTH) - valueOf(IMM_DT_WIDTH)
-                ]);
-            endcase;
-        end
-        default: begin
-            return case (transType)
-                TRANS_TYPE_XRC: unpack(headerData[
-                    valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(XRCETH_WIDTH) -1 :
-                    valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(XRCETH_WIDTH) - valueOf(IMM_DT_WIDTH)
-                ]);
-                default: unpack(headerData[
-                    valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) -1 :
-                    valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(IMM_DT_WIDTH)
-                ]);
-            endcase;
-        end
-    endcase
+
+    return case (transType)
+        TRANS_TYPE_XRC: unpack(headerData[
+            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(XRCETH_WIDTH) - valueOf(RETH_WIDTH) -1 :
+            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(XRCETH_WIDTH) - valueOf(RETH_WIDTH) - valueOf(IMM_DT_WIDTH)
+        ]);
+        default: unpack(headerData[
+            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(RETH_WIDTH) -1 :
+            valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(RETH_WIDTH) - valueOf(IMM_DT_WIDTH)
+        ]);
+    endcase;
+
 endfunction
 
 function IETH extractIETH(HeaderData headerData, TransType transType);
@@ -1672,11 +1658,13 @@ endmodule
 */
 
 // suppose LKey == RKey
-function IndexMR wr2IndexMR(WorkReq wr) = lkey2IndexMR(wr.lkey);
-function IndexMR lkey2IndexMR(LKEY lkey) = unpack(truncateLSB(lkey));
-function IndexMR rkey2IndexMR(RKEY rkey) = unpack(truncateLSB(rkey));
-function RKEY    rkeyFromKeyAndIndexPart(IndexMR idx, KeyPartMR key) = {pack(idx), key};
-function LKEY    lkeyFromKeyAndIndexPart(IndexMR idx, KeyPartMR key) = {pack(idx), key};
+function IndexMR   wr2IndexMR(WorkReq wr)    = lkey2IndexMR(wr.lkey);
+function IndexMR   lkey2IndexMR(LKEY lkey)   = unpack(truncateLSB(lkey));
+function IndexMR   rkey2IndexMR(RKEY rkey)   = unpack(truncateLSB(rkey));
+function KeyPartMR lkey2KeyPartMR(LKEY lkey) = unpack(truncate(lkey));
+function KeyPartMR rkey2KeyPartMR(RKEY rkey) = unpack(truncate(rkey));
+function RKEY      rkeyFromKeyAndIndexPart(IndexMR idx, KeyPartMR key) = {pack(idx), key};
+function LKEY      lkeyFromKeyAndIndexPart(IndexMR idx, KeyPartMR key) = {pack(idx), key};
 
 
 

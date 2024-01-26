@@ -24,7 +24,7 @@ module mkQPContext(QPContext);
 
     BRAM_Configure cfg = defaultValue;
     // Both read address and read output are registered
-    cfg.latency = 1;
+    cfg.latency = 2;
     // Allow full pipeline behavior
     cfg.outFIFODepth = 4;
     BRAM2Port#(IndexQP, Maybe#(QPCEntryCommon)) qpcEntryCommonStorage <- mkBRAM2Server(cfg);

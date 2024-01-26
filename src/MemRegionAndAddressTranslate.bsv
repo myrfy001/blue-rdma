@@ -5,12 +5,17 @@ import Connectable :: *;
 import FIFOF :: *;
 import PAClib :: *;
 import Vector :: *;
+import Cntrs :: * ;
 
 import DataTypes :: *;
 import Headers :: *;
 import PrimUtils :: *;
 import Settings :: *;
 import RdmaUtils :: *;
+import UserLogicTypes :: *;
+import UserLogicUtils :: *;
+import MetaData :: *;
+
 
 
 typedef Server#(addrType, dataType) BramRead#(type addrType, type dataType);
@@ -160,106 +165,138 @@ endmodule
 
 
 
-// interface PgtManager;
-//     interface Server#(RingbufRawDescriptor, Bool) pgtModifySrv;
-//     interface UserLogicDmaReadClt pgtDmaReadClt;
-// endinterface
+interface MrAndPgtManager;
+    interface Server#(RingbufRawDescriptor, Bool) mrAndPgtModifyDescSrv;
+    interface UserLogicDmaReadClt pgtDmaReadClt;
+    interface Client#(MrTableModifyReq, MrTableModifyResp) mrModifyClt;
+    interface Client#(PgtModifyReq, PgtModifyResp) pgtModifyClt;
+endinterface
 
 
-// typedef enum {
-//     PgtManagerFsmStateIdle,
-//     PgtManagerFsmStateHandleFirstStageUpdate,
-//     PgtManagerFsmStateHandleSecondStageUpdate
-// } PgtManagerFsmState deriving(Bits, Eq);
+typedef enum {
+    MrAndPgtManagerFsmStateIdle,
+    MrAndPgtManagerFsmStateWaitMRModifyResponse,
+    MrAndPgtManagerFsmStateHandlePGTUpdate,
+    MrAndPgtManagerFsmStateWaitPGTUpdateLastResp
+} MrAndPgtManagerFsmState deriving(Bits, Eq);
 
 
-// module mkPgtManager#(TLB tlb)(PgtManager);
-//     FIFOF#(RingbufRawDescriptor) reqQ <- mkFIFOF;
-//     FIFOF#(Bool) respQ <- mkFIFOF;
+(* synthesize *)
+module mkMrAndPgtManager(MrAndPgtManager);
+    FIFOF#(RingbufRawDescriptor) reqQ <- mkFIFOF;
+    FIFOF#(Bool) respQ <- mkFIFOF;
 
-//     FIFOF#(UserLogicDmaH2cReq) dmaReadReqQ <- mkFIFOF;
-//     FIFOF#(UserLogicDmaH2cResp) dmaReadRespQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cReq) dmaReadReqQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cResp) dmaReadRespQ <- mkFIFOF;
 
-
-
-//     Reg#(PgtManagerFsmState) state <- mkReg(PgtManagerFsmStateIdle);
-
-//     Reg#(DataStream) curBeatOfDataReg <- mkReg(unpack(0));
-//     Reg#(PgtSecondStageIndex) curSecondStagePgtWriteIdxReg <- mkRegU;
+    BypassClient#(MrTableModifyReq, MrTableModifyResp) mrModifyCltInst <- mkBypassClient;
+    BypassClient#(PgtModifyReq, PgtModifyResp) pgtModifyCltInst <- mkBypassClient;
     
-//     Integer bytesPerPgtSecondStageEntryRequest = valueOf(PGT_SECOND_STAGE_ENTRY_REQUEST_SIZE_PADDED) / valueOf(BYTE_WIDTH);
+
+    Reg#(MrAndPgtManagerFsmState) state <- mkReg(MrAndPgtManagerFsmStateIdle);
+
+    Reg#(DataStream) curBeatOfDataReg <- mkReg(unpack(0));
+    Reg#(PTEIndex) curSecondStagePgtWriteIdxReg <- mkRegU;
+    
+    Integer bytesPerPgtSecondStageEntryRequest = valueOf(PGT_SECOND_STAGE_ENTRY_REQUEST_SIZE_PADDED) / valueOf(BYTE_WIDTH);
+
+    // we set max inflight pgt update request is 2^3 = 8;
+    Count#(Bit#(3)) pgtUpdateRespCounter <- mkCount(0);
+
+    rule updatePgtStateIdle if (state == MrAndPgtManagerFsmStateIdle);
+        let descRaw = reqQ.first;
+        reqQ.deq;
+        // $display("PGT get modify request", fshow(descRaw));
+        let opcode = getOpcodeFromRingbufDescriptor(descRaw);
+
+        case (unpack(truncate(opcode)))
+            CmdQueueOpcodeUpdateMrTable: begin
+                state <= MrAndPgtManagerFsmStateWaitMRModifyResponse;
+                CmdQueueReqDescUpdateMrTable desc = unpack(descRaw);
+                let modifyReq = MrTableModifyReq {
+                    idx: key2IndexMR(desc.mrKey),
+                    entry: isZeroR(desc.mrLength) ?
+                            tagged Invalid : 
+                            tagged Valid MemRegionTableEntry {
+                                pgtOffset: desc.pgtOffset,
+                                baseVA: desc.mrBaseVA,
+                                len: desc.mrLength,
+                                accFlags: unpack(desc.accFlags),
+                                pdHandler: desc.pdHandler,
+                                keyPart: lkey2KeyPartMR(desc.mrKey)
+                            }
+                };
+                mrModifyCltInst.putReq(modifyReq);
+                // $display("addr translate modify first stage finished.");
+            end
+            CmdQueueOpcodeUpdatePGT: begin
+                CmdQueueReqDescUpdatePGT desc = unpack(descRaw);
+                dmaReadReqQ.enq(UserLogicDmaH2cReq{
+                    addr: desc.dmaAddr,
+                    len: truncate(desc.dmaReadLength)
+                });
+                curSecondStagePgtWriteIdxReg <= truncate(desc.startIndex);
+                state <= MrAndPgtManagerFsmStateHandlePGTUpdate;
+                // $display("addr translate modify second stage start.");
+            end
+        endcase
+    endrule
+
+    rule handleMrModifyResp if (state == MrAndPgtManagerFsmStateWaitMRModifyResponse);
+        let _ <- mrModifyCltInst.getResp;
+        respQ.enq(True);
+        state <= MrAndPgtManagerFsmStateIdle;
+    endrule
 
 
-//     rule updatePgtStateIdle if (state == PgtManagerFsmStateIdle);
-//         let descRaw = reqQ.first;
-//         reqQ.deq;
-//         // $display("PGT get modify request", fshow(descRaw));
-//         let opcode = getOpcodeFromRingbufDescriptor(descRaw);
+    rule updatePgtStateHandlePGTUpdate if (state == MrAndPgtManagerFsmStateHandlePGTUpdate);
+        // since this is the control path, it's not fully pipelined to make it simple.
+        if (curBeatOfDataReg.byteEn[0] == 0) begin
+            if (curBeatOfDataReg.isLast) begin
+                state <= MrAndPgtManagerFsmStateWaitPGTUpdateLastResp;
+                curBeatOfDataReg <= unpack(0);
+                // $display("addr translate modify second stage finished.");
+            end 
+            else begin
+                curBeatOfDataReg <= dmaReadRespQ.first.dataStream;
+                dmaReadRespQ.deq;
+            end
+        end 
+        else begin 
+            let modifyReq = PgtModifyReq{
+                idx: curSecondStagePgtWriteIdxReg,
+                pte: PageTableEntry {
+                    pn: truncate(curBeatOfDataReg.data >> valueOf(PAGE_OFFSET_WIDTH))
+                }
+            };
+            pgtModifyCltInst.putReq(modifyReq);
+            pgtUpdateRespCounter.incr(1);
+            // $display("addr translate modify second stage:", fshow(modifyReq));
+            curSecondStagePgtWriteIdxReg <= curSecondStagePgtWriteIdxReg + 1;
+            let t = curBeatOfDataReg;
+            t.byteEn = t.byteEn >> bytesPerPgtSecondStageEntryRequest;
+            t.data = t.data >> (bytesPerPgtSecondStageEntryRequest * valueOf(BYTE_WIDTH));
+            curBeatOfDataReg <= t;
+        end
+    endrule
 
-//         case (unpack(truncate(opcode)))
-//             CmdQueueOpcodeUpdateFirstStagePGT: begin
-//                 state <= PgtManagerFsmStateIdle;
-//                 CmdQueueReqDescUpdateFirstStagePGT desc = unpack(descRaw);
-//                 let modifyReq = PgtModifyFirstStageReq {
-//                     asid: truncate(desc.index),
-//                     content: PgtFirstStagePayload{
-//                         secondStageOffset: truncate(desc.pointedToSecondStageIndex),
-//                         secondStageEntryCnt: truncate(desc.pointedToSecondStageCount),
-//                         baseVA: desc.baseVA
-//                     }
-//                 };
-//                 tlb.modify(tagged Req4FirstStage modifyReq);
-//                 respQ.enq(True);
-//                 // $display("addr translate modify first stage finished.");
-//             end
-//             CmdQueueOpcodeUpdateSecondStagePGT: begin
-//                 CmdQueueReqDescUpdateSecondStagePGT desc = unpack(descRaw);
-//                 dmaReadReqQ.enq(UserLogicDmaH2cReq{
-//                     addr: desc.dmaAddr,
-//                     len: truncate(desc.dmaReadLength)
-//                 });
-//                 curSecondStagePgtWriteIdxReg <= truncate(desc.startIndex);
-//                 state <= PgtManagerFsmStateHandleSecondStageUpdate;
-//                 // $display("addr translate modify second stage start.");
-//             end
-//         endcase
-//     endrule
+    rule handlePgtModifyResp;
+        let _ <- pgtModifyCltInst.getResp;
+        pgtUpdateRespCounter.decr(1);
+    endrule
 
+    rule handlePgtModifyLastResp if (state == MrAndPgtManagerFsmStateWaitPGTUpdateLastResp);
+        if (pgtUpdateRespCounter == 0) begin
+            respQ.enq(True);
+            state <= MrAndPgtManagerFsmStateIdle;
+        end
+    endrule
 
-//     rule updatePgtStateHandleSecondStageUpdate if (state == PgtManagerFsmStateHandleSecondStageUpdate);
-//         // since this is the control path, it's not fully pipelined to make it simple.
-//         if (curBeatOfDataReg.byteEn[0] == 0) begin
-//             if (curBeatOfDataReg.isLast) begin
-//                 state <= PgtManagerFsmStateIdle;
-//                 curBeatOfDataReg <= unpack(0);
-//                 respQ.enq(True);
-//                 // $display("addr translate modify second stage finished.");
-//             end 
-//             else begin
-//                 curBeatOfDataReg <= dmaReadRespQ.first.dataStream;
-//                 dmaReadRespQ.deq;
-//             end
-//         end 
-//         else begin 
-//             let modifyReq = PgtModifySecondStageReq{
-//                 index: curSecondStagePgtWriteIdxReg,
-//                 content: PgtSecondStagePayload {
-//                     paPart: truncate(curBeatOfDataReg.data >> valueOf(PAGE_OFFSET_WIDTH))
-//                 }
-//             };
-//             tlb.modify(tagged Req4SecondStage modifyReq);
-//             // $display("addr translate modify second stage:", fshow(modifyReq));
-//             curSecondStagePgtWriteIdxReg <= curSecondStagePgtWriteIdxReg + 1;
-//             let t = curBeatOfDataReg;
-//             t.byteEn = t.byteEn >> bytesPerPgtSecondStageEntryRequest;
-//             t.data = t.data >> (bytesPerPgtSecondStageEntryRequest * valueOf(BYTE_WIDTH));
-//             curBeatOfDataReg <= t;
-//         end
-//     endrule
-
-//     interface pgtModifySrv = toGPServer(reqQ, respQ);
-//     interface pgtDmaReadClt = toGPClient(dmaReadReqQ, dmaReadRespQ);
-// endmodule
+    interface mrAndPgtModifyDescSrv = toGPServer(reqQ, respQ);
+    interface pgtDmaReadClt = toGPClient(dmaReadReqQ, dmaReadRespQ);
+    interface mrModifyClt = mrModifyCltInst.clt;
+    interface pgtModifyClt = pgtModifyCltInst.clt;
+endmodule
 
 
 // interface DmaReqAddrTranslator;

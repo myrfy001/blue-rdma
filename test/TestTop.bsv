@@ -87,33 +87,33 @@ module mkTestTop(Empty);
                 let _ <- topA.qpcWriteCommonSrv.response.get;
             endaction
 
-            // Insert into MR table
-            topA.mrModifySrv.request.put(MrTableModifyReq{
-                idx: `TEST_MR_IDX_PART,
-                entry: tagged Valid MemRegionTableEntry{
-                    pgtOffset: `TEST_MR_FIRST_PGT_IDX,
-                    baseVA: `TEST_MR_START_VA,
-                    len: `TEST_MR_LENGTH,
-                    accFlags: enum2Flag(IBV_ACCESS_REMOTE_WRITE),
-                    pdHandler: `TEST_PD_HANDLER,
-                    keyPart: `TEST_MR_KEY_PART
-                }
-            });
-            action
-                let _ <- topA.mrModifySrv.response.get;
-            endaction
+            // // Insert into MR table
+            // topA.mrModifySrv.request.put(MrTableModifyReq{
+            //     idx: `TEST_MR_IDX_PART,
+            //     entry: tagged Valid MemRegionTableEntry{
+            //         pgtOffset: `TEST_MR_FIRST_PGT_IDX,
+            //         baseVA: `TEST_MR_START_VA,
+            //         len: `TEST_MR_LENGTH,
+            //         accFlags: enum2Flag(IBV_ACCESS_REMOTE_WRITE),
+            //         pdHandler: `TEST_PD_HANDLER,
+            //         keyPart: `TEST_MR_KEY_PART
+            //     }
+            // });
+            // action
+            //     let _ <- topA.mrModifySrv.response.get;
+            // endaction
 
 
-            // Insert into PGT
-            topA.pgtModifySrv.request.put(PgtModifyReq{
-                idx: `TEST_MR_FIRST_PGT_IDX,
-                pte: PageTableEntry{
-                    pn: `TEST_PGT_FIRST_ENTRY_PN
-                }
-            });
-            action
-                let _ <- topA.pgtModifySrv.response.get;
-            endaction
+            // // Insert into PGT
+            // topA.mrAndPgtModifyDescSrv.request.put(PgtModifyReq{
+            //     idx: `TEST_MR_FIRST_PGT_IDX,
+            //     pte: PageTableEntry{
+            //         pn: `TEST_PGT_FIRST_ENTRY_PN
+            //     }
+            // });
+            // action
+            //     let _ <- topA.mrAndPgtModifyDescSrv.response.get;
+            // endaction
 
             action
                 MockHeaderStream ms = unpack(0);
