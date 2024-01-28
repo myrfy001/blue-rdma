@@ -198,7 +198,7 @@ typedef Server#(PermCheckReq, Bool) PermCheckSrv;
 typedef Client#(PermCheckReq, Bool) PermCheckClt;
 
 interface RdmaPktMetaDataAndQpcAndPayloadPipeOut;
-    interface PipeOut#(RdmaPktMetaDataAndQPCtx) pktMetaData;
+    interface PipeOut#(RdmaPktMetaDataAndQPC) pktMetaData;
     interface DataStreamPipeOut payload;
 endinterface
 
@@ -790,12 +790,12 @@ typedef 8 QPC_QUERY_RESP_MAX_DELAY;
 // split context data into common, sq only and rq only. A big BRAM is not friendly to P&R 
 typedef struct {
     QPN  qpn;
-} QPCReadReqCommon deriving(Bits, Eq, FShow);
+} ReadReqCommonQPC deriving(Bits, Eq, FShow);
 
 typedef struct {
     QPN  qpn;
-    Maybe#(QPCEntryCommon)  ent;
-} QPCWriteReqCommon deriving(Bits, Eq, FShow);
+    Maybe#(EntryCommonQPC)  ent;
+} WriteReqCommonQPC deriving(Bits, Eq, FShow);
 
 typedef struct {
     Bool      isValid;
@@ -805,26 +805,26 @@ typedef struct {
     TypeQP    qpType;
     FlagsType#(MemAccessTypeFlag) rqAccessFlags;
     PMTU      pmtu;
-} QPCEntryCommon deriving(Bits, Eq, FShow);
+} EntryCommonQPC deriving(Bits, Eq, FShow);
 
 
 typedef struct {
     RdmaPktMetaData metadata;
-    QPCEntryCommon  qpc;
-} RdmaPktMetaDataAndQPCtx deriving(Bits);
+    EntryCommonQPC  qpc;
+} RdmaPktMetaDataAndQPC deriving(Bits);
 
 // typedef struct {
 //     QPN  qpn;
-// } QPCReadReqRQ;
+// } ReadReqRqQPC;
 
 // typedef struct {
 //     QPN  qpn;
-//     QPCEntryRQ ent;
-// } QPCWriteReqRQ;
+//     EntryRqQPC ent;
+// } WriteReqRqQPC;
 
 // typedef struct {
 
-// } QPCEntryRQ;
+// } EntryRqQpc;
 
 
 typedef struct {

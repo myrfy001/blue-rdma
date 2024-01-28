@@ -170,17 +170,27 @@ typedef struct {
 typedef SizeOf#(BTH)        BTH_WIDTH;
 typedef TDiv#(BTH_WIDTH, 8) BTH_BYTE_WIDTH;
 
-// 8 bytes
+// 4 bytes
 typedef struct {
-    ReservedZero#(9) rsvd;
+    ReservedZero#(1) rsvd1;
     AethCode code;
     AethValue value;
     MSN msn;
-    PSN lastRetryPSN;
 } AETH deriving(Bits, Bounded, FShow);
 
 typedef SizeOf#(AETH)        AETH_WIDTH;
 typedef TDiv#(AETH_WIDTH, 8) AETH_BYTE_WIDTH;
+
+// 4 bytes
+typedef struct {
+    PSN lastRetryPSN;
+    ReservedZero#(8) rsvd1;
+} NRETH deriving(Bits, Bounded, FShow);   // NRETH = Nak Retry ETH
+
+
+
+typedef SizeOf#(NRETH)        NRETH_WIDTH;
+typedef TDiv#(NRETH_WIDTH, 8) NRETH_BYTE_WIDTH;
 
 // 16 bytes
 typedef struct {
@@ -312,8 +322,8 @@ function Integer calcHeaderLenByTransTypeAndRdmaOpCode(
         fromInteger(valueOf(RC_RDMA_READ_RESPONSE_MIDDLE)), fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_MIDDLE)): valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
         fromInteger(valueOf(RC_RDMA_READ_RESPONSE_LAST)),   fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_LAST))  : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
         fromInteger(valueOf(RC_RDMA_READ_RESPONSE_ONLY)),   fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_ONLY))  : valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH);
-        fromInteger(valueOf(RC_ACKNOWLEDGE)),               fromInteger(valueOf(XRC_ACKNOWLEDGE))              : valueOf(BTH_BYTE_WIDTH) + valueOf(AETH_BYTE_WIDTH);
-        fromInteger(valueOf(RC_ATOMIC_ACKNOWLEDGE)),        fromInteger(valueOf(XRC_ATOMIC_ACKNOWLEDGE))       : valueOf(BTH_BYTE_WIDTH) + valueOf(AETH_BYTE_WIDTH) + valueOf(ATOMIC_ACK_ETH_BYTE_WIDTH);
+        fromInteger(valueOf(RC_ACKNOWLEDGE)),               fromInteger(valueOf(XRC_ACKNOWLEDGE))              : valueOf(BTH_BYTE_WIDTH) + valueOf(AETH_BYTE_WIDTH) + valueOf(NRETH_BYTE_WIDTH);
+        fromInteger(valueOf(RC_ATOMIC_ACKNOWLEDGE)),        fromInteger(valueOf(XRC_ATOMIC_ACKNOWLEDGE))       : valueOf(BTH_BYTE_WIDTH) + valueOf(AETH_BYTE_WIDTH) + valueOf(NRETH_BYTE_WIDTH) + valueOf(ATOMIC_ACK_ETH_BYTE_WIDTH);
 
         // // XRC requests
         // fromInteger(valueOf(XRC_SEND_FIRST))                    : valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH);

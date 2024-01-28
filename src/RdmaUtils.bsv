@@ -33,8 +33,8 @@ module mkBypassClient(BypassClient#(t_req, t_resp)) provisos (
 );
     FIFOF#(t_req) reqQ <- mkFIFOF;
     // FIFOF#(t_req) reqQ <- mkBypassFIFOF;
-    // FIFOF#(t_resp) respQ <- mkFIFOF;
-    FIFOF#(t_resp) respQ <- mkBypassFIFOF;
+    FIFOF#(t_resp) respQ <- mkFIFOF;
+    // FIFOF#(t_resp) respQ <- mkBypassFIFOF;
 
     interface Client clt;
         interface Get request;
@@ -79,8 +79,8 @@ module mkBypassServer(BypassServer#(t_req, t_resp)) provisos (
     Bits#(t_req, sz_req),
     Bits#(t_resp, sz_resp)
 );
-    // FIFOF#(t_req) reqQ <- mkFIFOF;
-    FIFOF#(t_req) reqQ <- mkBypassFIFOF;
+    FIFOF#(t_req) reqQ <- mkFIFOF;
+    // FIFOF#(t_req) reqQ <- mkBypassFIFOF;
     // FIFOF#(t_resp) respQ <- mkBypassFIFOF;
     FIFOF#(t_resp) respQ <- mkFIFOF;
 
@@ -1042,6 +1042,17 @@ function AETH extractAETH(HeaderData headerData);
     ]);
     return aeth;
 endfunction
+
+
+function NRETH extractNRETH(HeaderData headerData);
+    let nreth = unpack(headerData[
+        valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) -1 :
+        valueOf(HEADER_MAX_DATA_WIDTH) - valueOf(BTH_WIDTH) - valueOf(AETH_WIDTH)
+    ]);
+    return nreth;
+endfunction
+
+
 
 function AtomicAckEth extractAtomicAckEth(HeaderData headerData);
     let atomicAckEth = unpack(headerData[

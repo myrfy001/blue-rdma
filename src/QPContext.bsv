@@ -13,21 +13,21 @@ import PrimUtils :: *;
 
 
 interface QPContext;
-    interface Server#(QPCReadReqCommon, Maybe#(QPCEntryCommon)) readCommonSrv;
-    interface Server#(QPCWriteReqCommon, Bool) writeCommonSrv;
+    interface Server#(ReadReqCommonQPC, Maybe#(EntryCommonQPC)) readCommonSrv;
+    interface Server#(WriteReqCommonQPC, Bool) writeCommonSrv;
 endinterface
 
 (* synthesize *)
 module mkQPContext(QPContext);
-    BypassServer#(QPCReadReqCommon, Maybe#(QPCEntryCommon)) readCommonSrvInst <- mkBypassServer;
-    BypassServer#(QPCWriteReqCommon, Bool) writeCommonSrvInst <- mkBypassServer;
+    BypassServer#(ReadReqCommonQPC, Maybe#(EntryCommonQPC)) readCommonSrvInst <- mkBypassServer;
+    BypassServer#(WriteReqCommonQPC, Bool) writeCommonSrvInst <- mkBypassServer;
 
     BRAM_Configure cfg = defaultValue;
     // Both read address and read output are registered
     cfg.latency = 2;
     // Allow full pipeline behavior
     cfg.outFIFODepth = 4;
-    BRAM2Port#(IndexQP, Maybe#(QPCEntryCommon)) qpcEntryCommonStorage <- mkBRAM2Server(cfg);
+    BRAM2Port#(IndexQP, Maybe#(EntryCommonQPC)) qpcEntryCommonStorage <- mkBRAM2Server(cfg);
 
     FIFOF#(KeyQP) keyPipeQ <- mkFIFOF;
 

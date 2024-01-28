@@ -77,7 +77,7 @@ function Bool padCntCheckRespHeader(BTH bth, AETH aeth);
 endfunction
 
 // TODO: check XRC domain match
-function Bool validateHeader(TransType transType, QKEY qkey, QPCEntryCommon qpcCommon);
+function Bool validateHeader(TransType transType, QKEY qkey, EntryCommonQPC qpcCommon);
     let transTypeMatch = transTypeMatchQpType(transType, qpcCommon.qpType);
     return transTypeMatch;
 endfunction
@@ -162,7 +162,7 @@ interface InputRdmaPktBuf;
     interface PipeIn#(HeaderMetaData) headerMetaDataPipeIn;
     interface DataStreamPipeIn payloadPipeIn;
 
-    interface Client#(QPCReadReqCommon, Maybe#(QPCEntryCommon)) qpcReadCommonClt;
+    interface Client#(ReadReqCommonQPC, Maybe#(EntryCommonQPC)) qpcReadCommonClt;
 endinterface
 
 typedef enum {
@@ -207,7 +207,7 @@ typedef struct {
 module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
     // Output FIFO for PipeOut
     FIFOF#(DataStream)           reqPayloadOutQ <- mkFIFOF;
-    FIFOF#(RdmaPktMetaDataAndQPCtx)  reqPktMetaDataAndQpcOutQ <- mkFIFOF;
+    FIFOF#(RdmaPktMetaDataAndQPC)  reqPktMetaDataAndQpcOutQ <- mkFIFOF;
 
     // Pipeline buffers
     FIFOF#(Tuple4#(RdmaHeader, Bool, Bool, Bool))                                             rdmaHeaderRecvQ <- mkFIFOF;
@@ -216,17 +216,17 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
     FIFOF#(DataStream)                                                                       payloadPreCheckQ <- mkFIFOF;
     FIFOF#(Tuple2#(RdmaHeader, HeaderValidateInfo))                                     rdmaHeaderValidationQ <- mkSizedFIFOF(valueOf(QPC_QUERY_RESP_MAX_DELAY));
     FIFOF#(DataStream)                                                                     payloadValidationQ <- mkFIFOF;
-    FIFOF#(Tuple3#(RdmaHeader, Maybe#(QPCEntryCommon), ValidHeaderInfo))                    rdmaHeaderFilterQ <- mkFIFOF;
+    FIFOF#(Tuple3#(RdmaHeader, Maybe#(EntryCommonQPC), ValidHeaderInfo))                    rdmaHeaderFilterQ <- mkFIFOF;
     FIFOF#(DataStream)                                                                         payloadFilterQ <- mkFIFOF;
-    FIFOF#(Tuple3#(RdmaHeader, QPCEntryCommon, ValidHeaderInfo))                       rdmaHeaderFragLenCalcQ <- mkFIFOF;
+    FIFOF#(Tuple3#(RdmaHeader, EntryCommonQPC, ValidHeaderInfo))                       rdmaHeaderFragLenCalcQ <- mkFIFOF;
     FIFOF#(DataStream)                                                                    payloadFragLenCalcQ <- mkFIFOF;
-    FIFOF#(Tuple3#(RdmaHeader, QPCEntryCommon, ValidHeaderInfo))                        rdmaHeaderPktLenCalcQ <- mkFIFOF;
+    FIFOF#(Tuple3#(RdmaHeader, EntryCommonQPC, ValidHeaderInfo))                        rdmaHeaderPktLenCalcQ <- mkFIFOF;
     FIFOF#(Tuple5#(DataStream, ByteEnBitNum, ByteEnBitNum, Bool, Bool))                    payloadPktLenCalcQ <- mkFIFOF;
-    FIFOF#(Tuple2#(PktLenCheckInfo, QPCEntryCommon))                                rdmaHeaderPktLenPreCheckQ <- mkFIFOF;
+    FIFOF#(Tuple2#(PktLenCheckInfo, EntryCommonQPC))                                rdmaHeaderPktLenPreCheckQ <- mkFIFOF;
     FIFOF#(DataStream)                                                                 payloadPktLenPreCheckQ <- mkFIFOF;
-    FIFOF#(Tuple5#(PktLenCheckInfo, QPCEntryCommon, Bool, Bool, Bool))                 rdmaHeaderPktLenCheckQ <- mkFIFOF;
+    FIFOF#(Tuple5#(PktLenCheckInfo, EntryCommonQPC, Bool, Bool, Bool))                 rdmaHeaderPktLenCheckQ <- mkFIFOF;
     FIFOF#(DataStream)                                                                    payloadPktLenCheckQ <- mkFIFOF;
-    FIFOF#(RdmaPktMetaDataAndQPCtx)                                                         rdmaHeaderOutputQ <- mkFIFOF;
+    FIFOF#(RdmaPktMetaDataAndQPC)                                                         rdmaHeaderOutputQ <- mkFIFOF;
     FIFOF#(DataStream)                                                                         payloadOutputQ <- mkFIFOF;
 
     Reg#(Bool)        isValidPktReg <- mkRegU;
@@ -246,7 +246,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         toPipeOut(headerMetaDataQ)
     );
 
-    BypassClient#(QPCReadReqCommon, Maybe#(QPCEntryCommon)) qpcReadCommonCltInst <- mkBypassClient;
+    BypassClient#(ReadReqCommonQPC, Maybe#(EntryCommonQPC)) qpcReadCommonCltInst <- mkBypassClient;
 
     function Bool fifofNotEmpty(FIFOF#(anytype) fifof) = fifof.notEmpty;
     function Bool fifofNotFull(FIFOF#(anytype) fifof) = fifof.notFull;
@@ -391,7 +391,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             let isLastOrOnlyPkt = isLastOrOnlyRdmaOpCode(bth.opcode);
             let dqpn            = bth.dqpn;
             $display("recv bth=", fshow(bth));
-            qpcReadCommonCltInst.putReq(QPCReadReqCommon{qpn: dqpn});
+            qpcReadCommonCltInst.putReq(ReadReqCommonQPC{qpn: dqpn});
 
             let headerValidateInfo = HeaderValidateInfo {
                 dqpn           : dqpn,
@@ -726,7 +726,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
                 // Invalid packet length
                 pktStatus = PKT_ST_LEN_ERR;
             end
-            let pktMetaDataAndQpc = DataTypes::RdmaPktMetaDataAndQPCtx{
+            let pktMetaDataAndQpc = DataTypes::RdmaPktMetaDataAndQPC{
                 metadata: RdmaPktMetaData {
                     pktPayloadLen   : pktLen,
                     pktFragNum      : (isZeroPayloadLen ? 0 : pktFragNum),

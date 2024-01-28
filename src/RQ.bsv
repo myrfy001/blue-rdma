@@ -14,7 +14,7 @@ import UserLogicTypes :: *;
 
 
 interface RQ;
-    interface PipeIn#(RdmaPktMetaDataAndQPCtx) pktMetaDataPipeIn;
+    interface PipeIn#(RdmaPktMetaDataAndQPC) pktMetaDataPipeIn;
     interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
     interface Client#(PgtAddrTranslateReq, ADDR) pgtQueryClt;
     interface Client#(PayloadConReq, PayloadConResp) payloadXonsumerControlPortClt;
@@ -24,7 +24,7 @@ endinterface
 
 (* synthesize *)
 module mkRQ(RQ ifc);
-    FIFOF#(RdmaPktMetaDataAndQPCtx)     rdmaPktMetaDataInQ  <- mkFIFOF;
+    FIFOF#(RdmaPktMetaDataAndQPC)     rdmaPktMetaDataInQ  <- mkFIFOF;
     FIFOF#(C2hReportEntry)              pktReportEntryQ     <- mkFIFOF;
 
     BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkBypassClient;
@@ -32,9 +32,9 @@ module mkRQ(RQ ifc);
     BypassClient#(PayloadConReq, PayloadConResp) payloadConsumerControlClt           <- mkBypassClient;
 
     // Pipeline FIFOs
-    FIFOF#(RdmaPktMetaDataAndQPCtx)                                      getMRQueryRespPipeQ <- mkFIFOF;
-    FIFOF#(Tuple4#(RdmaPktMetaDataAndQPCtx, RdmaReqStatus, Bool, Bool)) getPGTQueryRespPipeQ <- mkFIFOF;
-    FIFOF#(Tuple3#(RdmaPktMetaDataAndQPCtx, RdmaReqStatus, Bool))           waitDMARespPipeQ <- mkFIFOF;
+    FIFOF#(RdmaPktMetaDataAndQPC)                                      getMRQueryRespPipeQ <- mkFIFOF;
+    FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool)) getPGTQueryRespPipeQ <- mkFIFOF;
+    FIFOF#(Tuple3#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool))           waitDMARespPipeQ <- mkFIFOF;
 
 
     function FlagsType#(MemAccessTypeFlag) genAccessFlagFromReqType(Bool isSend, Bool isRead, Bool isWrite, Bool isAtomic);
@@ -227,6 +227,7 @@ module mkRQ(RQ ifc);
         let reth  = extractPriRETH(rdmaHeader.headerData, bth.trans);
         let rethSecondary  = extractSecRETH(rdmaHeader.headerData, bth.trans, bth.opcode);
         let aeth  = extractAETH(rdmaHeader.headerData);
+        let nreth = extractNRETH(rdmaHeader.headerData);
         let immDT  = extractImmDt(rdmaHeader.headerData, bth.opcode, bth.trans);
 
 
@@ -254,7 +255,7 @@ module mkRQ(RQ ifc);
         rptEntry.code           = aeth.code;
         rptEntry.value          = aeth.value;
         rptEntry.msn            = aeth.msn;
-        rptEntry.lastRetryPSN   = aeth.lastRetryPSN;
+        rptEntry.lastRetryPSN   = nreth.lastRetryPSN;
 
         rptEntry.immDt          = immDT.data;
 

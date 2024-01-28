@@ -71,9 +71,9 @@ module mkTestTop(Empty);
         (seq
             
             // Insert QPC
-            topA.qpcWriteCommonSrv.request.put(QPCWriteReqCommon{
+            topA.qpcWriteCommonSrv.request.put(WriteReqCommonQPC{
                     qpn: genQPN(`TEST_QPN_IDX_PART, `TEST_QPN_KEY_PART),
-                    ent: tagged Valid QPCEntryCommon {
+                    ent: tagged Valid EntryCommonQPC {
                         isValid: True,
                         isError: False,
                         qpnKeyPart: `TEST_QPN_KEY_PART,

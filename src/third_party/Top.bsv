@@ -83,7 +83,7 @@ interface TopCoreIfc;
         
 
     // tmp interfaces for debuging while still in developing
-    interface Server#(QPCWriteReqCommon, Bool) qpcWriteCommonSrv;
+    interface Server#(WriteReqCommonQPC, Bool) qpcWriteCommonSrv;
 
 endinterface
 

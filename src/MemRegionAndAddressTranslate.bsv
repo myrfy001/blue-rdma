@@ -18,24 +18,48 @@ import MetaData :: *;
 
 
 
-typedef Server#(addrType, dataType) BramRead#(type addrType, type dataType);
+typedef Server#(addrType, dataType)                    BramRead#(type addrType, type dataType);
+typedef Server#(Tuple2#(addrType, dataType), Bool)     BramWrite#(type addrType, type dataType);
 
+// interface BramCache#(type addrType, type dataType, numeric type splitCntExp);
 interface BramCache#(type addrType, type dataType);
-    interface BramRead#(addrType, dataType) read;
-    method Action write(addrType cacheAddr, dataType writeData);
+    interface BramRead #(addrType, dataType)   read;
+    interface BramWrite#(addrType, dataType)   write;
 endinterface
 
 
-module mkBramCache(BramCache#(addrType, dataType)) provisos(Bits#(addrType, addrTypeSize), Bits#(dataType, dataTypeSize));
+module mkBramCache(BramCache#(addrType, dataType)) provisos(
+    Bits#(addrType, addrTypeSize),
+    Bits#(dataType, dataTypeSize)
+    // Bits#(subAddrType, subAddrTypeSize),
+    // Add#(subAddrTypeSize, splitCntExp, addrTypeSize)
+);
     BRAM_Configure cfg = defaultValue;
     // Both read address and read output are registered
     cfg.latency = 2;
     // Allow full pipeline behavior
     cfg.outFIFODepth = 4;
+
+    // Vector#(TExp#(splitCntExp), BRAM2Port#(subAddrType, dataType)) subBramVec <- replicateM(mkBRAM2Server(cfg));
+    // Vector#(TExp#(splitCntExp), FIFOF#(BRAMRequest)) subReqFifoVec <- replicateM(mkFIFOF);
+
+    // FIFOF#(subAddrType) orderKeepQ <- mkFIFOF;
+
+    // for (Integer idx = 0; idx < valueOf(TExp#(splitCntExp)); idx = idx + 1) begin
+    //     rule handleSendBramReq;
+    //         let req = subReqFifoVec[idx].first;
+    //         subReqFifoVec[idx].deq;
+    //         bram2Port.portA.request.put(req);
+    //         orderKeepQ.enq(fromInteger(idx));
+    //     endrule
+    // end
     BRAM2Port#(addrType, dataType) bram2Port <- mkBRAM2Server(cfg);
 
-    FIFOF#(addrType)  bramReadReqQ <- mkFIFOF;
-    FIFOF#(dataType) bramReadRespQ <- mkFIFOF;
+    FIFOF#(addrType)   bramReadReqQ <- mkFIFOF;
+    FIFOF#(dataType)  bramReadRespQ <- mkFIFOF;
+
+    FIFOF#(Tuple2#(addrType, dataType))  bramWriteReqQ  <- mkFIFOF;
+    FIFOF#(Bool)                         bramWriteRespQ <- mkFIFOF;
 
     rule handleBramReadReq;
         let cacheAddr = bramReadReqQ.first;
@@ -47,6 +71,7 @@ module mkBramCache(BramCache#(addrType, dataType)) provisos(Bits#(addrType, addr
             address: cacheAddr,
             datain: dontCareValue
         };
+        // subAddrType subIdx = truncateLSB();
         bram2Port.portA.request.put(req);
     endrule
 
@@ -55,17 +80,29 @@ module mkBramCache(BramCache#(addrType, dataType)) provisos(Bits#(addrType, addr
         bramReadRespQ.enq(readRespData);
     endrule
 
-    method Action write(addrType cacheAddr, dataType writeData);
+
+    rule handleBramWriteReq;
+        let {cacheAddr, writeData} = bramWriteReqQ.first;
+        bramWriteReqQ.deq;
+        
         let req = BRAMRequest{
             write: True,
-            responseOnWrite: False,
+            responseOnWrite: True,
             address: cacheAddr,
             datain: writeData
         };
+        // subAddrType subIdx = truncateLSB();
         bram2Port.portB.request.put(req);
-    endmethod
+    endrule
 
-    interface read = toGPServer(bramReadReqQ, bramReadRespQ);
+    rule handleBramWriteResp;
+        let _ <- bram2Port.portB.response.get;
+        bramWriteRespQ.enq(True);
+    endrule
+
+
+    interface read =  toGPServer(bramReadReqQ,  bramReadRespQ);
+    interface write = toGPServer(bramWriteReqQ, bramWriteRespQ);
 endmodule
 
 
@@ -92,8 +129,12 @@ module mkMemRegionTable(MemRegionTable);
 
     rule handleModifyReq;
         let req <- modifySrvInst.getReq;
-        mrTableStorage.write(req.idx, req.entry);
-        modifySrvInst.putResp(MrTableModifyResp{success: True});
+        mrTableStorage.write.request.put(tuple2(req.idx, req.entry));
+    endrule
+
+    rule handleModifyResp;
+        let resp <- mrTableStorage.write.response.get;
+        modifySrvInst.putResp(MrTableModifyResp{success: resp});
     endrule
 
     interface querySrv = querySrvInst.srv;
@@ -153,9 +194,12 @@ module mkTLB(TLB);
 
     rule handleModifyReq;
         let req <- modifySrvInst.getReq;
-        pageTableStorage.write(req.idx, req.pte);
-        modifySrvInst.putResp(PgtModifyResp{success: True});
-        $display(fshow(req));
+        pageTableStorage.write.request.put(tuple2(req.idx, req.pte));
+    endrule
+
+    rule handleModifyResp;
+        let resp <- pageTableStorage.write.response.get;
+        modifySrvInst.putResp(PgtModifyResp{success: resp});
     endrule
 
 
