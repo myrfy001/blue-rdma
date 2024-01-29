@@ -21,18 +21,17 @@ import MetaData :: *;
 typedef Server#(addrType, dataType)                    BramRead#(type addrType, type dataType);
 typedef Server#(Tuple2#(addrType, dataType), Bool)     BramWrite#(type addrType, type dataType);
 
-// interface BramCache#(type addrType, type dataType, numeric type splitCntExp);
-interface BramCache#(type addrType, type dataType);
+interface BramCache#(type addrType, type dataType, numeric type splitCntExp);
     interface BramRead #(addrType, dataType)   read;
     interface BramWrite#(addrType, dataType)   write;
 endinterface
 
 
-module mkBramCache(BramCache#(addrType, dataType)) provisos(
+module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
     Bits#(addrType, addrTypeSize),
-    Bits#(dataType, dataTypeSize)
-    // Bits#(subAddrType, subAddrTypeSize),
-    // Add#(subAddrTypeSize, splitCntExp, addrTypeSize)
+    Bits#(dataType, dataTypeSize),
+    Add#(subAddrTypeSize, splitCntExp, addrTypeSize),
+    Alias#(Bit#(subAddrTypeSize), subAddrType)
 );
     BRAM_Configure cfg = defaultValue;
     // Both read address and read output are registered
@@ -40,19 +39,21 @@ module mkBramCache(BramCache#(addrType, dataType)) provisos(
     // Allow full pipeline behavior
     cfg.outFIFODepth = 4;
 
-    // Vector#(TExp#(splitCntExp), BRAM2Port#(subAddrType, dataType)) subBramVec <- replicateM(mkBRAM2Server(cfg));
-    // Vector#(TExp#(splitCntExp), FIFOF#(BRAMRequest)) subReqFifoVec <- replicateM(mkFIFOF);
+    Vector#(TExp#(splitCntExp), BRAM2Port#(subAddrType, dataType)) subBramVec <- replicateM(mkBRAM2Server(cfg));
+    Vector#(TExp#(splitCntExp), FIFOF#(BRAMRequest#(subAddrType, dataType))) subReqFifoVecPortA <- replicateM(mkFIFOF);
+    Vector#(TExp#(splitCntExp), FIFOF#(BRAMRequest#(subAddrType, dataType))) subReqFifoVecPortB <- replicateM(mkFIFOF);
 
-    // FIFOF#(subAddrType) orderKeepQ <- mkFIFOF;
+    FIFOF#(subAddrType) orderKeepQueuePortA <- mkFIFOF;
+    FIFOF#(subAddrType) orderKeepQueuePortB <- mkFIFOF;
 
-    // for (Integer idx = 0; idx < valueOf(TExp#(splitCntExp)); idx = idx + 1) begin
-    //     rule handleSendBramReq;
-    //         let req = subReqFifoVec[idx].first;
-    //         subReqFifoVec[idx].deq;
-    //         bram2Port.portA.request.put(req);
-    //         orderKeepQ.enq(fromInteger(idx));
-    //     endrule
-    // end
+    for (Integer idx = 0; idx < valueOf(TExp#(splitCntExp)); idx = idx + 1) begin
+        rule forwardPortAReq;
+            let req = subReqFifoVecPortA[idx].first;
+            subReqFifoVecPortA[idx].deq;
+            subBramVec[idx].portA.request.put(req);
+        endrule
+    end
+
     BRAM2Port#(addrType, dataType) bram2Port <- mkBRAM2Server(cfg);
 
     FIFOF#(addrType)   bramReadReqQ <- mkFIFOF;
@@ -68,15 +69,18 @@ module mkBramCache(BramCache#(addrType, dataType)) provisos(
         let req = BRAMRequest{
             write: False,
             responseOnWrite: False,
-            address: cacheAddr,
+            address: truncate(pack(cacheAddr)),
             datain: dontCareValue
         };
-        // subAddrType subIdx = truncateLSB();
-        bram2Port.portA.request.put(req);
+        subAddrType subIdx = truncateLSB(pack(cacheAddr));
+        subReqFifoVecPortA[subIdx].enq(req);
+        orderKeepQueuePortA.enq(subIdx);
     endrule
 
     rule handleBramReadResp;
-        let readRespData <- bram2Port.portA.response.get;
+        let subIdx = orderKeepQueuePortA.first;
+        orderKeepQueuePortA.deq;
+        let readRespData <- subBramVec[subIdx].portA.response.get;
         bramReadRespQ.enq(readRespData);
     endrule
 
@@ -88,15 +92,18 @@ module mkBramCache(BramCache#(addrType, dataType)) provisos(
         let req = BRAMRequest{
             write: True,
             responseOnWrite: True,
-            address: cacheAddr,
+            address: truncate(pack(cacheAddr)),
             datain: writeData
         };
-        // subAddrType subIdx = truncateLSB();
-        bram2Port.portB.request.put(req);
+        subAddrType subIdx = truncateLSB(pack(cacheAddr));
+        subReqFifoVecPortB[subIdx].enq(req);
+        orderKeepQueuePortB.enq(subIdx);
     endrule
 
     rule handleBramWriteResp;
-        let _ <- bram2Port.portB.response.get;
+        let subIdx = orderKeepQueuePortB.first;
+        orderKeepQueuePortB.deq;
+        let _ <- subBramVec[subIdx].portB.response.get;
         bramWriteRespQ.enq(True);
     endrule
 
@@ -113,7 +120,7 @@ endinterface
 
 (* synthesize *)
 module mkMemRegionTable(MemRegionTable);
-    BramCache#(IndexMR, Maybe#(MemRegionTableEntry)) mrTableStorage <- mkBramCache;
+    BramCache#(IndexMR, Maybe#(MemRegionTableEntry), 1) mrTableStorage <- mkBramCache;
     BypassServer#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) querySrvInst <- mkBypassServer;
     BypassServer#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkBypassServer;
 
@@ -162,7 +169,7 @@ endfunction
 (* synthesize *)
 module mkTLB(TLB);
     
-    BramCache#(PTEIndex, PageTableEntry) pageTableStorage <- mkBramCache;
+    BramCache#(PTEIndex, PageTableEntry, 2) pageTableStorage <- mkBramCache;
 
     BypassServer#(PgtAddrTranslateReq, ADDR) translateSrvInst <- mkBypassServer;
     BypassServer#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkBypassServer;
