@@ -120,7 +120,7 @@ endinterface
 
 (* synthesize *)
 module mkMemRegionTable(MemRegionTable);
-    BramCache#(IndexMR, Maybe#(MemRegionTableEntry), 1) mrTableStorage <- mkBramCache;
+    BramCache#(IndexMR, Maybe#(MemRegionTableEntry), 0) mrTableStorage <- mkBramCache;
     BypassServer#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) querySrvInst <- mkBypassServer;
     BypassServer#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkBypassServer;
 
@@ -169,7 +169,7 @@ endfunction
 (* synthesize *)
 module mkTLB(TLB);
     
-    BramCache#(PTEIndex, PageTableEntry, 2) pageTableStorage <- mkBramCache;
+    BramCache#(PTEIndex, PageTableEntry, 1) pageTableStorage <- mkBramCache;
 
     BypassServer#(PgtAddrTranslateReq, ADDR) translateSrvInst <- mkBypassServer;
     BypassServer#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkBypassServer;

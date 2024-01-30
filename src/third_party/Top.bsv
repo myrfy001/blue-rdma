@@ -29,11 +29,7 @@ import Ringbuf :: *;
 import UserLogicUtils :: *;
 import RegisterBlock :: *;
 import CmdQueue :: *;
-
-
-
-
-
+import WorkQueueRingbuf :: *;
 
 
 
@@ -83,7 +79,7 @@ interface TopCoreIfc;
         
 
     // tmp interfaces for debuging while still in developing
-    interface Server#(WriteReqCommonQPC, Bool) qpcWriteCommonSrv;
+    // interface Server#(WriteReqCommonQPC, Bool) qpcWriteCommonSrv;
 
 endinterface
 
@@ -155,6 +151,15 @@ module mkTopCore(Clock slowClock, Reset slowReset, TopCoreIfc ifc);
     mkConnection(mrAndPgtManager.mrModifyClt, mrTable.modifySrv);
     mkConnection(mrAndPgtManager.pgtModifyClt, tlb.modifySrv);
     mkConnection(cmdQController.mrAndPgtManagerClt, mrAndPgtManager.mrAndPgtModifyDescSrv);
+    mkConnection(cmdQController.qpcModifyClt, qpc.writeCommonSrv);
+
+
+    WorkQueueRingbufController workQueueRingbufController <- mkWorkQueueRingbufController;
+
+
+    mkConnection(workQueueRingbufController.sqRingBuf, toGet(ringbufPool.h2cRings[1]));
+    mkConnection(workQueueRingbufController.scqRingBuf.get, ringbufPool.c2hRings[2].enq);
+
 
 
     function Bool isH2cDmaReqFinished(UserLogicDmaH2cReq req) = True;
@@ -192,7 +197,7 @@ module mkTopCore(Clock slowClock, Reset slowReset, TopCoreIfc ifc);
 
 
 
-    interface qpcWriteCommonSrv = qpc.writeCommonSrv;
+    // interface qpcWriteCommonSrv = qpc.writeCommonSrv;
     // interface mrModifySrv = mrTable.modifySrv;
     // interface mrAndPgtModifyDescSrv = tlb.modifySrv;
 

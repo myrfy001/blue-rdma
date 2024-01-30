@@ -300,7 +300,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
             psn:        reportEntry.psn,
             solicited:  reportEntry.solicited,
             ackReq:     reportEntry.ackReq,
-            reserved1:  0
+            reserved1:  unpack(0)
         };
 
         let reth = PktMeatReportQueueDescFragRETH {

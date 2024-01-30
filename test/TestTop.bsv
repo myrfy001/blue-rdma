@@ -70,22 +70,22 @@ module mkTestTop(Empty);
     FSM runTest <- mkFSM(
         (seq
             
-            // Insert QPC
-            topA.qpcWriteCommonSrv.request.put(WriteReqCommonQPC{
-                    qpn: genQPN(`TEST_QPN_IDX_PART, `TEST_QPN_KEY_PART),
-                    ent: tagged Valid EntryCommonQPC {
-                        isValid: True,
-                        isError: False,
-                        qpnKeyPart: `TEST_QPN_KEY_PART,
-                        pdHandler: `TEST_PD_HANDLER,
-                        qpType: IBV_QPT_RC,
-                        rqAccessFlags: enum2Flag(IBV_ACCESS_REMOTE_WRITE),
-                        pmtu: IBV_MTU_4096
-                    }
-            });
-            action
-                let _ <- topA.qpcWriteCommonSrv.response.get;
-            endaction
+            // // Insert QPC
+            // topA.qpcWriteCommonSrv.request.put(WriteReqCommonQPC{
+            //         qpn: genQPN(`TEST_QPN_IDX_PART, `TEST_QPN_KEY_PART),
+            //         ent: tagged Valid EntryCommonQPC {
+            //             isValid: True,
+            //             isError: False,
+            //             qpnKeyPart: `TEST_QPN_KEY_PART,
+            //             pdHandler: `TEST_PD_HANDLER,
+            //             qpType: IBV_QPT_RC,
+            //             rqAccessFlags: enum2Flag(IBV_ACCESS_REMOTE_WRITE),
+            //             pmtu: IBV_MTU_4096
+            //         }
+            // });
+            // action
+            //     let _ <- topA.qpcWriteCommonSrv.response.get;
+            // endaction
 
             // // Insert into MR table
             // topA.mrModifySrv.request.put(MrTableModifyReq{

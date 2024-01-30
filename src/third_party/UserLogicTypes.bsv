@@ -134,147 +134,75 @@ typedef enum {
     CmdQueueOpcodeUpdateMrTable = 'h0,
     CmdQueueOpcodeUpdatePGT = 'h1,
     CmdQueueOpcodePdManagement = 'h2,
-    CmdQueueOpcodeMrManagement = 'h3,
-    CmdQueueOpcodeQpManagement = 'h4
+    CmdQueueOpcodeQpManagement = 'h3
 } CommandQueueOpcode deriving(Bits, Eq);
 
 typedef Bit#(TLog#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT)) DescriptorSegmentIndex;
 
 typedef struct {
-    Bit#(32)    userData;
-    Bit#(20)    reserved1;
-    Bool        isSuccessOrNeedSignalCplt;
-    Bit#(4)     extraSegmentCnt;
-    Bit#(6)     opCode;
-    Bool        valid;
+    Bit#(32)                userData;
+    ReservedZero#(20)       reserved1;
+    Bool                    isSuccessOrNeedSignalCplt;
+    Bit#(4)                 extraSegmentCnt;
+    Bit#(6)                 opCode;
+    Bool                    valid;
 } CmdQueueDescCommonHead deriving(Bits, FShow);
 
 typedef struct {
-    Bit#(7)                  reserved1;
-    Bit#(17)                 pgtOffset;
-    Bit#(8)                  accFlags;
-    Bit#(32)                 pdHandler;
-    Bit#(32)                 mrKey;
-    Bit#(32)                 mrLength;
-    Bit#(64)                 mrBaseVA;
-    CmdQueueDescCommonHead   commonHeader;
+    ReservedZero#(7)            reserved1;
+    Bit#(17)                    pgtOffset;
+    Bit#(8)                     accFlags;
+    Bit#(32)                    pdHandler;
+    Bit#(32)                    mrKey;
+    Bit#(32)                    mrLength;
+    Bit#(64)                    mrBaseVA;
+    CmdQueueDescCommonHead      commonHeader;
 } CmdQueueReqDescUpdateMrTable deriving(Bits, FShow);
 
 typedef struct {
-    Bit#(64)                reserved1;
-    Bit#(32)                dmaReadLength;
-    Bit#(32)                startIndex;
-    Bit#(64)                dmaAddr;
-    CmdQueueDescCommonHead  commonHeader;
+    ReservedZero#(64)               reserved1;
+    Bit#(32)                        dmaReadLength;
+    Bit#(32)                        startIndex;
+    Bit#(64)                        dmaAddr;
+    CmdQueueDescCommonHead          commonHeader;
 } CmdQueueReqDescUpdatePGT deriving(Bits, FShow);
 
 typedef struct {
-    Bit#(64)                reserved1;
-    Bit#(64)                reserved2;
-    Bit#(64)                reserved3;
-    CmdQueueDescCommonHead  commonHeader;
+    ReservedZero#(64)               reserved1;
+    ReservedZero#(64)               reserved2;
+    ReservedZero#(64)               reserved3;
+    CmdQueueDescCommonHead          commonHeader;
 } CmdQueueRespDescUpdatePGT deriving(Bits, FShow);
 
-typedef struct {
-    Bit#(64)                reserved1;
-    Bit#(64)                reserved2;
-    Bit#(31)                reserved3;
-    Bool                    isAlloc;
-    HandlerPD               pdHandler;
-    CmdQueueDescCommonHead  commonHeader;
-} CmdQueueReqDescPdManagement deriving(Bits, FShow);
 
 typedef struct {
-    Bit#(64)                reserved1;
-    Bit#(64)                reserved2;
-    HandlerPD               pdHandler;
-    Bit#(32)                reserved3;
-    CmdQueueDescCommonHead  commonHeader;
-} CmdQueueRespDescPdManagement deriving(Bits, FShow);
-
-typedef struct {
-    Bit#(32)                reserved1;
-    Length                  mrLen;
-    ADDR                    startAddr;
-    Bit#(16)                reserved2;
-    MemAccessTypeFlag       accessFlag;
-    Bit#(7)                 reserved3;
-    Bool                    isAlloc;
-    HandlerPD               pdHandler;
-    CmdQueueDescCommonHead  commonHeader;
-} CmdQueueReqDescMrManagementSeg0 deriving(Bits, FShow);
-
-typedef struct {
-    Bit#(64) reserved1;
-    Bit#(64) reserved2;
-    Bit#(64) reserved3;
-    RKEY      rkey;
-    LKEY      lkey;
-} CmdQueueReqDescMrManagementSeg1 deriving(Bits, FShow);
-
-typedef struct {
-    Bit#(64)                reserved1;
-    Bit#(64)                reserved2;
-    RKEY                    rkey;
-    LKEY                    lkey;
-    CmdQueueDescCommonHead  commonHeader;
-} CmdQueueRespDescMrManagement deriving(Bits, FShow);
+    ReservedZero#(104)              reserved1;      // 104 bits
+    ReservedZero#(5)                reserved2;      // 5   bits
+    PMTU                            pmtu;           // 3   bits
+    FlagsType#(MemAccessTypeFlag)   rqAccessFlags;  // 8   bits
+    ReservedZero#(4)                reserved3;      // 4   bits
+    TypeQP                          qpType;         // 4   bits
+    HandlerPD                       pdHandler;      // 32  bits
+    QPN                             qpn;            // 24  bits
+    ReservedZero#(6)                reserved4;      // 6   bits
+    Bool                            isError;        // 1   bit
+    Bool                            isValid;        // 1   bit
+    CmdQueueDescCommonHead          commonHeader;   // 64  bits
+} CmdQueueReqDescQpManagementSeg0 deriving(Bits, FShow);
 
 
-// typedef struct {
-//     Bit#(64)                reserved1;
-//     Bit#(23)                reserved2;
-//     Bool                    sqSigAll;
-//     Bit#(4)                 reserved3;
-//     TypeQP                  qpType;
-//     Bit#(6)                 reserved4;
-//     QpAttrMaskFlag          qpAttrMask;
-//     QPN                     qpn;
-//     Bit#(6)                 reserved5;
-//     QpReqType               qpReqType;
-//     HandlerPD               pdHandler;
-//     CmdQueueDescCommonHead  commonHeader;
-// } CmdQueueReqDescQpManagementSeg0 deriving(Bits, FShow);
+typedef CmdQueueReqDescQpManagementSeg0 CmdQueueRespDescQpManagementSeg0;
 
-// typedef struct {
-//     Bit#(16)                        reserved1;
-//     RetryCnt                        rnrRetry;
-//     TimeOutTimer                    timeout;
-//     RetryCnt                        retryCnt;
-//     RnrTimer                        minRnrTimer;
-//     PendingReqCnt                   maxDestReadAtomic;
-//     PendingReqCnt                   maxReadAtomic;
-//     PKEY                            pkeyIndex;
-//     Bit#(7)                         reserved2;
-//     Bool                            sqDraining;
-//     InlineDataSize                  maxInlineData;
-//     ScatterGatherElemCnt            maxRecvSGE;
-//     ScatterGatherElemCnt            maxSendSGE;
-//     FlagsType#(MemAccessTypeFlag)   qpAccessFlags;
-//     QPN                             dqpn;
-//     PendingReqCnt                   maxRecvWR;
-//     PSN                             sqPSN;
-//     PendingReqCnt                   maxSendWR;
-//     PSN                             rqPSN;
-//     QKEY                            qkey;
-//     Bit#(21)                        reserved3;
-//     PMTU                            pmtu;
-//     StateQP                         curQpState;
-//     StateQP                         qpState;
-// } CmdQueueReqDescQpManagementSeg1 deriving(Bits, FShow);
-
-// typedef CmdQueueReqDescQpManagementSeg0 CmdQueueRespDescQpManagementSeg0;
-// typedef CmdQueueReqDescQpManagementSeg1 CmdQueueRespDescQpManagementSeg1;
 
 
 typedef struct {
-    Length          len;
-    Bit#(20)        reserved1;
-    Bool            isSuccessOrNeedSignalCplt;
-    Bit#(4)         extraSegmentCnt;
-    Bit#(2)         reserved2;
-    WorkReqOpCode   opCode;
-    Bool            valid;
+    Length                  len;
+    ReservedZero#(20)       reserved1;
+    Bool                    isSuccessOrNeedSignalCplt;
+    Bit#(4)                 extraSegmentCnt;
+    ReservedZero#(2)        reserved2;
+    WorkReqOpCode           opCode;
+    Bool                    valid;
 } SendQueueDescCommonHead deriving(Bits, FShow);
 
 typedef struct {
@@ -286,68 +214,68 @@ typedef struct {
 } SendQueueReqDescSeg0 deriving(Bits, FShow);
 
 typedef struct {
-    Bit#(64)        reserved1;
-    Bit#(64)        reserved2;
-    Bit#(64)        reserved3;
-    Bit#(32)        reserved4;
-    QPN             sqpn;
-    Bool            solicited;
-    Bit#(2)         reserved5;
-    WorkReqSendFlag flags;
+    ReservedZero#(64)       reserved1;
+    ReservedZero#(64)       reserved2;
+    ReservedZero#(64)       reserved3;
+    ReservedZero#(32)       reserved4;
+    QPN                     sqpn;
+    Bool                    solicited;
+    ReservedZero#(2)        reserved5;
+    WorkReqSendFlag         flags;
 } SendQueueReqDescSeg1 deriving(Bits, FShow);
 
 typedef struct {
-    Length          len;
-    Bit#(20)        reserved1;
-    Bool            isSuccessOrNeedSignalCplt;
-    Bit#(4)         extraSegmentCnt;
-    Bit#(2)         reserved2;
-    WorkReqOpCode   opCode;
-    Bool            valid;
+    Length                  len;
+    ReservedZero#(20)       reserved1;
+    Bool                    isSuccessOrNeedSignalCplt;
+    Bit#(4)                 extraSegmentCnt;
+    ReservedZero#(2)        reserved2;
+    WorkReqOpCode           opCode;
+    Bool                    valid;
 } RecvQueueDescCommonHead deriving(Bits, FShow);
 
 typedef struct {
-    Bit#(8)                     reserved1;
-    QPN                         sqpn;
-    LKEY                        lkey;
-    Bit#(64)                    reserved2;
-    ADDR                        laddr;
-    RecvQueueDescCommonHead     commonHeader;
+    ReservedZero#(8)                    reserved1;
+    QPN                                 sqpn;
+    LKEY                                lkey;
+    ReservedZero#(64)                   reserved2;
+    ADDR                                laddr;
+    RecvQueueDescCommonHead             commonHeader;
 } RecvQueueReqDesc deriving(Bits, FShow);
 
 
 
 typedef struct {
-    Length          len;
-    Bit#(21)        reserved1;
-    Bit#(4)         extraSegmentCnt;
-    Bit#(6)         reserved2;
-    Bool            valid;
+    Length                  len;
+    ReservedZero#(21)       reserved1;
+    Bit#(4)                 extraSegmentCnt;
+    ReservedZero#(6)        reserved2;
+    Bool                    valid;
 } CompQueueDescCommonHead deriving(Bits, FShow);
 
 typedef struct {
-    Bit#(40)                    reserved1;
-    QPN                         qpn;
-    Bit#(64)                    reserved2;
-    Bit#(16)                    reserved3;
-    PKEY                        pkey;
-    Bit#(11)                    reserved4;
-    WorkCompStatus              status;
-    Bit#(1)                     reserved5;
-    WorkCompFlags               flags;
-    WorkCompOpCode              opcode;
-    CompQueueDescCommonHead     commonHeader;
+    ReservedZero#(40)                   reserved1;
+    QPN                                 qpn;
+    ReservedZero#(64)                   reserved2;
+    ReservedZero#(16)                   reserved3;
+    PKEY                                pkey;
+    ReservedZero#(11)                   reserved4;
+    WorkCompStatus                      status;
+    ReservedZero#(1)                    reserved5;
+    WorkCompFlags                       flags;
+    WorkCompOpCode                      opcode;
+    CompQueueDescCommonHead             commonHeader;
 } CompQueueReqDesc deriving(Bits, FShow);
 
 
 typedef struct {
-    Bit#(6)                 reserved1;    // 6
-    Bool                    ackReq;       // 1
-    Bool                    solicited;    // 1
-    PSN                     psn;          // 24
-    QPN                     dqpn;         // 24
-    RdmaOpCode              opcode;       // 5
-    TransType               trans;        // 3
+    ReservedZero#(6)                reserved1;    // 6
+    Bool                            ackReq;       // 1
+    Bool                            solicited;    // 1
+    PSN                             psn;          // 24
+    QPN                             dqpn;         // 24
+    RdmaOpCode                      opcode;       // 5
+    TransType                       trans;        // 3
 } PktMeatReportQueueDescFragBTH deriving(Bits, FShow);
 
 typedef struct {

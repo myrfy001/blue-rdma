@@ -798,19 +798,18 @@ typedef struct {
 } WriteReqCommonQPC deriving(Bits, Eq, FShow);
 
 typedef struct {
-    Bool      isValid;
-    Bool      isError;
-    KeyQP     qpnKeyPart;
-    HandlerPD pdHandler;
-    TypeQP    qpType;
-    FlagsType#(MemAccessTypeFlag) rqAccessFlags;
-    PMTU      pmtu;
+    Bool                            isError;
+    KeyQP                           qpnKeyPart;
+    HandlerPD                       pdHandler;
+    TypeQP                          qpType;
+    FlagsType#(MemAccessTypeFlag)   rqAccessFlags;
+    PMTU                            pmtu;
 } EntryCommonQPC deriving(Bits, Eq, FShow);
 
 
 typedef struct {
-    RdmaPktMetaData metadata;
-    EntryCommonQPC  qpc;
+    RdmaPktMetaData                 metadata;
+    EntryCommonQPC                  qpc;
 } RdmaPktMetaDataAndQPC deriving(Bits);
 
 // typedef struct {
@@ -902,29 +901,37 @@ typedef union tagged {
     RKEY Rkey2Inv;
 } ImmDtOrInvRKey deriving(Bits, FShow);
 
+
 typedef struct {
     WorkReqID id; // TODO: remove it
-    WorkReqOpCode opcode;                // 1B
-    FlagsType#(WorkReqSendFlag) flags;   // 5b
-    TypeQP qpType;          // 4b
-    PSN curPSN;             // 3B
-    PMTU pmtu;              // 3b
-    IP dqpIP;               // 16B
-    ScatterGatherList sgl;  // 16B
-    ADDR raddr;  // 8B
-    RKEY rkey;   // 4B
-    // ADDR laddr;
-    // Length len;
-    // LKEY lkey;
-    QPN sqpn; // TODO: remove it  3B
-    Bool solicited; // Relevant only for the Send and RDMA Write with immediate data
-    // Maybe#(Long) comp;
-    // Maybe#(Long) swap;
+    WorkReqOpCode opcode;
+    FlagsType#(WorkReqSendFlag) flags;
+    TypeQP qpType;
+    PSN psn;
+    PMTU pmtu;
+    IP dqpIP;
+    // MAC macAddr;
+    ScatterGatherList sgl;
+    ADDR raddr;
+    RKEY rkey;
+    // PKEY pkey;
+    // QPN sqpn; // TODO: remove it
+    QPN dqpn;
+    // Bool solicited; // Relevant only for the Send and RDMA Write with immediate data
+    Maybe#(Long) comp;
+    Maybe#(Long) swap;
     Maybe#(ImmDtOrInvRKey) immDtOrInvRKey;
     Maybe#(QPN) srqn; // for XRC
-    Maybe#(QPN) dqpn; // for UD
     Maybe#(QKEY) qkey; // for UD
-} WorkQueueElem deriving(Bits);
+    Bool isFirst;
+    Bool isLast;
+} WorkQueueElem deriving(Bits, FShow);
+
+typedef struct { 
+    // MAC    macAddr;
+    IP     ipAddr;
+    PktLen pktLen;
+} PktInfo4UDP deriving(Bits, FShow);
 
 typedef struct {
     ADDR   laddr;
