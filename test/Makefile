@@ -5,6 +5,9 @@ TOPMODULE ?= mkTestHeaderAndDataStreamConversion
 
 SIMSCRIPT = $(BUILDDIR)/$(TOPMODULE).sh
 
+test_host_memory.hex:
+	python3 generate_test_host_memory.py
+
 compile:
 	mkdir -p $(BUILDDIR)
 	bsc -elab -sim -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(TOPMODULE) $(TESTFILE)
@@ -12,7 +15,7 @@ compile:
 link: compile
 	bsc -sim $(BLUESIMFLAGS) $(DIRFLAGS) $(RECOMPILEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -e $(TOPMODULE) -o $(SIMSCRIPT)
 
-simulate: link
+simulate: test_host_memory.hex link
 	$(SIMSCRIPT)
 
 clean:

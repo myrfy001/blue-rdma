@@ -133,8 +133,7 @@ typedef 1 CQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
 typedef enum {
     CmdQueueOpcodeUpdateMrTable = 'h0,
     CmdQueueOpcodeUpdatePGT = 'h1,
-    CmdQueueOpcodePdManagement = 'h2,
-    CmdQueueOpcodeQpManagement = 'h3
+    CmdQueueOpcodeQpManagement = 'h2
 } CommandQueueOpcode deriving(Bits, Eq);
 
 typedef Bit#(TLog#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT)) DescriptorSegmentIndex;

@@ -67,6 +67,7 @@ module mkRQ(RQ ifc);
         let mrTableQueryReq = MrTableQueryReq{
             idx: rkey2IndexMR(reth.rkey)
         };
+        // $display("reth=", fshow(reth), "mrTableQueryReq=", fshow(mrTableQueryReq));
         mrTableQueryCltInst.putReq(mrTableQueryReq);
 
         getMRQueryRespPipeQ.enq(pktMetaDataAndQpc);

@@ -31,7 +31,10 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
     Bits#(addrType, addrTypeSize),
     Bits#(dataType, dataTypeSize),
     Add#(subAddrTypeSize, splitCntExp, addrTypeSize),
-    Alias#(Bit#(subAddrTypeSize), subAddrType)
+    Alias#(Bit#(subAddrTypeSize), subAddrType),
+    Alias#(Bit#(splitCntExp), subBlockIdxType),
+    FShow#(addrType),
+    FShow#(dataType)
 );
     BRAM_Configure cfg = defaultValue;
     // Both read address and read output are registered
@@ -43,14 +46,20 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
     Vector#(TExp#(splitCntExp), FIFOF#(BRAMRequest#(subAddrType, dataType))) subReqFifoVecPortA <- replicateM(mkFIFOF);
     Vector#(TExp#(splitCntExp), FIFOF#(BRAMRequest#(subAddrType, dataType))) subReqFifoVecPortB <- replicateM(mkFIFOF);
 
-    FIFOF#(subAddrType) orderKeepQueuePortA <- mkFIFOF;
-    FIFOF#(subAddrType) orderKeepQueuePortB <- mkFIFOF;
+    FIFOF#(subBlockIdxType) orderKeepQueuePortA <- mkFIFOF;
+    FIFOF#(subBlockIdxType) orderKeepQueuePortB <- mkFIFOF;
 
     for (Integer idx = 0; idx < valueOf(TExp#(splitCntExp)); idx = idx + 1) begin
         rule forwardPortAReq;
             let req = subReqFifoVecPortA[idx].first;
             subReqFifoVecPortA[idx].deq;
             subBramVec[idx].portA.request.put(req);
+        endrule
+
+        rule forwardPortBReq;
+            let req = subReqFifoVecPortB[idx].first;
+            subReqFifoVecPortB[idx].deq;
+            subBramVec[idx].portB.request.put(req);
         endrule
     end
 
@@ -66,15 +75,17 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
         let cacheAddr = bramReadReqQ.first;
         bramReadReqQ.deq;
 
+        subAddrType addr = unpack(truncate(pack(cacheAddr)));
         let req = BRAMRequest{
             write: False,
             responseOnWrite: False,
-            address: truncate(pack(cacheAddr)),
+            address: addr,
             datain: dontCareValue
         };
-        subAddrType subIdx = truncateLSB(pack(cacheAddr));
+        subBlockIdxType subIdx = truncateLSB(pack(cacheAddr));
         subReqFifoVecPortA[subIdx].enq(req);
         orderKeepQueuePortA.enq(subIdx);
+        // $display("send BRAM read req to sub block =", fshow(subIdx), "addr=", fshow(addr));
     endrule
 
     rule handleBramReadResp;
@@ -82,6 +93,7 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
         orderKeepQueuePortA.deq;
         let readRespData <- subBramVec[subIdx].portA.response.get;
         bramReadRespQ.enq(readRespData);
+        // $display("recv BRAM read resp from sub block=", fshow(subIdx) , ", res=", fshow(readRespData));
     endrule
 
 
@@ -89,15 +101,17 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
         let {cacheAddr, writeData} = bramWriteReqQ.first;
         bramWriteReqQ.deq;
         
+        subAddrType addr = unpack(truncate(pack(cacheAddr)));
         let req = BRAMRequest{
             write: True,
             responseOnWrite: True,
-            address: truncate(pack(cacheAddr)),
+            address: addr,
             datain: writeData
         };
-        subAddrType subIdx = truncateLSB(pack(cacheAddr));
+        subBlockIdxType subIdx = truncateLSB(pack(cacheAddr));
         subReqFifoVecPortB[subIdx].enq(req);
         orderKeepQueuePortB.enq(subIdx);
+        // $display("send BRAM write req to sub block =", fshow(subIdx), "addr=", fshow(addr));
     endrule
 
     rule handleBramWriteResp;
@@ -105,6 +119,7 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
         orderKeepQueuePortB.deq;
         let _ <- subBramVec[subIdx].portB.response.get;
         bramWriteRespQ.enq(True);
+        // $display("recv BRAM write resp from sub block =", fshow(subIdx));
     endrule
 
 
@@ -186,6 +201,8 @@ module mkTLB(TLB);
         pageTableStorage.read.request.put(pteIdx);
 
         offsetInputQ.enq(getPageOffset(va));
+
+        // $display("query TLB req = ", fshow(req), "pte index=", fshow(pteIdx));
     endrule
 
     rule handleTranslateResp;
@@ -196,12 +213,15 @@ module mkTLB(TLB);
 
         let pa = restorePA(pte.pn, pageOffset);
         translateSrvInst.putResp(pa);
+
+        // $display("query TLB resp pageOffset= ", fshow(pageOffset), "pte =", fshow(pte));
         
     endrule
 
     rule handleModifyReq;
         let req <- modifySrvInst.getReq;
         pageTableStorage.write.request.put(tuple2(req.idx, req.pte));
+        // $display("insert TLB = ", fshow(req));
     endrule
 
     rule handleModifyResp;
@@ -254,7 +274,7 @@ module mkMrAndPgtManager(MrAndPgtManager);
     // we set max inflight pgt update request is 2^3 = 8;
     Count#(Bit#(3)) pgtUpdateRespCounter <- mkCount(0);
 
-    rule updatePgtStateIdle if (state == MrAndPgtManagerFsmStateIdle);
+    rule updateMrAndPgtStateIdle if (state == MrAndPgtManagerFsmStateIdle);
         let descRaw = reqQ.first;
         reqQ.deq;
         // $display("PGT get modify request", fshow(descRaw));

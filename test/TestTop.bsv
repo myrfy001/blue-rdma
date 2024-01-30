@@ -25,18 +25,19 @@ import RecvStreamMocker :: *;
 import Headers :: *;
 
 import XdmaWrapper :: *;
-
+import UserLogicTypes :: *;
+import RegisterBlock :: *;
 
 import Top :: *;
 
-`define TEST_QPN_IDX_PART 'h1
-`define TEST_QPN_KEY_PART 'h2
+`define TEST_QPN_IDX_PART 'h3
+`define TEST_QPN_KEY_PART 'h611
 
-`define TEST_MR_IDX_PART 'h11
-`define TEST_MR_KEY_PART 'h22
-`define TEST_MR_START_VA 'hAABBCCDD
-`define TEST_MR_LENGTH   1026
-`define TEST_MR_FIRST_PGT_IDX   2048
+`define TEST_MR_IDX_PART 'h0
+`define TEST_MR_KEY_PART 'h6622
+`define TEST_MR_START_VA 'h0
+`define TEST_MR_LENGTH   'h4000000
+`define TEST_MR_FIRST_PGT_IDX   'h200
 
 `define TEST_PGT_FIRST_ENTRY_PN 'h000C
 
@@ -65,56 +66,49 @@ module mkTestTop(Empty);
 
 
     Reg#(Bool) stopReg <- mkReg(False);
+    Reg#(UInt#(32)) idx <- mkReg(0);
 
 
     FSM runTest <- mkFSM(
         (seq
             
-            // // Insert QPC
-            // topA.qpcWriteCommonSrv.request.put(WriteReqCommonQPC{
-            //         qpn: genQPN(`TEST_QPN_IDX_PART, `TEST_QPN_KEY_PART),
-            //         ent: tagged Valid EntryCommonQPC {
-            //             isValid: True,
-            //             isError: False,
-            //             qpnKeyPart: `TEST_QPN_KEY_PART,
-            //             pdHandler: `TEST_PD_HANDLER,
-            //             qpType: IBV_QPT_RC,
-            //             rqAccessFlags: enum2Flag(IBV_ACCESS_REMOTE_WRITE),
-            //             pmtu: IBV_MTU_4096
-            //         }
-            // });
-            // action
-            //     let _ <- topA.qpcWriteCommonSrv.response.get;
-            // endaction
+            // set cmd queue response ringbuf addr
+            topA.csrWriteSrv.request.put(CsrWriteRequest{
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 0, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+                data: 'h1000
+            });
 
-            // // Insert into MR table
-            // topA.mrModifySrv.request.put(MrTableModifyReq{
-            //     idx: `TEST_MR_IDX_PART,
-            //     entry: tagged Valid MemRegionTableEntry{
-            //         pgtOffset: `TEST_MR_FIRST_PGT_IDX,
-            //         baseVA: `TEST_MR_START_VA,
-            //         len: `TEST_MR_LENGTH,
-            //         accFlags: enum2Flag(IBV_ACCESS_REMOTE_WRITE),
-            //         pdHandler: `TEST_PD_HANDLER,
-            //         keyPart: `TEST_MR_KEY_PART
-            //     }
-            // });
-            // action
-            //     let _ <- topA.mrModifySrv.response.get;
-            // endaction
+            action
+                let t1 <- topA.csrWriteSrv.response.get;
+            endaction
 
 
-            // // Insert into PGT
-            // topA.mrAndPgtModifyDescSrv.request.put(PgtModifyReq{
-            //     idx: `TEST_MR_FIRST_PGT_IDX,
-            //     pte: PageTableEntry{
-            //         pn: `TEST_PGT_FIRST_ENTRY_PN
-            //     }
-            // });
-            // action
-            //     let _ <- topA.mrAndPgtModifyDescSrv.response.get;
-            // endaction
+            // move cmd queue head to init RDMA
+            topA.csrWriteSrv.request.put(CsrWriteRequest{
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2,
+                data: 3
+            });
 
+            action
+                let t1 <- topA.csrWriteSrv.response.get;
+            endaction
+
+
+            // read cmd resp queue head pointer to check if all cmd executed
+            for (idx <= 0; idx<30; idx<=idx+1)
+            seq
+                topA.csrReadSrv.request.put(CsrReadRequest{
+                    addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 0, regIndex: CsrIdxRbHead})) << 2
+                });
+                action
+                    let t <- topA.csrReadSrv.response.get;
+                    $display("t=%d", t);
+                endaction
+                delay(10);
+            endseq
+
+
+            // generate mock stream input
             action
                 MockHeaderStream ms = unpack(0);
                 BTH bth = ?;
