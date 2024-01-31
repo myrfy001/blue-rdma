@@ -11,7 +11,7 @@ import DataTypes :: *;
 import Headers :: *;
 import PrimUtils :: *;
 import Settings :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 
 typedef Bit#(32)  AddrIPv4;
 typedef Bit#(128) AddrIPv6;

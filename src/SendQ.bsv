@@ -10,7 +10,7 @@ import PayloadGen :: *;
 import PrimUtils :: *;
 import Reserved :: *;
 import Settings :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 
 typedef struct {
     MAC    macAddr;

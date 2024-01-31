@@ -7,3 +7,5 @@ generate
 *.jou
 *.ltx
 tight_setup_hold_pins.txt
+*.hex
+*.bin

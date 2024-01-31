@@ -130,6 +130,19 @@ module mkTestTop(Empty);
             endaction
 
 
+            // read RQ's metadata report queue's head pointer to check if we received req;
+            for (idx <= 0; idx<30; idx<=idx+1)
+            seq
+                topA.csrReadSrv.request.put(CsrReadRequest{
+                    addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 1, regIndex: CsrIdxRbHead})) << 2
+                });
+                action
+                    let t <- topA.csrReadSrv.response.get;
+                    $display("t=%d", t);
+                endaction
+                delay(10);
+            endseq
+
             delay(20000);
             $display("pass");
             $finish;

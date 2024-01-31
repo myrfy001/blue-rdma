@@ -15,6 +15,7 @@ import MetaData :: *;
 import DataTypes :: *;
 import InputPktHandle :: *;
 import RdmaUtils :: *;
+import SendQ :: *;
 
 import ExtractAndPrependPipeOut :: *;
 
