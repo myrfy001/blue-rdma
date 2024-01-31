@@ -16,6 +16,8 @@ import DataTypes :: *;
 import InputPktHandle :: *;
 import RdmaUtils :: *;
 import SendQ :: *;
+import PayloadGen :: *;
+import Headers :: *;
 
 import ExtractAndPrependPipeOut :: *;
 
@@ -141,12 +143,24 @@ module mkTopCore(Clock slowClock, Reset slowReset, TopCoreIfc ifc);
     mkConnection(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.payload, payloadConsumer.payloadPipeIn);
     mkConnection(rq.payloadXonsumerControlPortClt, payloadConsumer.controlPortSrv);
 
+    DmaReqAddrTranslator addrTranslatorForSQ <- mkDmaReadReqAddrTranslator;
+
+    function Bool alwaysTrue(anytype t) = True;
 
     MemRegionTable mrTable <- mkMemRegionTable;
-    mkConnection(mrTable.querySrv, rq.mrTableQueryClt);
+
+    Vector#(2, Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)))  mrTableQueryCltVec = newVector;
+    mrTableQueryCltVec[0] = rq.mrTableQueryClt;
+    mrTableQueryCltVec[1] = addrTranslatorForSQ.mrTableClt;
+    let mrTableQueryArbitClt <- mkClientArbiter(mrTableQueryCltVec, alwaysTrue, alwaysTrue);
+    mkConnection(mrTable.querySrv, mrTableQueryArbitClt);
 
     TLB tlb <- mkTLB;
-    mkConnection(tlb.translateSrv, rq.pgtQueryClt);
+    Vector#(2, Client#(PgtAddrTranslateReq, ADDR))  tlbQueryCltVec = newVector;
+    tlbQueryCltVec[0] = rq.pgtQueryClt;
+    tlbQueryCltVec[1] = addrTranslatorForSQ.addrTransClt;
+    let tlbQueryArbitClt <- mkClientArbiter(tlbQueryCltVec, alwaysTrue, alwaysTrue);
+    mkConnection(tlb.translateSrv, tlbQueryArbitClt);
 
     MrAndPgtManager mrAndPgtManager <- mkMrAndPgtManager;
     mkConnection(mrAndPgtManager.mrModifyClt, mrTable.modifySrv);
@@ -168,13 +182,13 @@ module mkTopCore(Clock slowClock, Reset slowReset, TopCoreIfc ifc);
     function Bool isC2hDmaReqFinished(UserLogicDmaC2hReq req) = req.dataStream.isLast;
     function Bool isC2hDmaRespFinished(UserLogicDmaC2hResp resp) = True;
     
-    Vector#(4, RingbufDmaH2cClt) dmaAccessH2cCltVec = newVector;
-    Vector#(2, RingbufDmaC2hClt) dmaAccessC2hCltVec = newVector;
+    Vector#(4, UserLogicDmaReadClt)  dmaAccessH2cCltVec = newVector;
+    Vector#(2, UserLogicDmaWriteClt) dmaAccessC2hCltVec = newVector;
 
     dmaAccessH2cCltVec[0] = bluerdmaDmaProxyForRQ.userlogicSideReadClt;
     dmaAccessH2cCltVec[1] = ringbufPool.dmaAccessH2cClt;
     dmaAccessH2cCltVec[2] = mrAndPgtManager.pgtDmaReadClt;
-    dmaAccessH2cCltVec[3] <- mkFakeClient;
+    dmaAccessH2cCltVec[3] = addrTranslatorForSQ.sqReqOutputClt;
 
     dmaAccessC2hCltVec[0] = bluerdmaDmaProxyForRQ.userlogicSideWriteClt;
     dmaAccessC2hCltVec[1] = ringbufPool.dmaAccessC2hClt;
@@ -188,23 +202,21 @@ module mkTopCore(Clock slowClock, Reset slowReset, TopCoreIfc ifc);
     mkConnection(xdmaWriteClt, xdmaGearbox.c2hStreamSrv);
 
 
+    Reg#(Bool) clearReg <- mkReg(True);
+    let dmaReadCntrl <- mkDmaReadCntrl(clearReg, addrTranslatorForSQ.sqReqInputSrv);
+    let shouldAddPadding = True;
+    let payloadGenerator <- mkPayloadGenerator(clearReg, shouldAddPadding, dmaReadCntrl);
+
+    let sq <- mkSendQ(clearReg, payloadGenerator);
+
+
     // mkConnection(rdmaTransportLayer.dmaReadClt, bluerdmaDmaProxyForRQ.blueSideReadSrv);   
     mkConnection(payloadConsumer.dmaWriteClt, bluerdmaDmaProxyForRQ.blueSideWriteSrv);
 
     interface rdmaDataStreamInput = toPut(inputDataStreamQ);
-
-    // interface xdmaChannel = xdmaWrap.xdmaChannel;
-    // interface axilRegBlock = xdmaAxiLiteWrap.cntrlAxil;
-
-
-
-    // interface qpcWriteCommonSrv = qpc.writeCommonSrv;
-    // interface mrModifySrv = mrTable.modifySrv;
-    // interface mrAndPgtModifyDescSrv = tlb.modifySrv;
 
     interface dmaReadClt = xdmaGearbox.h2cStreamClt;
     interface dmaWriteClt = xdmaGearbox.c2hStreamClt;
     interface csrWriteSrv = regBlock.csrWriteSrv;
     interface csrReadSrv = regBlock.csrReadSrv;
 endmodule
-

@@ -189,10 +189,11 @@ typedef struct {
 
 // Common types
 
-typedef Server#(DmaReadReqNew, DmaReadRespNew)   DmaReadSrv;
-typedef Server#(DmaWriteReqNew, DmaWriteRespNew) DmaWriteSrv;
-typedef Client#(DmaReadReqNew, DmaReadRespNew)   DmaReadClt;
-typedef Client#(DmaWriteReqNew, DmaWriteRespNew) DmaWriteClt;
+typedef Server#(DmaReadReq, DmaReadResp)            DmaReadSrv;
+typedef Server#(DmaWriteReqNew, DmaWriteRespNew)    DmaWriteSrv;
+typedef Client#(DmaReadReq, DmaReadResp)            DmaReadClt;
+typedef Client#(DmaReadReqNew, DmaReadRespNew)      DmaReadNewClt;
+typedef Client#(DmaWriteReqNew, DmaWriteRespNew)    DmaWriteClt;
 
 typedef Server#(PermCheckReq, Bool) PermCheckSrv;
 typedef Client#(PermCheckReq, Bool) PermCheckClt;
@@ -263,7 +264,7 @@ typedef struct {
     PktFragNum pktFragNum;
     Bool isZeroPayloadLen;
     RdmaHeader pktHeader;
-    Bool pktValid;
+        Bool pktValid;
     PktVeriStatus pktStatus;
 } RdmaPktMetaData deriving(Bits, Bounded);
 
@@ -302,6 +303,14 @@ typedef struct {
 } DmaReadMetaData deriving(Bits, FShow);
 
 typedef struct {
+    DmaReqSrcType initiator;
+    QPN sqpn;
+    ADDR startAddr;
+    Length len;
+    IndexMR mrID;
+} DmaReadMetaDataNew deriving(Bits, FShow);
+
+typedef struct {
     DmaReqSrcType initiator; // TODO: remove it
     QPN sqpn; // TODO: remove it
     WorkReqID wrID; // TODO: remove it
@@ -316,10 +325,17 @@ typedef struct {
     WorkReqID wrID; // TODO: remove it
     Bool isRespErr;
     DataStream dataStream;
+} DmaReadResp deriving(Bits, FShow);
+
+typedef struct {
+    DmaReqSrcType initiator;
+    QPN sqpn;
+    Bool isRespErr;
+    DataStream dataStream;
 } DmaReadRespNew deriving(Bits, FShow);
 
 typedef struct {
-    ADDR startAddr;
+        ADDR startAddr;
     PktLen len;
 } DmaWriteMetaDataNew deriving(Bits, Eq, FShow);
 
@@ -329,7 +345,7 @@ typedef struct {
 } DmaWriteReqNew deriving(Bits, FShow);
 
 typedef struct {
-    Bool isRespErr;
+        Bool isRespErr;
 } DmaWriteRespNew deriving(Bits, FShow);
 
 typedef enum {

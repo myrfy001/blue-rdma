@@ -370,88 +370,45 @@ module mkMrAndPgtManager(MrAndPgtManager);
 endmodule
 
 
-// interface DmaReqAddrTranslator;
-//     interface GetPut#(DmaReadReqNew) readReqTranslator;
-//     interface GetPut#(DmaWriteReqNew) writeReqTranslator;
-//     interface Client#(FindReqTLB, FindRespTLB) tlbClt;
-// endinterface
+interface DmaReqAddrTranslator;
+    interface Server#(DmaReadReq, DmaReadResp) sqReqInputSrv;
+    interface Client#(UserLogicDmaH2cReq, UserLogicDmaH2cResp) sqReqOutputClt;
+
+    interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableClt;
+    interface Client#(PgtAddrTranslateReq, ADDR) addrTransClt;    
+endinterface
 
 
-// typedef union tagged {
-//     DmaReadReqNew AddressTranslatePendingRead;
-//     DmaWriteReqNew AddressTranslatePendingWrite;
-// } AddressTranslatePendingReqEntry deriving(Bits, FShow);
 
+(* synthesize *)
+module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
+    FIFOF#(DmaReadReq) readReqInQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cReq) readReqOutQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cResp) readRespInQ <- mkFIFOF;
+    FIFOF#(DmaReadResp) readRespOutQ <- mkFIFOF;
 
-// (* synthesize *)
-// module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
-//     FIFOF#(DmaReadReqNew) readInQ <- mkFIFOF;
-//     FIFOF#(DmaReadReqNew) readOutQ <- mkFIFOF;
-//     FIFOF#(DmaWriteReqNew) writeInQ <- mkFIFOF;
-//     FIFOF#(DmaWriteReqNew) writeOutQ <- mkFIFOF;
+    FIFOF#(DmaReadReq) pendingReqQ <- mkSizedFIFOF(3);
 
-//     FIFOF#(AddressTranslatePendingReqEntry) pendingReqQ <- mkSizedFIFOF(3);
+    BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkBypassClient;
+    BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient;
 
-//     Reg#(Bool) isNextRead <- mkReg(False);
-    
-//     interface readReqTranslator = tuple2(toGet(readOutQ), toPut(readInQ));
-//     interface writeReqTranslator = tuple2(toGet(writeOutQ), toPut(writeInQ));
-//     interface Client tlbClt;
-//         interface Get request;
-//             method ActionValue#(FindReqTLB) get() if (readInQ.notEmpty || writeInQ.notEmpty);
-//                 Bool grantRead = False;
-//                 Bool grantWrite = False;
+    // rule handleInputReq;
+    //     readInQ.deq;
+    //     let req = readInQ.first;
+    //     pendingReqQ.enq(req);
+    //     let mrTableQueryReq = MrTableQueryReq{
+    //         // idx: rkey2IndexMR(req.rkey)   // TODO
+    //         idx: rkey2IndexMR(unpack(0))
+    //     };
+    //     mrTableQueryCltInst.putReq(mrTableQueryReq);
+    // endrule
 
-//                 if (isNextRead) begin
-//                     if (readInQ.notEmpty) begin
-//                         grantRead = True;
-//                     end 
-//                     else if (writeInQ.notEmpty) begin
-//                         grantWrite = True;
-//                     end
-//                 end 
-//                 else begin
-//                     if (writeInQ.notEmpty) begin
-//                         grantWrite = True;   
-//                     end 
-//                     else if (readInQ.notEmpty) begin
-//                         grantRead = True;
-//                     end
-//                 end
+    // rule handleMrRespAndSendPgtReq;
+    //     let maybeResp 
+    // endrule
 
-//                 if (grantRead) begin
-//                     readInQ.deq;
-//                     isNextRead <= False;
-//                     pendingReqQ.enq(tagged AddressTranslatePendingRead readInQ.first);  // TODO: need not to store address and mrID anymore
-//                     return tuple2(zeroExtend(pack(readInQ.first.mrID)), readInQ.first.startAddr);
-//                 end 
-//                 else begin
-//                     writeInQ.deq;
-//                     isNextRead <= True;
-//                     pendingReqQ.enq(tagged AddressTranslatePendingWrite writeInQ.first);  // TODO: need not to store address and mrID anymore
-//                     return tuple2(zeroExtend(pack(writeInQ.first.metaData.mrID)), writeInQ.first.metaData.startAddr);
-//                 end
-
-//             endmethod
-//         endinterface
-        
-//         interface Put response;
-//             method Action put(FindRespTLB ret);
-//                 pendingReqQ.deq;
-//                 if (pendingReqQ.first matches tagged AddressTranslatePendingRead .resp) begin
-//                     let t = resp;
-//                     t.startAddr = tpl_2(ret);
-//                     readOutQ.enq(t);
-//                     // $display("DMA H2C Translate, %x -> %x", resp.startAddr, tpl_2(ret));
-//                 end 
-//                 else if (pendingReqQ.first matches tagged AddressTranslatePendingWrite .resp) begin
-//                     let t = resp;
-//                     t.metaData.startAddr = tpl_2(ret);
-//                     writeOutQ.enq(t);
-//                     // $display("DMA C2CH Translate, %x -> %x", resp.metaData.startAddr, tpl_2(ret));
-//                 end
-//             endmethod
-//         endinterface
-//     endinterface
-
-// endmodule
+    interface sqReqInputSrv  = toGPServer(readReqInQ, readRespOutQ);
+    interface sqReqOutputClt = toGPClient(readReqOutQ, readRespInQ);
+    interface mrTableClt     =   mrTableQueryCltInst.clt;
+    interface addrTransClt   =   pgtQueryCltInst.clt;
+endmodule

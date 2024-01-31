@@ -39,7 +39,7 @@ function MockHeaderStream fillBthOfMockedHeaderStream(MockHeaderStream inp);
     ]);
 
 
-    bth.padCnt = calcPadCnt(zeroExtend(inp.payloadLen));
+    bth.padCnt = calcPadCnt(pack(inp.payloadLen));
     inp.payloadLen = inp.payloadLen + zeroExtend(bth.padCnt);
 
     inp.headerBuf[
