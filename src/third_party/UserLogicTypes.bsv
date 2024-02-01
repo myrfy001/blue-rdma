@@ -5,6 +5,7 @@ import Headers :: *;
 import UserLogicSettings :: *;
 import ClientServer :: *;
 import PrimUtils :: *;
+import PayloadGen :: *;
 
 typedef 20 CSR_ADDR_WIDTH;
 typedef 4 CSR_DATA_STRB_WIDTH;
@@ -126,9 +127,7 @@ typedef Bit#(USER_LOGIC_DESCRIPTOR_BIT_WIDTH) RingbufRawDescriptor;
 typedef Bit#(RINGBUF_NUMBER_WIDTH) RingbufNumber;
 
 typedef 2 COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
-typedef 2 SQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
-typedef 1 RQ_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
-typedef 1 CQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
+typedef 4 SQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
 
 typedef enum {
     CmdQueueOpcodeUpdateMrTable = 'h0,
@@ -195,77 +194,71 @@ typedef CmdQueueReqDescQpManagementSeg0 CmdQueueRespDescQpManagementSeg0;
 
 
 typedef struct {
-    Length                  len;
+    Length                  totalLen;
     ReservedZero#(20)       reserved1;
     Bool                    isSuccessOrNeedSignalCplt;
     Bit#(4)                 extraSegmentCnt;
-    ReservedZero#(2)        reserved2;
+    Bool                    isFirst;
+    Bool                    isLast;
     WorkReqOpCode           opCode;
     Bool                    valid;
 } SendQueueDescCommonHead deriving(Bits, FShow);
 
 typedef struct {
-    RKEY                        rkey;
-    LKEY                        lkey;
-    ADDR                        raddr;
-    ADDR                        laddr;
-    SendQueueDescCommonHead     commonHeader;
+    ReservedZero#(64)           reserved1;        // 64 bits
+    AddrIPv4                    dqpIP;            // 32 bits
+    RKEY                        rkey;             // 32 bits
+    ADDR                        raddr;            // 64 bits
+    SendQueueDescCommonHead     commonHeader;     // 64 bits
 } SendQueueReqDescSeg0 deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(64)       reserved1;
-    ReservedZero#(64)       reserved2;
-    ReservedZero#(64)       reserved3;
-    ReservedZero#(32)       reserved4;
-    QPN                     sqpn;
-    Bool                    solicited;
-    ReservedZero#(2)        reserved5;
-    WorkReqSendFlag         flags;
+    ReservedZero#(64)       reserved1;          // 64 bits
+
+    IMM                     imm;                // 32 bits
+    ReservedZero#(8)        reserved2;          // 8  bits
+    QPN                     dqpn;               // 24 bits
+
+    MAC                     macAddr;            // 48 bits
+    ReservedZero#(16)       reserved3;          // 16 bits
+
+    ReservedZero#(8)        reserved4;          // 8  bits
+    PSN                     psn;                // 24 bits
+    
+    ReservedZero#(5)        reserved5;          // 5  bits
+    NumSGE                  sgeCnt;             // 3  bits
+
+    ReservedZero#(4)        reserved6;          // 4  bits
+    TypeQP                  qpType;             // 4  bits
+    
+    ReservedZero#(3)        reserved7;          // 3  bits
+    WorkReqSendFlag         flags;              // 5  bits 
+
+    ReservedZero#(5)        reserved8;          // 5  bits
+    PMTU                    pmtu;               // 3  bits
 } SendQueueReqDescSeg1 deriving(Bits, FShow);
 
 typedef struct {
-    Length                  len;
-    ReservedZero#(20)       reserved1;
-    Bool                    isSuccessOrNeedSignalCplt;
-    Bit#(4)                 extraSegmentCnt;
-    ReservedZero#(2)        reserved2;
-    WorkReqOpCode           opCode;
-    Bool                    valid;
-} RecvQueueDescCommonHead deriving(Bits, FShow);
+    ADDR   laddr;         // 64 bits
+    Length len;           // 32 bits
+    LKEY   lkey;          // 32 bits
+} SendQueueReqDescFragSGE deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(8)                    reserved1;
-    QPN                                 sqpn;
-    LKEY                                lkey;
-    ReservedZero#(64)                   reserved2;
-    ADDR                                laddr;
-    RecvQueueDescCommonHead             commonHeader;
-} RecvQueueReqDesc deriving(Bits, FShow);
+    SendQueueReqDescFragSGE     sge1;       // 128 bits
+    SendQueueReqDescFragSGE     sge2;       // 128 bits
+} SendQueueReqDescVariableLenSGE deriving(Bits, FShow);
 
 
 
-typedef struct {
-    Length                  len;
-    ReservedZero#(21)       reserved1;
-    Bit#(4)                 extraSegmentCnt;
-    ReservedZero#(6)        reserved2;
-    Bool                    valid;
-} CompQueueDescCommonHead deriving(Bits, FShow);
+// Datapath report channel related
 
-typedef struct {
-    ReservedZero#(40)                   reserved1;
-    QPN                                 qpn;
-    ReservedZero#(64)                   reserved2;
-    ReservedZero#(16)                   reserved3;
-    PKEY                                pkey;
-    ReservedZero#(11)                   reserved4;
-    WorkCompStatus                      status;
-    ReservedZero#(1)                    reserved5;
-    WorkCompFlags                       flags;
-    WorkCompOpCode                      opcode;
-    CompQueueDescCommonHead             commonHeader;
-} CompQueueReqDesc deriving(Bits, FShow);
-
+// we now mix received packet metadata and WQE send finish event into the same queue, 
+// so we need a type as identifier.
+typedef enum {
+    MeatReportQueueDescTypeRecvPacketMeta = 0,
+    MeatReportQueueDescTypeSendFinished   = 1
+} MeatReportQueueDescType deriving(Bits, FShow);
 
 typedef struct {
     ReservedZero#(6)                reserved1;    // 6
@@ -275,53 +268,64 @@ typedef struct {
     QPN                             dqpn;         // 24
     RdmaOpCode                      opcode;       // 5
     TransType                       trans;        // 3
-} PktMeatReportQueueDescFragBTH deriving(Bits, FShow);
+} MeatReportQueueDescFragBTH deriving(Bits, FShow);
 
 typedef struct {
     Length                  dlen;         // 32
     RKEY                    rkey;         // 32
     ADDR                    va;           // 64
-} PktMeatReportQueueDescFragRETH deriving(Bits, FShow);
+} MeatReportQueueDescFragRETH deriving(Bits, FShow);
 
 typedef struct {
     AethCode                code;         // 2
     AethValue               value;        // 5
     MSN                     msn;          // 24
     PSN                     lastRetryPSN; // 24
-} PktMeatReportQueueDescFragAETH deriving(Bits, FShow);
+} MeatReportQueueDescFragAETH deriving(Bits, FShow);
 
 typedef struct {
     RKEY                            secondaryRkey;   // 32
     ADDR                            secondaryVa;     // 64 
-} PktMeatReportQueueDescFragSecondaryRETH deriving(Bits, FShow);
+} MeatReportQueueDescFragSecondaryRETH deriving(Bits, FShow);
 
 typedef struct {
     IMM                             data;           // 32
-} PktMeatReportQueueDescFragImmDT deriving(Bits, FShow);
+} MeatReportQueueDescFragImmDT deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(184)              reserved1;      // 184
-    PktMeatReportQueueDescFragBTH   bth;            // 64
-    RdmaReqStatus                   reqStatus;      // 8 
-} PktMeatReportQueueDescBth deriving(Bits, FShow);
+    ReservedZero#(160)              reserved1;      // 160
+    MeatReportQueueDescFragBTH      bth;            // 64
+    RdmaReqStatus                   reqStatus;      // 8
+    ReservedZero#(23)               reserved2;      // 23
+    MeatReportQueueDescType         descType;       // 1
+} MeatReportQueueDescBth deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(24)               reserved1;      // 24
-    PktMeatReportQueueDescFragImmDT immDt;          // 32
-    PktMeatReportQueueDescFragRETH  reth;           // 128
-    PktMeatReportQueueDescFragBTH   bth;            // 64
+    MeatReportQueueDescFragImmDT    immDt;          // 32
+    MeatReportQueueDescFragRETH     reth;           // 128
+    MeatReportQueueDescFragBTH      bth;            // 64
     RdmaReqStatus                   reqStatus;      // 8 
-} PktMeatReportQueueDescBthRethImmDT deriving(Bits, FShow);
+    ReservedZero#(23)               reserved1;      // 23
+    MeatReportQueueDescType         descType;       // 1
+} MeatReportQueueDescBthRethImmDT deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(129)              reserved1;      // 129
-    PktMeatReportQueueDescFragAETH  aeth;           // 55
-    PktMeatReportQueueDescFragBTH   bth;            // 64
+    ReservedZero#(105)              reserved1;      // 105
+    MeatReportQueueDescFragAETH     aeth;           // 55
+    MeatReportQueueDescFragBTH      bth;            // 64
     RdmaReqStatus                   reqStatus;      // 8 
-} PktMeatReportQueueDescBthAeth deriving(Bits, FShow);
+    ReservedZero#(23)               reserved2;      // 23
+    MeatReportQueueDescType         descType;       // 1
+} MeatReportQueueDescBthAeth deriving(Bits, FShow);
 
 typedef struct {
     ReservedZero#(160)                          reserved1;       // 160
-    PktMeatReportQueueDescFragSecondaryRETH     secReth;         // 96
-} PktMeatReportQueueDescSecondaryReth deriving(Bits, FShow);
+    MeatReportQueueDescFragSecondaryRETH        secReth;         // 96
+} MeatReportQueueDescSecondaryReth deriving(Bits, FShow);
 
+typedef struct {
+    ReservedZero#(231)              reserved1;      // 231
+    Bool                            hasDmaRespErr;  // 1            
+    ReservedZero#(23)               reserved2;      // 23
+    MeatReportQueueDescType         descType;       // 1
+} MeatReportQueueDescSendQueueReport deriving(Bits, FShow);

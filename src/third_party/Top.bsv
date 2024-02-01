@@ -92,12 +92,14 @@ endinterface
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp" *) 
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp_1" *) 
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp" *)
-(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp_1" *) 
+// (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp_1" *) 
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp" *)
-(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp_1" *) 
+// (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp_1" *) 
 module mkTopCore(Clock slowClock, Reset slowReset, TopCoreIfc ifc);
 
+    // TODO try remove this proxy.
     BluerdmaDmaProxyForRQ bluerdmaDmaProxyForRQ <- mkBluerdmaDmaProxyForRQ;
+
     RingbufPool#(RINGBUF_H2C_TOTAL_COUNT, RINGBUF_C2H_TOTAL_COUNT, RingbufRawDescriptor) ringbufPool <- mkRingbufPool;
     RegisterBlock#(CsrAddr, CsrData) regBlock <- mkRegisterBlock(ringbufPool.h2cMetas, ringbufPool.c2hMetas);
     CommandQueueController cmdQController <- mkCommandQueueController;
@@ -128,16 +130,8 @@ module mkTopCore(Clock slowClock, Reset slowReset, TopCoreIfc ifc);
 
     RQReportEntryToRingbufDesc reportDescConvertor <- mkRQReportEntryToRingbufDesc;
 
-    mkConnection(rq.pktReportEntryPipeOut ,reportDescConvertor.pktReportEntryPipeIn);
+    mkConnection(rq.pktReportEntryPipeOut, reportDescConvertor.pktReportEntryPipeIn);
 
-    rule forwardPktReportDescToRingbuf;
-        let t = reportDescConvertor.ringbufDescPipeOut.first;
-        reportDescConvertor.ringbufDescPipeOut.deq;
-        ringbufPool.c2hRings[1].enq(t);
-    endrule
-
-
-    
     let payloadConsumer <- mkPayloadConsumer;
 
     mkConnection(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.payload, payloadConsumer.payloadPipeIn);
@@ -173,7 +167,6 @@ module mkTopCore(Clock slowClock, Reset slowReset, TopCoreIfc ifc);
 
 
     mkConnection(workQueueRingbufController.sqRingBuf, toGet(ringbufPool.h2cRings[1]));
-    mkConnection(workQueueRingbufController.scqRingBuf.get, ringbufPool.c2hRings[2].enq);
 
 
 
@@ -209,9 +202,27 @@ module mkTopCore(Clock slowClock, Reset slowReset, TopCoreIfc ifc);
 
     let sq <- mkSendQ(clearReg, payloadGenerator);
 
-
-    // mkConnection(rdmaTransportLayer.dmaReadClt, bluerdmaDmaProxyForRQ.blueSideReadSrv);   
     mkConnection(payloadConsumer.dmaWriteClt, bluerdmaDmaProxyForRQ.blueSideWriteSrv);
+    mkConnection(workQueueRingbufController.workReq, sq.srvPort.request);
+
+    // use descending_urgency here since we need a simple fix-priority arbitter here.
+    (* descending_urgency = "forwardRecvQueuePktReportDescToRingbuf, forwardSendQueueReportDescToRingbuf" *)
+    rule forwardRecvQueuePktReportDescToRingbuf;
+        let t = reportDescConvertor.ringbufDescPipeOut.first;
+        reportDescConvertor.ringbufDescPipeOut.deq;
+        ringbufPool.c2hRings[1].enq(t);
+    endrule
+
+    rule forwardSendQueueReportDescToRingbuf;
+        let sendResp <- sq.srvPort.response.get;
+        let desc = MeatReportQueueDescSendQueueReport {
+            reserved1:      unpack(0),
+            hasDmaRespErr:  sendResp.hasDmaRespErr,             
+            reserved2:      unpack(0),
+            descType:       MeatReportQueueDescTypeSendFinished
+        };
+        ringbufPool.c2hRings[1].enq(pack(desc));
+    endrule
 
     interface rdmaDataStreamInput = toPut(inputDataStreamQ);
 

@@ -294,7 +294,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
         let reportEntry = pktReportEntryPipeInQ.first;
         RingbufRawDescriptor ent;
 
-        let bth = PktMeatReportQueueDescFragBTH {
+        let bth = MeatReportQueueDescFragBTH {
             trans:      reportEntry.trans,
             opcode:     reportEntry.opcode,
             dqpn:       reportEntry.dqpn,
@@ -304,25 +304,25 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
             reserved1:  unpack(0)
         };
 
-        let reth = PktMeatReportQueueDescFragRETH {
+        let reth = MeatReportQueueDescFragRETH {
             va: reportEntry.va,
             rkey: reportEntry.rkey,
             dlen: reportEntry.dlen
         };
 
-        let secReth = PktMeatReportQueueDescFragSecondaryRETH {
+        let secReth = MeatReportQueueDescFragSecondaryRETH {
             secondaryRkey: reportEntry.secondaryRkey,
             secondaryVa  : reportEntry.secondaryVa
         };
 
-        let aeth = PktMeatReportQueueDescFragAETH {
+        let aeth = MeatReportQueueDescFragAETH {
             code:           reportEntry.code,
             value:          reportEntry.value,
             msn:            reportEntry.msn,
             lastRetryPSN:   reportEntry.lastRetryPSN
         };
 
-        let immDt = PktMeatReportQueueDescFragImmDT {
+        let immDt = MeatReportQueueDescFragImmDT {
             data:           reportEntry.immDt
         };
 
@@ -334,10 +334,12 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                 fromInteger(valueOf(RC_SEND_LAST)),
                 fromInteger(valueOf(RC_SEND_ONLY)):
                 begin
-                    ent = pack(PktMeatReportQueueDescBth{
+                    ent = pack(MeatReportQueueDescBth{
                         reqStatus   :   reportEntry.reqStatus,
                         bth         :   bth,
-                        reserved1   :   unpack(0)
+                        descType    :   MeatReportQueueDescTypeRecvPacketMeta,
+                        reserved1   :   unpack(0),
+                        reserved2   :   unpack(0)
                     });
                     ringbufDescPipeOutQ.enq(pack(ent));
                     pktReportEntryPipeInQ.deq;
@@ -358,11 +360,12 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                 fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_LAST)),
                 fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_ONLY)):
                 begin
-                    ent = pack(PktMeatReportQueueDescBthRethImmDT{
+                    ent = pack(MeatReportQueueDescBthRethImmDT{
                         reqStatus   :   reportEntry.reqStatus,
                         bth         :   bth,
                         reth        :   reth,
                         immDt       :   immDt,
+                        descType    :   MeatReportQueueDescTypeRecvPacketMeta,
                         reserved1   :   unpack(0)
                     });
                     if (opcode == fromInteger(valueOf(RC_RDMA_READ_REQUEST))) begin
@@ -378,11 +381,13 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                 fromInteger(valueOf(XRC_ACKNOWLEDGE)),
                 fromInteger(valueOf(XRC_ATOMIC_ACKNOWLEDGE)):
                 begin
-                    ent = pack(PktMeatReportQueueDescBthAeth{
+                    ent = pack(MeatReportQueueDescBthAeth{
                         reqStatus   :   reportEntry.reqStatus,
                         bth         :   bth,
                         aeth        :   aeth,
-                        reserved1   :   unpack(0)
+                        descType    :   MeatReportQueueDescTypeRecvPacketMeta,
+                        reserved1   :   unpack(0),
+                        reserved2   :   unpack(0)
                     });
                     pktReportEntryPipeInQ.deq;
                     ringbufDescPipeOutQ.enq(pack(ent));
@@ -397,7 +402,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
         else if (state == RQReportEntryToRingbufDescStatusOutputExtraInfo) begin
             case (reportEntry.opcode)
                 RDMA_READ_REQUEST: begin
-                    ent = pack(PktMeatReportQueueDescSecondaryReth{
+                    ent = pack(MeatReportQueueDescSecondaryReth{
                         secReth     :   secReth,
                         reserved1   :   unpack(0)
                     });
