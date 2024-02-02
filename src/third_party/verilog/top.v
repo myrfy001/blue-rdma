@@ -1,25 +1,37 @@
 `timescale 1ps / 1ps
 
-module top #
-(
+module top#(
    parameter PL_LINK_CAP_MAX_LINK_WIDTH          = 16,            // 1- X1; 2 - X2; 4 - X4; 8 - X8
    parameter C_DATA_WIDTH                        = 512
 
-   )
-   (
+)(
+    // PCIe and XDMA
     output [(PL_LINK_CAP_MAX_LINK_WIDTH - 1) : 0] pci_exp_txp,
     output [(PL_LINK_CAP_MAX_LINK_WIDTH - 1) : 0] pci_exp_txn,
     input [(PL_LINK_CAP_MAX_LINK_WIDTH - 1) : 0]  pci_exp_rxp,
     input [(PL_LINK_CAP_MAX_LINK_WIDTH - 1) : 0]  pci_exp_rxn,
 
-
-
-
     input 					 sys_clk_p,
     input 					 sys_clk_n,
     input 					 sys_rst_n
 
-   );
+    // CMAC
+    input qsfp1_ref_clk_p,
+    input qsfp1_ref_clk_n,
+
+    input qsfp2_ref_clk_p,
+    input qsfp2_ref_clk_n,
+
+    input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_rxn_in,
+    input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_rxp_in,
+    output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_txn_out,
+    output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_txp_out,
+
+    input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_rxn_in,
+    input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_rxp_in,
+    output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_txn_out,
+    output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_txp_out
+);
 
    //-----------------------------------------------------------------------------------------------------------------------
 
@@ -293,4 +305,115 @@ module top #
       .axilRegBlock_rready(m_axil_rready)
   );
 
+
+  cmac_usplus_0 cmac_inst(
+        .gt_rxp_in                            (gt_rxp_in     ),
+        .gt_rxn_in                            (gt_rxn_in     ),
+        .gt_txp_out                           (gt_txp_out    ),
+        .gt_txn_out                           (gt_txn_out    ),
+        .gt_loopback_in                       (gt_loopback_in),
+        
+        .gtwiz_reset_tx_datapath              (gtwiz_reset_tx_datapath),
+        .gtwiz_reset_rx_datapath              (gtwiz_reset_rx_datapath),
+        .sys_reset                            (gt_sys_reset),
+        .gt_ref_clk_p                         (gt_ref_clk_p),
+        .gt_ref_clk_n                         (gt_ref_clk_n),
+        .init_clk                             (gt_init_clk),
+
+        .gt_txusrclk2                         (gt_txusrclk2),
+        .usr_rx_reset                         (gt_usr_rx_reset),
+        .usr_tx_reset                         (gt_usr_tx_reset),
+
+        // RX
+        .rx_axis_tvalid                       (gt_rx_axis_tvalid),
+        .rx_axis_tdata                        (gt_rx_axis_tdata ),
+        .rx_axis_tkeep                        (gt_rx_axis_tkeep ),
+        .rx_axis_tlast                        (gt_rx_axis_tlast ),
+        .rx_axis_tuser                        (gt_rx_axis_tuser ),
+        
+        .stat_rx_bad_fcs                      (gt_stat_rx_bad_fcs),
+        .stat_rx_stomped_fcs                  (gt_stat_rx_stomped_fcs),
+        .stat_rx_aligned                      (gt_stat_rx_aligned),
+        .stat_rx_pause_req                    (gt_stat_rx_pause_req),
+        .ctl_rx_enable                        (gt_ctl_rx_enable),
+        .ctl_rx_force_resync                  (gt_ctl_rx_force_resync),
+        .ctl_rx_test_pattern                  (gt_ctl_rx_test_pattern),
+        .ctl_rx_check_etype_gcp               (gt_ctl_rx_check_etype_gcp),
+        .ctl_rx_check_etype_gpp               (gt_ctl_rx_check_etype_gpp),
+        .ctl_rx_check_etype_pcp               (gt_ctl_rx_check_etype_pcp),
+        .ctl_rx_check_etype_ppp               (gt_ctl_rx_check_etype_ppp),
+        .ctl_rx_check_mcast_gcp               (gt_ctl_rx_check_mcast_gcp),
+        .ctl_rx_check_mcast_gpp               (gt_ctl_rx_check_mcast_gpp),
+        .ctl_rx_check_mcast_pcp               (gt_ctl_rx_check_mcast_pcp),
+        .ctl_rx_check_mcast_ppp               (gt_ctl_rx_check_mcast_ppp),
+        .ctl_rx_check_opcode_gcp              (gt_ctl_rx_check_opcode_gcp),
+        .ctl_rx_check_opcode_gpp              (gt_ctl_rx_check_opcode_gpp),
+        .ctl_rx_check_opcode_pcp              (gt_ctl_rx_check_opcode_pcp),
+        .ctl_rx_check_opcode_ppp              (gt_ctl_rx_check_opcode_ppp),
+        .ctl_rx_check_sa_gcp                  (gt_ctl_rx_check_sa_gcp),
+        .ctl_rx_check_sa_gpp                  (gt_ctl_rx_check_sa_gpp),
+        .ctl_rx_check_sa_pcp                  (gt_ctl_rx_check_sa_pcp),
+        .ctl_rx_check_sa_ppp                  (gt_ctl_rx_check_sa_ppp),
+        .ctl_rx_check_ucast_gcp               (gt_ctl_rx_check_ucast_gcp),
+        .ctl_rx_check_ucast_gpp               (gt_ctl_rx_check_ucast_gpp),
+        .ctl_rx_check_ucast_pcp               (gt_ctl_rx_check_ucast_pcp),
+        .ctl_rx_check_ucast_ppp               (gt_ctl_rx_check_ucast_ppp),
+        .ctl_rx_enable_gcp                    (gt_ctl_rx_enable_gcp),
+        .ctl_rx_enable_gpp                    (gt_ctl_rx_enable_gpp),
+        .ctl_rx_enable_pcp                    (gt_ctl_rx_enable_pcp),
+        .ctl_rx_enable_ppp                    (gt_ctl_rx_enable_ppp),
+        .ctl_rx_pause_ack                     (gt_ctl_rx_pause_ack),
+        .ctl_rx_pause_enable                  (gt_ctl_rx_pause_enable),
+    
+
+        // TX
+        .tx_axis_tready                       (gt_tx_axis_tready),
+        .tx_axis_tvalid                       (gt_tx_axis_tvalid),
+        .tx_axis_tdata                        (gt_tx_axis_tdata),
+        .tx_axis_tkeep                        (gt_tx_axis_tkeep),
+        .tx_axis_tlast                        (gt_tx_axis_tlast),
+        .tx_axis_tuser                        (gt_tx_axis_tuser),
+        
+        .tx_ovfout                            (gt_tx_ovfout),
+        .tx_unfout                            (gt_tx_unfout),
+        .ctl_tx_enable                        (gt_ctl_tx_enable),
+        .ctl_tx_test_pattern                  (gt_ctl_tx_test_pattern),
+        .ctl_tx_send_idle                     (gt_ctl_tx_send_idle),
+        .ctl_tx_send_rfi                      (gt_ctl_tx_send_rfi),
+        .ctl_tx_send_lfi                      (gt_ctl_tx_send_lfi),
+        .ctl_tx_pause_enable                  (gt_ctl_tx_pause_enable),
+        .ctl_tx_pause_req                     (gt_ctl_tx_pause_req),
+        .ctl_tx_pause_quanta0                 (gt_ctl_tx_pause_quanta0),
+        .ctl_tx_pause_quanta1                 (gt_ctl_tx_pause_quanta1),
+        .ctl_tx_pause_quanta2                 (gt_ctl_tx_pause_quanta2),
+        .ctl_tx_pause_quanta3                 (gt_ctl_tx_pause_quanta3),
+        .ctl_tx_pause_quanta4                 (gt_ctl_tx_pause_quanta4),
+        .ctl_tx_pause_quanta5                 (gt_ctl_tx_pause_quanta5),
+        .ctl_tx_pause_quanta6                 (gt_ctl_tx_pause_quanta6),
+        .ctl_tx_pause_quanta7                 (gt_ctl_tx_pause_quanta7),
+        .ctl_tx_pause_quanta8                 (gt_ctl_tx_pause_quanta8),
+
+        .ctl_tx_pause_refresh_timer0          (16'd0),
+        .ctl_tx_pause_refresh_timer1          (16'd0),
+        .ctl_tx_pause_refresh_timer2          (16'd0),
+        .ctl_tx_pause_refresh_timer3          (16'd0),
+        .ctl_tx_pause_refresh_timer4          (16'd0),
+        .ctl_tx_pause_refresh_timer5          (16'd0),
+        .ctl_tx_pause_refresh_timer6          (16'd0),
+        .ctl_tx_pause_refresh_timer7          (16'd0),
+        .ctl_tx_pause_refresh_timer8          (16'd0),
+        .ctl_tx_resend_pause                  (1'b0 ),
+        .tx_preamblein                        (56'd0),
+        .core_rx_reset                        (1'b0 ),
+        .core_tx_reset                        (1'b0 ),
+        .rx_clk                               (gt_txusrclk2),
+        .core_drp_reset                       (1'b0 ),
+        .drp_clk                              (1'b0 ),
+        .drp_addr                             (10'b0),
+        .drp_di                               (16'b0),
+        .drp_en                               (1'b0 ),
+        .drp_do                               (),
+        .drp_rdy                              (),
+        .drp_we                               (1'b0 )
+    );
 endmodule

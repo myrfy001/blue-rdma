@@ -7,6 +7,8 @@ import Vector :: *;
 import PAClib :: *;
 
 import Axi4LiteTypes :: *;
+import XilinxCmacController :: *;
+import UdpIpArpEthCmacRxTx :: *;
 
 import PipeIn :: *;
 import RQ :: *;
@@ -41,12 +43,24 @@ interface BsvTop#(numeric type dataSz, numeric type userSz);
     interface RawAxi4LiteSlave#(CSR_ADDR_WIDTH, CSR_DATA_STRB_WIDTH) axilRegBlock;
     interface Clock slowClockIfc;
     interface Put#(DataStream) rdmaDataStreamInput;
-    // interface DataStreamPipeOut rdmaDataStreamPipeOut;
+    interface DataStreamPipeOut rdmaDataStreamPipeOut;
+    
+    
+    // Interface with CMAC IP
+    (* prefix = "" *)
+    interface XilinxCmacController cmacController;
 endinterface
 
 
 (* synthesize *)
-module mkBsvTop(Clock slowClock, Reset slowReset, BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc);
+module mkBsvTop(
+    Clock slowClock, 
+    Reset slowReset, 
+    (* osc   = "cmac_rxtx_clk" *) Clock cmacRxTxClk,
+    (* reset = "cmac_rx_reset" *) Reset cmacRxReset,
+    (* reset = "cmac_tx_reset" *) Reset cmacTxReset,
+    BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc
+);
     XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper(clocked_by slowClock, reset_by slowReset);
     XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(slowClock, slowReset);
     TopCoreIfc bsvTopCore <- mkTopCore(slowClock, slowReset);
@@ -55,11 +69,34 @@ module mkBsvTop(Clock slowClock, Reset slowReset, BsvTop#(USER_LOGIC_XDMA_KEEP_W
     mkConnection(xdmaWrap.dmaReadSrv, bsvTopCore.dmaReadClt);
     mkConnection(xdmaWrap.dmaWriteSrv, bsvTopCore.dmaWriteClt);
 
+
+
+
+    Bool isCmacTxWaitRxAligned = True;
+    Integer syncBramBufDepth = 32;
+    Integer cdcSyncStages = 4;
+
+    let udp <- mkUdpIpArpEthCmacRxTx(
+        `IS_SUPPORT_RDMA,
+        isCmacTxWaitRxAligned,
+        syncBramBufDepth,
+        cdcSyncStages,
+        cmacRxTxClk,
+        cmacRxReset,
+        cmacTxReset
+    );
+
+
+
+
+
+
     interface xdmaChannel = xdmaWrap.xdmaChannel;
     interface slowClockIfc = slowClock;
     interface axilRegBlock = xdmaAxiLiteWrap.cntrlAxil;
     interface rdmaDataStreamInput = bsvTopCore.rdmaDataStreamInput;
-    // interface rdmaDataStreamPipeOut = bsvTopCore.rdmaDataStreamPipeOut;
+    interface rdmaDataStreamPipeOut = bsvTopCore.rdmaDataStreamPipeOut;
+    interface cmacController = udp.cmacController;
 endmodule
 
 
@@ -71,7 +108,10 @@ endmodule
 
 
 interface TopCoreIfc;
-    interface Put#(DataStream) rdmaDataStreamInput;
+    interface Put#(DataStream)      rdmaDataStreamInput;
+    interface DataStreamPipeOut     rdmaDataStreamPipeOut;
+    interface PipeOut#(PktInfo4UDP) udpInfoPipeOut;
+    
 
 
     interface UserLogicDmaReadWideClt dmaReadClt;
@@ -79,10 +119,6 @@ interface TopCoreIfc;
 
     interface Server#(CsrWriteRequest#(CsrAddr, CsrData), CsrWriteResponse) csrWriteSrv;
     interface Server#(CsrReadRequest#(CsrAddr), CsrReadResponse#(CsrData)) csrReadSrv;
-        
-
-    // tmp interfaces for debuging while still in developing
-    // interface Server#(WriteReqCommonQPC, Bool) qpcWriteCommonSrv;
 
 endinterface
 
@@ -95,7 +131,11 @@ endinterface
 // (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp_1" *) 
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp" *)
 // (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp_1" *) 
-module mkTopCore(Clock slowClock, Reset slowReset, TopCoreIfc ifc);
+module mkTopCore(
+    Clock slowClock, 
+    Reset slowReset, 
+    TopCoreIfc ifc
+);
 
     // TODO try remove this proxy.
     BluerdmaDmaProxyForRQ bluerdmaDmaProxyForRQ <- mkBluerdmaDmaProxyForRQ;
@@ -205,6 +245,8 @@ module mkTopCore(Clock slowClock, Reset slowReset, TopCoreIfc ifc);
     mkConnection(payloadConsumer.dmaWriteClt, bluerdmaDmaProxyForRQ.blueSideWriteSrv);
     mkConnection(workQueueRingbufController.workReq, sq.srvPort.request);
 
+
+
     // use descending_urgency here since we need a simple fix-priority arbitter here.
     (* descending_urgency = "forwardRecvQueuePktReportDescToRingbuf, forwardSendQueueReportDescToRingbuf" *)
     rule forwardRecvQueuePktReportDescToRingbuf;
@@ -224,7 +266,9 @@ module mkTopCore(Clock slowClock, Reset slowReset, TopCoreIfc ifc);
         ringbufPool.c2hRings[1].enq(pack(desc));
     endrule
 
-    interface rdmaDataStreamInput = toPut(inputDataStreamQ);
+    interface rdmaDataStreamInput       = toPut(inputDataStreamQ);
+    interface rdmaDataStreamPipeOut     = sq.rdmaDataStreamPipeOut;
+    interface udpInfoPipeOut            = sq.udpInfoPipeOut;
 
     interface dmaReadClt = xdmaGearbox.h2cStreamClt;
     interface dmaWriteClt = xdmaGearbox.c2hStreamClt;
