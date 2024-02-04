@@ -314,16 +314,16 @@ typedef struct {
     DmaReqSrcType initiator; // TODO: remove it
     QPN sqpn; // TODO: remove it
     WorkReqID wrID; // TODO: remove it
-    IndexMR mrIdx;
-} DmaReadReq deriving(Bits, FShow);
-
-typedef struct {
-    DmaReqSrcType initiator;
-    QPN sqpn;
     ADDR startAddr;
     PktLen len;
     IndexMR mrIdx;
 } DmaReadReq deriving(Bits, FShow);
+
+typedef struct {
+    ADDR startAddr;
+    PktLen len;
+    IndexMR mrIdx;
+} DmaReadReqNew deriving(Bits, FShow);
 
 typedef struct {
     DmaReqSrcType initiator; // TODO: remove it
@@ -797,9 +797,6 @@ typedef Bit#(PD_KEY_WIDTH)    KeyPD;
 typedef UInt#(PD_INDEX_WIDTH) IndexPD;
 
 // MR related
-typedef TLog#(MAX_MR) MR_INDEX_WIDTH;
-typedef TSub#(KEY_WIDTH, MR_INDEX_WIDTH) MR_KEY_PART_WIDTH;
-
 typedef UInt#(MR_INDEX_WIDTH) IndexMR;
 typedef Bit#(MR_KEY_PART_WIDTH) KeyPartMR;
 

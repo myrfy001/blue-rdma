@@ -166,19 +166,6 @@ function RETH extractSecRETH(HeaderData headerData, TransType transType, RdmaOpC
     return reth;
 endfunction
 
-function Tuple2#(HeaderByteNum, HeaderBitNum) calcHeaderInvalidFragByteAndBitNum(
-    HeaderFragNum headerValidFragNum
-);
-    HeaderFragNum headerInvalidFragNum =
-        fromInteger(valueOf(HEADER_MAX_FRAG_NUM)) - headerValidFragNum;
-    HeaderByteNum headerInvalidFragByteNum =
-        zeroExtend(headerInvalidFragNum) << valueOf(DATA_BUS_BYTE_NUM_WIDTH);
-    HeaderBitNum headerInvalidFragBitNum =
-        zeroExtend(headerInvalidFragNum) << valueOf(DATA_BUS_BIT_NUM_WIDTH);
-    return tuple2(headerInvalidFragByteNum, headerInvalidFragBitNum);
-endfunction
-
-
 
 // Timeout related
 
@@ -953,15 +940,12 @@ function Maybe#(TransType) qpType2TransType(TypeQP qpt);
     endcase;
 endfunction
 
-function Bool transTypeMatchQpType(TransType tt, TypeQP qpt, Bool isRecvSide);
+function Bool transTypeMatchQpType(TransType tt, TypeQP qpt);
     return case (tt)
         TRANS_TYPE_RC : (qpt == IBV_QPT_RC);
         TRANS_TYPE_UC : (qpt == IBV_QPT_UC);
         TRANS_TYPE_UD : (qpt == IBV_QPT_UD);
-        TRANS_TYPE_XRC: (
-            (!isRecvSide && qpt == IBV_QPT_XRC_RECV) ||
-            (isRecvSide && qpt == IBV_QPT_XRC_SEND)
-        );
+        TRANS_TYPE_XRC: (qpt == IBV_QPT_XRC_SEND);
         default: False;
     endcase;
 endfunction

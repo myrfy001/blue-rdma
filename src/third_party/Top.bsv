@@ -323,7 +323,7 @@ module mkTopCore(
         let sendResp <- sq.srvPort.response.get;
         let desc = MeatReportQueueDescSendQueueReport {
             reserved1:      unpack(0),
-            hasDmaRespErr:  sendResp.hasDmaRespErr,             
+            hasDmaRespErr:  False,             
             reserved2:      unpack(0),
             descType:       MeatReportQueueDescTypeSendFinished
         };
