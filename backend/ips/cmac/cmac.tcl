@@ -1,6 +1,6 @@
 # 100G CMAC IP
 create_ip -name cmac_usplus -vendor xilinx.com -library ip -version 3.1 \
-          -module_name cmac_usplus_0 -dir $dir_ip_gen -force
+          -module_name cmac_usplus_0 -dir $dir_gen -force
 set_property -dict [list \
     CONFIG.CMAC_CAUI4_MODE {1} \
     CONFIG.USER_INTERFACE {AXIS} \

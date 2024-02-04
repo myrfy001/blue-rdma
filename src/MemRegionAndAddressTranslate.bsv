@@ -388,24 +388,63 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
     FIFOF#(DmaReadResp) readRespOutQ <- mkFIFOF;
 
     FIFOF#(DmaReadReq) pendingReqQ <- mkSizedFIFOF(3);
+    FIFOF#(ADDR) vaPipelineQ <- mkFIFOF;
 
     BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkBypassClient;
     BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient;
 
-    // rule handleInputReq;
-    //     readInQ.deq;
-    //     let req = readInQ.first;
-    //     pendingReqQ.enq(req);
-    //     let mrTableQueryReq = MrTableQueryReq{
-    //         // idx: rkey2IndexMR(req.rkey)   // TODO
-    //         idx: rkey2IndexMR(unpack(0))
-    //     };
-    //     mrTableQueryCltInst.putReq(mrTableQueryReq);
-    // endrule
+    rule handleInputReq;
+        readReqInQ.deq;
+        let req = readReqInQ.first;
+        pendingReqQ.enq(req);
+        let mrTableQueryReq = MrTableQueryReq{
+            idx: req.mrIdx
+        };
+        mrTableQueryCltInst.putReq(mrTableQueryReq);
+        vaPipelineQ.enq(req.startAddr);
+    endrule
 
-    // rule handleMrRespAndSendPgtReq;
-    //     let maybeResp 
-    // endrule
+    rule handleMrRespAndSendPgtReq;
+        let maybeMrResp <- mrTableQueryCltInst.getResp;
+        let va = vaPipelineQ.first;
+        vaPipelineQ.deq;
+        
+        // Assume that request always success. to simplify SQ logic
+        let mrResp = fromMaybe(unpack(0), maybeMrResp);
+
+        let pgtReq = PgtAddrTranslateReq{
+            mrEntry: mrResp,
+            addrToTrans: va
+        };
+
+        pgtQueryCltInst.putReq(pgtReq);
+    endrule
+
+    rule handleRespPGT;
+        let pa <- pgtQueryCltInst.getResp;
+        let originDmaReq = pendingReqQ.first;
+        pendingReqQ.deq;
+
+        readReqOutQ.enq(UserLogicDmaH2cReq{
+            addr: pa,
+            len:  zeroExtend(originDmaReq.len)
+        });
+    endrule
+
+    rule forwardResponseDMA;
+        let inResp = readRespInQ.first;
+        readRespInQ.deq;
+
+        readRespOutQ.enq(DmaReadResp{
+            initiator   : ?,                // TODO: remove it
+            sqpn        : ?,                // TODO: remove it
+            wrID        : ?,                // TODO: remove it
+            isRespErr   : False,
+            dataStream  : inResp.dataStream
+        });
+    endrule
+
+
 
     interface sqReqInputSrv  = toGPServer(readReqInQ, readRespOutQ);
     interface sqReqOutputClt = toGPClient(readReqOutQ, readRespInQ);

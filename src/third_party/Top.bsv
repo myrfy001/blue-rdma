@@ -9,6 +9,9 @@ import PAClib :: *;
 import Axi4LiteTypes :: *;
 import XilinxCmacController :: *;
 import UdpIpArpEthCmacRxTx :: *;
+import Ports :: *;
+import EthernetTypes :: *;
+import SemiFifo :: *;
 
 import PipeIn :: *;
 import RQ :: *;
@@ -36,14 +39,12 @@ import RegisterBlock :: *;
 import CmdQueue :: *;
 import WorkQueueRingbuf :: *;
 
-
+typedef 4791 TEST_UDP_PORT;
 
 interface BsvTop#(numeric type dataSz, numeric type userSz);
     interface XdmaChannel#(dataSz, userSz) xdmaChannel;
     interface RawAxi4LiteSlave#(CSR_ADDR_WIDTH, CSR_DATA_STRB_WIDTH) axilRegBlock;
     interface Clock slowClockIfc;
-    interface Put#(DataStream) rdmaDataStreamInput;
-    interface DataStreamPipeOut rdmaDataStreamPipeOut;
     
     
     // Interface with CMAC IP
@@ -61,6 +62,9 @@ module mkBsvTop(
     (* reset = "cmac_tx_reset" *) Reset cmacTxReset,
     BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc
 );
+
+    Reg#(Bool)  udpParamNotSetReg <- mkReg(True);
+
     XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper(clocked_by slowClock, reset_by slowReset);
     XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(slowClock, slowReset);
     TopCoreIfc bsvTopCore <- mkTopCore(slowClock, slowReset);
@@ -86,26 +90,83 @@ module mkBsvTop(
         cmacTxReset
     );
 
+    rule setInitParamUDP if (udpParamNotSetReg);
+        udp.udpConfig.put(UdpConfig{
+            macAddr: 0,
+            ipAddr: 0,
+            netMask: 32'hFFFFFFFF,
+            gateWay: 1
+        });
+        udpParamNotSetReg <= False;
+    endrule
 
+    rule forawrdTxStream;
+        bsvTopCore.rdmaDataStreamPipeOut.deq;
+        let data = bsvTopCore.rdmaDataStreamPipeOut.first;
+        $display("rdma_A_out_data = ", fshow(data));
+        udp.dataStreamTxIn.put(Ports::DataStream{
+            data:       data.data,
+            byteEn:     data.byteEn,
+            isFirst:    data.isFirst,
+            isLast:     data.isLast
+        });
+    endrule
 
+    rule forwardTxMeta;
+        bsvTopCore.udpInfoPipeOut.deq;
+        let meta = bsvTopCore.udpInfoPipeOut.first;
+        $display("rdma_A_out_meta = ", fshow(meta));
 
+        IpAddr dstIP = unpack(0);
+
+        if (meta.ipAddr matches tagged IPv4 .ipv4) begin
+            dstIP = unpack(pack(ipv4));
+        end 
+        else begin
+            $display("Error: Dest IP addr is not IPv4");
+            $finish;
+        end
+
+        udp.udpIpMetaDataTxIn.put(UdpIpMetaData{
+            dataLen: zeroExtend(meta.pktLen),
+            ipAddr:  dstIP,
+            ipDscp:  0,
+            ipEcn:   0,
+            dstPort: fromInteger(valueOf(TEST_UDP_PORT)),
+            srcPort: fromInteger(valueOf(TEST_UDP_PORT))
+        });
+
+    endrule
+
+    rule forwardRxStream;
+
+        if (udp.udpIpMetaDataRxOut.notEmpty) begin
+            udp.udpIpMetaDataRxOut.deq;
+            $display("udp recv meta = ", fshow(udp.udpIpMetaDataRxOut.first));
+        end
+
+        if (udp.dataStreamRxOut.notEmpty) begin
+            let data = udp.dataStreamRxOut.first;
+            udp.dataStreamRxOut.deq;
+
+            let outData = DataStream {
+                data: swapEndian(data.data),
+                byteEn: swapEndianBit(data.byteEn),
+                isLast: data.isLast,
+                isFirst: data.isFirst
+            };
+            bsvTopCore.rdmaDataStreamInput.put(outData);
+            $display("udp recv = ", fshow(outData));
+        end
+
+    endrule
 
 
     interface xdmaChannel = xdmaWrap.xdmaChannel;
     interface slowClockIfc = slowClock;
     interface axilRegBlock = xdmaAxiLiteWrap.cntrlAxil;
-    interface rdmaDataStreamInput = bsvTopCore.rdmaDataStreamInput;
-    interface rdmaDataStreamPipeOut = bsvTopCore.rdmaDataStreamPipeOut;
     interface cmacController = udp.cmacController;
 endmodule
-
-
-
-
-
-
-
-
 
 interface TopCoreIfc;
     interface Put#(DataStream)      rdmaDataStreamInput;
@@ -122,7 +183,10 @@ interface TopCoreIfc;
 
 endinterface
 
+
+
 (* synthesize *)
+// TODO: refactor ringbuf module to get rid of these compiler attributes.
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_0.recvDmaResp" *) 
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_0.recvDmaResp_1" *) 
 (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp" *) 
@@ -218,10 +282,10 @@ module mkTopCore(
     Vector#(4, UserLogicDmaReadClt)  dmaAccessH2cCltVec = newVector;
     Vector#(2, UserLogicDmaWriteClt) dmaAccessC2hCltVec = newVector;
 
-    dmaAccessH2cCltVec[0] = bluerdmaDmaProxyForRQ.userlogicSideReadClt;
+    dmaAccessH2cCltVec[0] = addrTranslatorForSQ.sqReqOutputClt;
     dmaAccessH2cCltVec[1] = ringbufPool.dmaAccessH2cClt;
     dmaAccessH2cCltVec[2] = mrAndPgtManager.pgtDmaReadClt;
-    dmaAccessH2cCltVec[3] = addrTranslatorForSQ.sqReqOutputClt;
+    dmaAccessH2cCltVec[3] <- mkFakeClient;
 
     dmaAccessC2hCltVec[0] = bluerdmaDmaProxyForRQ.userlogicSideWriteClt;
     dmaAccessC2hCltVec[1] = ringbufPool.dmaAccessC2hClt;
@@ -275,3 +339,14 @@ module mkTopCore(
     interface csrWriteSrv = regBlock.csrWriteSrv;
     interface csrReadSrv = regBlock.csrReadSrv;
 endmodule
+
+
+function Bit#(width) swapEndian(Bit#(width) data) provisos(Mul#(8, byteNum, width));
+    Vector#(byteNum, Bit#(BYTE_WIDTH)) dataVec = unpack(data);
+    return pack(reverse(dataVec));
+endfunction
+
+function Bit#(width) swapEndianBit(Bit#(width) data) provisos(Mul#(1, byteNum, width));
+    Vector#(byteNum, Bit#(1)) dataVec = unpack(data);
+    return pack(reverse(dataVec));
+endfunction

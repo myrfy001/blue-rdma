@@ -314,6 +314,12 @@ typedef struct {
     DmaReqSrcType initiator; // TODO: remove it
     QPN sqpn; // TODO: remove it
     WorkReqID wrID; // TODO: remove it
+    IndexMR mrIdx;
+} DmaReadReq deriving(Bits, FShow);
+
+typedef struct {
+    DmaReqSrcType initiator;
+    QPN sqpn;
     ADDR startAddr;
     PktLen len;
     IndexMR mrIdx;
