@@ -62,7 +62,8 @@ module mkTestTop(Empty);
     mkConnection(fakeXdmaA.xdmaH2cSrv, topA.dmaReadClt);
     mkConnection(fakeXdmaA.xdmaC2hSrv, topA.dmaWriteClt);
 
-    mkConnection(toGet(rsMocker.streamPipeOut), topA.rdmaDataStreamInput);
+    // loop tx stream to rx stream
+    mkConnection(toGet(topA.rdmaDataStreamPipeOut), topA.rdmaDataStreamInput);
 
 
     Reg#(Bool) stopReg <- mkReg(False);
@@ -72,6 +73,9 @@ module mkTestTop(Empty);
     FSM runTest <- mkFSM(
         (seq
             
+            // set cmd queue request ringbuf addr
+            // since addr is 0, the default value, we don't need to set it.
+
             // set cmd queue response ringbuf addr
             topA.csrWriteSrv.request.put(CsrWriteRequest{
                 addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: False, queueIndex: 0, regIndex: CsrIdxRbBaseAddrLow})) << 2,
@@ -81,6 +85,18 @@ module mkTestTop(Empty);
             action
                 let t1 <- topA.csrWriteSrv.response.get;
             endaction
+
+
+            // set send queue ringbuf addr
+            topA.csrWriteSrv.request.put(CsrWriteRequest{
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 1, regIndex: CsrIdxRbBaseAddrLow})) << 2,
+                data: 'h3000
+            });
+
+            action
+                let t1 <- topA.csrWriteSrv.response.get;
+            endaction
+
 
 
             // move cmd queue head to init RDMA
@@ -108,25 +124,15 @@ module mkTestTop(Empty);
             endseq
 
 
-            // generate mock stream input
+            
+            // move cmd queue head to send WQE
+            topA.csrWriteSrv.request.put(CsrWriteRequest{
+                addr: zeroExtend(pack(CsrRingbufRegsAddress{isH2c: True, queueIndex: 1, regIndex: CsrIdxRbHead})) << 2,
+                data: 4
+            });
+
             action
-                MockHeaderStream ms = unpack(0);
-                BTH bth = ?;
-                bth.trans = TRANS_TYPE_RC;
-                bth.opcode = RDMA_WRITE_FIRST;
-                bth.dqpn = genQPN(`TEST_QPN_IDX_PART, `TEST_QPN_KEY_PART);
-
-                RETH reth = ?;
-                reth.dlen = `TEST_WR_LEN;
-                reth.rkey = rkeyFromKeyAndIndexPart(`TEST_MR_IDX_PART, `TEST_MR_KEY_PART);
-                reth.va = `TEST_WR_ADDR;
-
-                ms = appendSegToMockHeaderStream(ms, bth);
-                ms = appendSegToMockHeaderStream(ms, reth);
-                ms = addPayloadToMockHeaderStream(ms, 16'hABCD, `TEST_WR_LEN);
-                ms = fillBthOfMockedHeaderStream(ms);
-
-                rsMocker.addDataToMock(ms);
+                let t1 <- topA.csrWriteSrv.response.get;
             endaction
 
 

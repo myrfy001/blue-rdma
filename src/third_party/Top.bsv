@@ -310,6 +310,11 @@ module mkTopCore(
     mkConnection(workQueueRingbufController.workReq, sq.srvPort.request);
 
 
+    rule exitReset;
+        if (clearReg) begin
+            clearReg <= False;
+        end
+    endrule
 
     // use descending_urgency here since we need a simple fix-priority arbitter here.
     (* descending_urgency = "forwardRecvQueuePktReportDescToRingbuf, forwardSendQueueReportDescToRingbuf" *)

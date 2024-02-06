@@ -217,32 +217,65 @@ class CmdQueueDescOperators:
 class SendQueueDescCommonHeader(Structure):
     _fields_ = [("F_VALID", c_int, 1),
                 ("F_OP_CODE", c_int, 4),
-                ("F_RESERVED_0", c_int, 2),
+                ("F_IS_LAST", c_int, 1),
+                ("F_IS_FIRST", c_int, 1),
                 ("F_SEGMENT_CNT", c_int, 4),
                 ("F_SIGNAL_CPLT", c_int, 1),
                 ("F_RESERVED_1", c_int, 20),
-                ("F_DATA_LEN", c_int, 32),
+                ("F_TOTAL_LEN", c_int, 32),
                 ]
 
 
 class SendQueueDescSeg0(Structure):
     _fields_ = [("common_header", SendQueueDescCommonHeader),
-                ("F_L_ADDR", c_longlong, 64),
                 ("F_R_ADDR", c_longlong, 64),
-                ("F_LKEY", c_int, 32),
                 ("F_RKEY", c_int, 32),
+                ("F_DST_IP", c_int, 32),
+                ("F_RESERVED_1", c_longlong, 64),
                 ]
 
 
 class SendQueueDescSeg1(Structure):
-    _fields_ = [("F_SQ_SEND_FLAG", c_int, 5),
-                ("F_RESERVED_0", c_int, 2),
-                ("F_SQ_SOLICITED", c_int, 1),
-                ("F_SQ_SQPN", c_int, 24),
-                ("F_RESERVED_1", c_int, 32),
-                ("F_RESERVED_2", c_longlong, 64),
-                ("F_RESERVED_3", c_longlong, 64),
-                ("F_RESERVED_4", c_longlong, 64),
+    _fields_ = [("F_PMTU", c_int, 3),
+                ("F_RESERVED_8", c_int, 5),
+
+                ("F_FLAGS", c_int, 5),
+                ("F_RESERVED_7", c_int, 3),
+
+                ("F_QP_TYPE", c_int, 4),
+                ("F_RESERVED_6", c_int, 4),
+
+                ("F_SEG_CNT", c_int, 3),
+                ("F_RESERVED_5", c_int, 5),
+
+
+                ("F_PSN", c_int, 24),
+                ("F_RESERVED_4", c_int, 8),
+
+                ("F_MAC_ADDR", c_longlong, 48),
+                ("F_RESERVED_3", c_int, 16),
+
+                ("F_DQPN", c_int, 24),
+                ("F_RESERVED_2", c_int, 8),
+
+                ("F_IMM", c_int, 32),
+
+                ("F_RESERVED_1", c_longlong, 64),
+
+
+                ]
+
+
+class SendQueueReqDescFragSGE(Structure):
+    _fields_ = [("F_LKEY", c_int, 32),
+                ("F_LEN", c_int, 32),
+                ("F_LADDR", c_longlong, 64),
+                ]
+
+
+class SendQueueReqDescVariableLenSGE(Structure):
+    _fields_ = [("F_SGE2", SendQueueReqDescFragSGE),
+                ("F_SGE1", SendQueueReqDescFragSGE),
                 ]
 
 
@@ -288,6 +321,10 @@ cmd_queue_common_header = CmdQueueReqDescCommonHeader(
 
 memory = bytearray(TOTAL_MEMORY_SIZE)
 
+
+PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_256
+
+
 # generate create MR request
 
 cmd_queue_desc_current_write_addr = CMD_QUEUE_H2C_RINGBUF_START_PA
@@ -332,7 +369,7 @@ obj = CmdQueueDescQpManagementSeg0(
     F_QP_ADMIN_PD_HANDLER=SEND_SIDE_PD_HANDLER,
     F_QP_ADMIN_QP_TYPE=TypeQP.IBV_QPT_RC,
     F_QP_ADMIN_ACCESS_FLAG=MemAccessTypeFlag.IBV_ACCESS_LOCAL_WRITE | MemAccessTypeFlag.IBV_ACCESS_REMOTE_READ | MemAccessTypeFlag.IBV_ACCESS_REMOTE_WRITE,
-    F_QP_ADMIN_PMTU=PMTU.IBV_MTU_256,
+    F_QP_ADMIN_PMTU=PMTU_VALUE_FOR_TEST,
 )
 memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
 cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
@@ -354,33 +391,77 @@ send_queue_desc_current_write_addr = SQ_RINGBUF_START_PA
 send_queue_common_header = SendQueueDescCommonHeader(
     F_VALID=1,
     F_OP_CODE=WorkReqOpCode.IBV_WR_RDMA_WRITE,
-    F_SEGMENT_CNT=1,
+    F_IS_LAST=1,
+    F_IS_FIRST=1,
+    F_SEGMENT_CNT=3,
     F_SIGNAL_CPLT=1,
-    F_DATA_LEN=0x0003
+    F_TOTAL_LEN=0x0004
 )
 
 obj = SendQueueDescSeg0(
     common_header=send_queue_common_header,
-    F_L_ADDR=REQ_SIDE_VA_ADDR,
     F_R_ADDR=RESP_SIDE_VA_ADDR,
-    F_LKEY=SEND_SIDE_LKEY,
     F_RKEY=SEND_SIDE_RKEY,
+    F_DST_IP=0x11223344,
 )
 memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
 send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
+
 
 obj = SendQueueDescSeg1(
-    F_SQ_SEND_FLAG=WorkReqSendFlag.IBV_SEND_NO_FLAGS,
-    F_SQ_SOLICITED=0,
-    F_SQ_SQPN=SEND_SIDE_QPN,
+    F_IMM=1,
+    F_DQPN=0x6611,
+    F_MAC_ADDR=0xAABBCCDDEEFF,
+    F_PSN=0x22,
+    F_SEG_CNT=4,
+    F_QP_TYPE=TypeQP.IBV_QPT_RC,
+    F_FLAGS=WorkReqSendFlag.IBV_SEND_NO_FLAGS,
+    F_PMTU=PMTU_VALUE_FOR_TEST
 )
 memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
 send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
+
+sge1 = SendQueueReqDescFragSGE(
+    F_LKEY=SEND_SIDE_LKEY,
+    F_LEN=1,
+    F_LADDR=REQ_SIDE_VA_ADDR
+)
+sge2 = SendQueueReqDescFragSGE(
+    F_LKEY=SEND_SIDE_LKEY,
+    F_LEN=1,
+    F_LADDR=REQ_SIDE_VA_ADDR+1
+)
+
+obj = SendQueueReqDescVariableLenSGE(
+    F_SGE1=sge1,
+    F_SGE2=sge2
+)
+memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
+send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
+
+sge1 = SendQueueReqDescFragSGE(
+    F_LKEY=SEND_SIDE_LKEY,
+    F_LEN=1,
+    F_LADDR=REQ_SIDE_VA_ADDR+2
+)
+sge2 = SendQueueReqDescFragSGE(
+    F_LKEY=SEND_SIDE_LKEY,
+    F_LEN=1,
+    F_LADDR=REQ_SIDE_VA_ADDR+3
+)
+
+obj = SendQueueReqDescVariableLenSGE(
+    F_SGE1=sge1,
+    F_SGE2=sge2
+)
+memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
+send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
 
 # Put some data at send side memory to debug
 memory[REQ_SIDE_VA_ADDR] = 0xBB
 memory[REQ_SIDE_VA_ADDR+1] = 0xCC
 memory[REQ_SIDE_VA_ADDR+2] = 0xDD
+memory[REQ_SIDE_VA_ADDR+3] = 0xEE
 
 dump_to_str(memory)

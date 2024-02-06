@@ -194,14 +194,14 @@ typedef CmdQueueReqDescQpManagementSeg0 CmdQueueRespDescQpManagementSeg0;
 
 
 typedef struct {
-    Length                  totalLen;
-    ReservedZero#(20)       reserved1;
-    Bool                    isSuccessOrNeedSignalCplt;
-    Bit#(4)                 extraSegmentCnt;
-    Bool                    isFirst;
-    Bool                    isLast;
-    WorkReqOpCode           opCode;
-    Bool                    valid;
+    Length                  totalLen;                       // 32 bits
+    ReservedZero#(20)       reserved1;                      // 20 bits
+    Bool                    isSuccessOrNeedSignalCplt;      //  1 bits
+    Bit#(4)                 extraSegmentCnt;                //  4 bits
+    Bool                    isFirst;                        //  1 bits
+    Bool                    isLast;                         //  1 bits
+    WorkReqOpCode           opCode;                         //  4 bits
+    Bool                    valid;                          //  1 bit
 } SendQueueDescCommonHead deriving(Bits, FShow);
 
 typedef struct {
@@ -216,15 +216,16 @@ typedef struct {
     ReservedZero#(64)       reserved1;          // 64 bits
 
     IMM                     imm;                // 32 bits
+    
     ReservedZero#(8)        reserved2;          // 8  bits
     QPN                     dqpn;               // 24 bits
 
-    MAC                     macAddr;            // 48 bits
     ReservedZero#(16)       reserved3;          // 16 bits
+    MAC                     macAddr;            // 48 bits
 
     ReservedZero#(8)        reserved4;          // 8  bits
     PSN                     psn;                // 24 bits
-    
+
     ReservedZero#(5)        reserved5;          // 5  bits
     NumSGE                  sgeCnt;             // 3  bits
 
