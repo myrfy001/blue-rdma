@@ -440,7 +440,7 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
             sqpn        : ?,                // TODO: remove it
             wrID        : ?,                // TODO: remove it
             isRespErr   : False,
-            dataStream  : inResp.dataStream
+            dataStream  : reverseStream(inResp.dataStream)
         });
     endrule
 
