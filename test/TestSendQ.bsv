@@ -16,7 +16,7 @@ import PrimUtils :: *;
 import SendQ :: *;
 import Settings :: *;
 import SimDma :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 import Utils4Test :: *;
 
 module mkSimGenWorkQueueElemByOpCode#(
@@ -159,13 +159,13 @@ module mkSimGenWorkQueueElemByOpCode#(
         let sglZeroIdx = 0;
         let sgl = readVReg(sglRegVec);
         if (isAtomicWR) begin
-            sgl[sglZeroIdx].isLast = True;
-            sgl[sglZeroIdx].len = fromInteger(valueOf(ATOMIC_WORK_REQ_LEN));
+        sgl[sglZeroIdx].isLast = True;
+        sgl[sglZeroIdx].len = fromInteger(valueOf(ATOMIC_WORK_REQ_LEN));
         end
         if (isReadWR) begin
-            sgl[sglZeroIdx].isLast = True;
+        sgl[sglZeroIdx].isLast = True;
         end
-
+        
         let wqe = WorkQueueElem {
             id            : wrID,
             opcode        : wrOpCode,
@@ -290,7 +290,7 @@ module mkTestSendQueueRawPktCase(Empty);
             isLast : True
         };
         let dummySGE = sge;
-        let sgl = vec(sge, dummySGE, dummySGE, dummySGE, dummySGE, dummySGE, dummySGE, dummySGE);
+        let sgl = vec(sge, dummySGE, dummySGE, dummySGE);
 
         let wqe = WorkQueueElem {
             id            : dontCareValue,
@@ -459,9 +459,9 @@ module mkTestSendQueueNormalAndNoPayloadCase#(
     let wqePipeOut4Ref <- mkBufferN(getMaxFragBufSize, wqePipeOutVec[1]);
 
     // Extract header DataStream, HeaderMetaData and payload DataStream
-    let headerAndMetaDataAndPayloadPipeOut <- mkExtractHeaderFromRdmaPktPipeOut(
-        dut.rdmaDataStreamPipeOut
-    );
+    let headerAndMetaDataAndPayloadPipeOut <- mkExtractHeaderFromRdmaPktPipeOut;
+    mkConnection(toPut(headerAndMetaDataAndPayloadPipeOut.rdmaPktPipeIn), toGet(dut.rdmaDataStreamPipeOut));
+    
     // Convert header DataStream to RdmaHeader
     let rdmaHeaderPipeOut <- mkDataStream2Header(
         headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream,
@@ -502,7 +502,7 @@ module mkTestSendQueueNormalAndNoPayloadCase#(
         let { transType, rdmaOpCode } =
             extractTranTypeAndRdmaOpCode(rdmaHeader.headerData);
         let bth  = extractBTH(rdmaHeader.headerData);
-        let reth = extractRETH(rdmaHeader.headerData, transType);
+        let reth = extractPriRETH(rdmaHeader.headerData, transType);
         let leth = extractLETH(rdmaHeader.headerData, transType);
         // $display("time=%0t: BTH=", $time, fshow(bth));
 

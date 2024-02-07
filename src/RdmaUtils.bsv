@@ -4,6 +4,7 @@ import ClientServer :: *;
 import GetPut :: *;
 import DataTypes :: *;
 import Headers :: *;
+import Vector :: *;
 
 import PAClib :: *;
 import PipeIn :: *;
@@ -940,12 +941,16 @@ function Maybe#(TransType) qpType2TransType(TypeQP qpt);
     endcase;
 endfunction
 
-function Bool transTypeMatchQpType(TransType tt, TypeQP qpt);
+function Bool transTypeMatchQpType(TransType tt, TypeQP qpt, Bool isRecvSide);
     return case (tt)
+        TRANS_TYPE_CNP: True;
         TRANS_TYPE_RC : (qpt == IBV_QPT_RC);
         TRANS_TYPE_UC : (qpt == IBV_QPT_UC);
         TRANS_TYPE_UD : (qpt == IBV_QPT_UD);
-        TRANS_TYPE_XRC: (qpt == IBV_QPT_XRC_SEND);
+        TRANS_TYPE_XRC: (
+            (!isRecvSide && qpt == IBV_QPT_XRC_RECV) ||
+            (isRecvSide && qpt == IBV_QPT_XRC_SEND)
+        );
         default: False;
     endcase;
 endfunction
@@ -1918,3 +1923,20 @@ module mkConnectionWithAction#(
 
     endrule
 endmodule
+
+
+function Bit#(width) swapEndian(Bit#(width) data) provisos(Mul#(8, byteNum, width));
+    Vector#(byteNum, Bit#(BYTE_WIDTH)) dataVec = unpack(data);
+    return pack(reverse(dataVec));
+endfunction
+
+function Bit#(width) swapEndianBit(Bit#(width) data) provisos(Mul#(1, byteNum, width));
+    Vector#(byteNum, Bit#(1)) dataVec = unpack(data);
+    return pack(reverse(dataVec));
+endfunction
+
+function DataStream reverseStream(DataStream st);
+    st.data = swapEndian(st.data);
+    st.byteEn = swapEndianBit(st.byteEn);
+    return st;
+endfunction

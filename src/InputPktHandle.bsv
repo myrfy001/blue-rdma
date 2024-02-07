@@ -78,7 +78,7 @@ endfunction
 
 // TODO: check XRC domain match
 function Bool validateHeader(TransType transType, QKEY qkey, EntryCommonQPC qpcCommon);
-    let transTypeMatch = transTypeMatchQpType(transType, qpcCommon.qpType);
+    let transTypeMatch = transTypeMatchQpType(transType, qpcCommon.qpType, True);
     return transTypeMatch;
 endfunction
 
@@ -136,12 +136,12 @@ module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateData
             let headerMetaData = genHeaderMetaData(headerLen, headerHasPayload);
             headerMetaDataInQ.enq(headerMetaData);
             // $display(
-            //     "time=%0t: extractHeader", $time,
-            //     ", headerLen=%0d, transType=", headerLen, fshow(transType),
-            //     ", rdmaOpCode=", fshow(rdmaOpCode),
-            //     ", rdmaPktDataStream=", fshow(rdmaPktDataStream),
-            //     ", headerHasPayload=", fshow(headerHasPayload),
-            //     ", headerMetaData=", fshow(headerMetaData)
+                //     "time=%0t: extractHeader", $time,
+                //     ", headerLen=%0d, transType=", headerLen, fshow(transType),
+                //     ", rdmaOpCode=", fshow(rdmaOpCode),
+                //     ", rdmaPktDataStream=", fshow(rdmaPktDataStream),
+                //     ", headerHasPayload=", fshow(headerHasPayload),
+                //     ", headerMetaData=", fshow(headerMetaData)
             // );
         end
         // $display("time=%0t: rdmaPktDataStream=", $time, fshow(rdmaPktDataStream));
@@ -535,7 +535,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             //     ", payloadFrag.data=%h", payloadFrag.data
             // );
         end
-
+        
         let payloadFragLen = calcFragByteNumFromByteEn(payloadFrag.byteEn);
         immAssert(
             isValid(payloadFragLen),
