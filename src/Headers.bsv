@@ -354,7 +354,7 @@ function Integer calcHeaderLenByTransTypeAndRdmaOpCode(
     endcase;
 endfunction
 /*
-// TODO: enable this after refactor
+// TODO: enable this after refactor RQ
 function Integer calcHeaderLenByTransTypeAndRdmaOpCode(
     TransType transType, RdmaOpCode rdmaOpCode
 );
