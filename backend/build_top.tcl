@@ -1,6 +1,7 @@
 set dir_output $::env(DIR_OUTPUT)
 set dir_rtl $::env(DIR_RTL)
 set dir_xdc $::env(DIR_XDC)
+set dir_ooc_scripts $::env(DIR_OOC_SCRIPTS)
 set dir_ips $::env(DIR_IPS)
 set dir_ip_gen $::env(DIR_IP_GENERATED)
 set dir_bsv_gen $::env(DIR_BSV_GENERATED)
@@ -38,13 +39,37 @@ proc runSynthIP {args} {
     synth_ip [ get_ips * ] -quiet
 }
 
+
+proc runSynthOOC {args} {
+    global dir_output part dir_bsv_gen dir_ooc_scripts dir_ooc_scripts max_net_path_num
+
+    set ooc_module_names { \
+        mkTLB \
+        mkMemRegionTable \
+        mkDmaReadReqAddrTranslator \
+        mkExtractHeaderFromRdmaPktPipeOut \
+        mkMrAndPgtManager \
+        mkQPContext \
+        mkRQ \
+        mkXdmaGearbox \
+    }
+
+    foreach ooc_top $ooc_module_names {
+        source ooc_tcl_and_xdc/bsv_ooc_module_common.tcl
+    }
+}
+
+
 proc addExtFiles {args} {
     global dir_output part device dir_rtl dir_xdc dir_ip_gen dir_bsv_gen
     read_ip [glob $dir_ip_gen/**/*.xci]
     read_verilog [ glob $dir_rtl/*.v ]
     read_verilog [ glob $dir_bsv_gen/*.v ]
+    remove_files {mkTLB.v mkMemRegionTable.v}
+    read_checkpoint ${dir_output}/ooc/mkTLB/mkTLB.dcp
+    read_checkpoint ${dir_output}/ooc/mkMemRegionTable/mkMemRegionTable.dcp
     read_xdc [ glob $dir_xdc/*.xdc ]
-    }
+}
 
 
 proc runSynthDesign {args} {
@@ -230,10 +255,11 @@ proc runProgramDevice {args} {
 
 # runGenerateIP -open_checkpoint false
 # runSynthIP -open_checkpoint false
+# runSynthOOC
 # addExtFiles -open_checkpoint false
 # runSynthDesign -open_checkpoint false
-runPostSynthReport -open_checkpoint true
-runPlacement -open_checkpoint false
+# runPostSynthReport -open_checkpoint false
+runPlacement -open_checkpoint true
 runRoute -open_checkpoint false
 runPostRouteReport -open_checkpoint false
 # runWriteBitStream -open_checkpoint false

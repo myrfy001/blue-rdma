@@ -19,6 +19,7 @@ VERILOG_TOPMODULE ?= top
 export TOP = $(TOPMODULE)
 export DIR_RTL = $(VLOGDIR)
 export DIR_XDC = $(TCLDIR)
+export DIR_OOC_SCRIPTS = $(BACKENDDIR)/ooc_tcl_and_xdc
 export DIR_IPS = $(BACKENDDIR)/ips
 export DIR_IP_GENERATED = $(BUILDDIR)/ips
 export DIR_BSV_GENERATED = $(BACKENDDIR)/verilog
@@ -40,6 +41,9 @@ verilog: compile
 	bluetcl listVlogFiles.tcl -bdir $(BUILDDIR) -vdir $(BUILDDIR) $(TOPMODULE) $(TOPMODULE) | grep -i '\.v' | xargs -I {} cp {} $(DIR_BSV_GENERATED)
 
 vivado: verilog
+	vivado -mode tcl -nolog -nojournal -source ./build_top.tcl 2>&1 | tee $(LOGFILE)
+
+vivado_ooc:
 	vivado -mode tcl -nolog -nojournal -source ./build_top.tcl 2>&1 | tee $(LOGFILE)
 
 clean:

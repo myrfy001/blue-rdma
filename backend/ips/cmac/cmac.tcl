@@ -6,4 +6,5 @@ set_property -dict [list \
     CONFIG.USER_INTERFACE {AXIS} \
     CONFIG.CMAC_CORE_SELECT {CMACE4_X0Y9} \
     CONFIG.GT_GROUP_SELECT {X0Y52~X0Y55} \
+    CONFIG.GT_DRP_CLK {250.00} \
 ] [get_ips cmac_usplus_0]
