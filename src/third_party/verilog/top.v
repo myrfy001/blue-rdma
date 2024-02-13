@@ -19,7 +19,6 @@ module top#(
 
     input gt_ref_clk_p,
     input gt_ref_clk_n,
-    input gt_init_clk,
     input gt_sys_reset,
 
     
@@ -318,6 +317,9 @@ module top#(
 
 
       // CMAC Interface
+      .cmac_rxtx_clk(gt_txusrclk2),
+      .cmac_rx_reset(gt_usr_rx_reset),
+      .cmac_tx_reset(gt_usr_tx_reset),
       .cmac_tx_axis_tvalid    (gt_tx_axis_tvalid),
       .cmac_tx_axis_tdata     (gt_tx_axis_tdata ),
       .cmac_tx_axis_tkeep     (gt_tx_axis_tkeep ),
@@ -393,11 +395,11 @@ module top#(
       .rx_ctl_check_opcode_ppp(gt_ctl_rx_check_opcode_ppp)
   );
 
-  wire [(GT_LANE_WIDTH * 3)-1 :0]    gt_loopback_in;
+  wire [(CMAC_GT_LANE_WIDTH * 3)-1 :0]    gt_loopback_in;
   //// For other GT loopback options please change the value appropriately
   //// For example, for Near End PMA loopback for 4 Lanes update the gt_loopback_in = {4{3'b010}};
   //// For more information and settings on loopback, refer GT Transceivers user guide
-  assign gt_loopback_in  = {GT_LANE_WIDTH{3'b000}};
+  assign gt_loopback_in  = {CMAC_GT_LANE_WIDTH{3'b000}};
 
   wire            gtwiz_reset_tx_datapath;
   wire            gtwiz_reset_rx_datapath;
@@ -406,6 +408,7 @@ module top#(
 
   assign udp_reset = clk_wiz_udp_and_cmac_locked;
   assign cmac_sys_reset = ~ clk_wiz_udp_and_cmac_locked;
+  assign gt_init_clk = user_clk_250;
 
 
   cmac_usplus_0 cmac_inst(
