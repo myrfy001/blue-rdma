@@ -298,16 +298,14 @@ module mkTopCore(
     mkConnection(xdmaReadClt, xdmaGearbox.h2cStreamSrv);
     mkConnection(xdmaWriteClt, xdmaGearbox.c2hStreamSrv);
 
+    mkConnection(payloadConsumer.dmaWriteClt, bluerdmaDmaProxyForRQ.blueSideWriteSrv);
+
+
 
     Reg#(Bool) clearReg <- mkReg(True);
-    let dmaReadCntrl <- mkDmaReadCntrl(clearReg, addrTranslatorForSQ.sqReqInputSrv);
-    let shouldAddPadding = True;
-    let payloadGenerator <- mkPayloadGenerator(clearReg, shouldAddPadding, dmaReadCntrl);
-
-    let sq <- mkSendQ(clearReg, payloadGenerator);
-
-    mkConnection(payloadConsumer.dmaWriteClt, bluerdmaDmaProxyForRQ.blueSideWriteSrv);
-    mkConnection(workQueueRingbufController.workReq, sq.srvPort.request);
+    let sq <- mkFakeSQ(clearReg);
+    mkConnection(sq.dmaReadClt, addrTranslatorForSQ.sqReqInputSrv);
+    mkConnection(workQueueRingbufController.workReq, sq.sendQ.srvPort.request);
 
 
     rule exitReset;
@@ -325,7 +323,7 @@ module mkTopCore(
     endrule
 
     rule forwardSendQueueReportDescToRingbuf;
-        let sendResp <- sq.srvPort.response.get;
+        let sendResp <- sq.sendQ.srvPort.response.get;
         let desc = MeatReportQueueDescSendQueueReport {
             reserved1:      unpack(0),
             hasDmaRespErr:  False,             
@@ -336,8 +334,8 @@ module mkTopCore(
     endrule
 
     interface rdmaDataStreamInput       = toPut(inputDataStreamQ);
-    interface rdmaDataStreamPipeOut     = sq.rdmaDataStreamPipeOut;
-    interface udpInfoPipeOut            = sq.udpInfoPipeOut;
+    interface rdmaDataStreamPipeOut     = sq.sendQ.rdmaDataStreamPipeOut;
+    interface udpInfoPipeOut            = sq.sendQ.udpInfoPipeOut;
 
     interface dmaReadClt = xdmaGearbox.h2cStreamClt;
     interface dmaWriteClt = xdmaGearbox.c2hStreamClt;
@@ -345,6 +343,41 @@ module mkTopCore(
     interface csrReadSrv = regBlock.csrReadSrv;
 endmodule
 
+// (* synthesize *)
+module mkFakeSQ#(Bool clearAll)(SQ);
+    FIFOF#(DmaReadReq)   dmaReadReqQ <- mkFIFOF;
+    FIFOF#(DmaReadResp) dmaReadRespQ <- mkFIFOF;
+
+    FIFOF#(WorkQueueElem)       wqeQ <- mkFIFOF;
+    FIFOF#(SendResp)       sendRespQ <- mkFIFOF;
+
+    FIFOF#(PktInfo4UDP)       udpQ <- mkFIFOF;
+    FIFOF#(DataStream)       dataStreamQ <- mkFIFOF;
+
+
+    Reg#(Bit#(1024)) tReg <- mkRegU;
+
+    rule incReg;
+        tReg <= tReg + 1;
+    endrule
+
+    rule beat;
+        dmaReadReqQ.enq(unpack(truncate(tReg)));
+        wqeQ.deq;
+        dmaReadRespQ.deq;
+        sendRespQ.enq(unpack(truncate(tReg)));
+        udpQ.enq(unpack(truncate(tReg)));
+        dataStreamQ.enq(unpack(truncate(tReg)));
+    endrule
+
+    interface dmaReadClt = toGPClient(dmaReadReqQ, dmaReadRespQ);
+    interface SendQ sendQ;
+        interface srvPort = toGPServer(wqeQ, sendRespQ);
+        interface udpInfoPipeOut = toPipeOut(udpQ);
+        interface rdmaDataStreamPipeOut = toPipeOut(dataStreamQ);
+        method Bool isEmpty() = unpack(tReg[0]);
+    endinterface
+endmodule
 
 function Bit#(width) swapEndian(Bit#(width) data) provisos(Mul#(8, byteNum, width));
     Vector#(byteNum, Bit#(BYTE_WIDTH)) dataVec = unpack(data);
