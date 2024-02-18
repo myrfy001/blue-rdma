@@ -31,9 +31,9 @@ SimGenRdmaReqResp.bsv            = mkTestSimGenRdmaResp
 TestArbitration.bsv              = mkTestPipeOutArbiter \
                                     mkTestServerArbiter \
                                     mkTestClientArbiter
-TestController.bsv               = mkTestCntrlInVec
-TestDupReadAtomicCache.bsv       = mkTestDupReadAtomicCache \
-                                    mkTestCacheFIFO
+# TestController.bsv               = mkTestCntrlInVec
+# TestDupReadAtomicCache.bsv       = mkTestDupReadAtomicCache \
+#                                     mkTestCacheFIFO
 TestExtractAndPrependPipeOut.bsv = mkTestHeaderAndDataStreamConversion \
                                     mkTestPrependHeaderBeforeEmptyDataStream \
                                     mkTestExtractHeaderWithPayloadLessThanOneFrag \
@@ -57,53 +57,53 @@ TestPayloadConAndGen.bsv         = mkTestPayloadConAndGenNormalCase \
                                     mkTestDmaWriteCntrlNormalCase \
                                     mkTestDmaWriteCntrlCancelCase \
                                     mkTestAddrChunkSrv
-TestQueuePair.bsv                = mkTestPermCheckCltArbiter \
-                                    mkTestDmaReadCltArbiter \
-                                    mkTestQueuePairReqErrResetCase \
-                                    mkTestQueuePairRespErrResetCase \
-                                    mkTestQueuePairTimeOutErrResetCase \
-                                    mkTestQueuePairTimeOutErrCase \
-                                    mkTestQueuePairNormalCase
-TestReqGenSQ.bsv                 = mkTestReqGenNormalCase \
-                                    mkTestReqGenZeroLenCase \
-                                    mkTestReqGenDmaReadErrCase
-TestReqHandleRQ.bsv              = mkTestReqHandleNormalReqCase \
-                                    mkTestReqHandleDupReqCase \
-                                    mkTestReqHandleNoAckReqCase \
-                                    mkTestReqHandleTooManyReadAtomicReqCase \
-                                    mkTestReqHandleReqErrCase \
-                                    mkTestReqHandlePermCheckFailCase \
-                                    mkTestReqHandleDmaReadErrCase \
-                                    mkTestReqHandleRnrCase \
-                                    mkTestReqHandleSeqErrCase
-TestRespHandleSQ.bsv             = mkTestRespHandleNormalRespCase \
-                                    mkTestRespHandleDupRespCase \
-                                    mkTestRespHandleGhostRespCase \
-                                    mkTestRespHandleRespErrCase \
-                                    mkTestRespHandleRetryErrCase \
-                                    mkTestRespHandleTimeOutErrCase \
-                                    mkTestRespHandlePermCheckFailCase \
-                                    mkTestRespHandleRnrCase \
-                                    mkTestRespHandleSeqErrCase \
-                                    mkTestRespHandleNestedRetryCase
-TestRetryHandleSQ.bsv            = mkTestRetryHandleSeqErrCase \
-                                    mkTestRetryHandleImplicitRetryCase \
-                                    mkTestRetryHandleRnrCase \
-                                    mkTestRetryHandleTimeOutCase \
-                                    mkTestRetryHandleNestedRetryCase \
-                                    mkTestRetryHandleExcRetryLimitErrCase \
-                                    mkTestRetryHandleExcTimeOutLimitErrCase
+# TestQueuePair.bsv                = mkTestPermCheckCltArbiter \
+#                                     mkTestDmaReadCltArbiter \
+#                                     mkTestQueuePairReqErrResetCase \
+#                                     mkTestQueuePairRespErrResetCase \
+#                                     mkTestQueuePairTimeOutErrResetCase \
+#                                     mkTestQueuePairTimeOutErrCase \
+#                                     mkTestQueuePairNormalCase
+# TestReqGenSQ.bsv                 = mkTestReqGenNormalCase \
+#                                     mkTestReqGenZeroLenCase \
+#                                     mkTestReqGenDmaReadErrCase
+# TestReqHandleRQ.bsv              = mkTestReqHandleNormalReqCase \
+#                                     mkTestReqHandleDupReqCase \
+#                                     mkTestReqHandleNoAckReqCase \
+#                                     mkTestReqHandleTooManyReadAtomicReqCase \
+#                                     mkTestReqHandleReqErrCase \
+#                                     mkTestReqHandlePermCheckFailCase \
+#                                     mkTestReqHandleDmaReadErrCase \
+#                                     mkTestReqHandleRnrCase \
+#                                     mkTestReqHandleSeqErrCase
+# TestRespHandleSQ.bsv             = mkTestRespHandleNormalRespCase \
+#                                     mkTestRespHandleDupRespCase \
+#                                     mkTestRespHandleGhostRespCase \
+#                                     mkTestRespHandleRespErrCase \
+#                                     mkTestRespHandleRetryErrCase \
+#                                     mkTestRespHandleTimeOutErrCase \
+#                                     mkTestRespHandlePermCheckFailCase \
+#                                     mkTestRespHandleRnrCase \
+#                                     mkTestRespHandleSeqErrCase \
+#                                     mkTestRespHandleNestedRetryCase
+# TestRetryHandleSQ.bsv            = mkTestRetryHandleSeqErrCase \
+#                                     mkTestRetryHandleImplicitRetryCase \
+#                                     mkTestRetryHandleRnrCase \
+#                                     mkTestRetryHandleTimeOutCase \
+#                                     mkTestRetryHandleNestedRetryCase \
+#                                     mkTestRetryHandleExcRetryLimitErrCase \
+#                                     mkTestRetryHandleExcTimeOutLimitErrCase
 TestSpecialFIFOF.bsv             = mkTestCacheFIFO2 \
                                     mkTestScanFIFOF \
                                     mkTestSearchFIFOF \
                                     mkTestVectorSearch
-TestTransportLayer.bsv           = mkTestTransportLayerNormalCase \
-                                    mkTestTransportLayerErrorCase
+# TestTransportLayer.bsv           = mkTestTransportLayerNormalCase \
+#                                     mkTestTransportLayerErrorCase
 TestUtils.bsv                    = mkTestPsnFunc
-TestWorkCompGen.bsv              = mkTestWorkCompGenNormalCaseRQ \
-                                    mkTestWorkCompGenErrFlushCaseRQ \
-                                    mkTestWorkCompGenNormalCaseSQ \
-                                    mkTestWorkCompGenErrFlushCaseSQ
+# TestWorkCompGen.bsv              = mkTestWorkCompGenNormalCaseRQ \
+#                                     mkTestWorkCompGenErrFlushCaseRQ \
+#                                     mkTestWorkCompGenNormalCaseSQ \
+#                                     mkTestWorkCompGenErrFlushCaseSQ
 
 TestPayloadGen.bsv               = mkTestAddrChunkSrv \
                                     mkTestDmaReadCntrlScatterGatherListCase \

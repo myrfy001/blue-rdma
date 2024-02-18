@@ -1727,12 +1727,9 @@ function ActionValue#(PayloadConReq) genDiscardPayloadReq(
         );
         let discardReq = PayloadConReq {
             fragNum    : fragNum,
-            consumeInfo: tagged DiscardPayloadInfo DmaWriteMetaData {
-                initiator: initiator,
-                sqpn     : sqpn,
+            consumeInfo: tagged DiscardPayloadInfo DmaWriteMetaDataNew {
                 startAddr: startAddr,
-                len      : len,
-                psn      : psn
+                len      : len
             }
         };
         return discardReq;
@@ -1756,12 +1753,9 @@ function Action genDiscardPayloadReq(
         );
         let discardReq = PayloadConReq {
             fragNum    : fragNum,
-            consumeInfo: tagged DiscardPayloadInfo DmaWriteMetaData {
-                initiator: initiator,
-                sqpn     : sqpn,
+            consumeInfo: tagged DiscardPayloadInfo DmaWriteMetaDataNew {
                 startAddr: startAddr,
-                len      : len,
-                psn      : psn
+                len      : len
             }
         };
         payloadConReqQ.enq(discardReq);

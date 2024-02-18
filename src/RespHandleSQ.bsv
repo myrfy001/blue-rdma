@@ -1271,12 +1271,9 @@ module mkRespHandleSQ#(
                 if (isReadResp && !isZeroPayloadLen) begin
                     let payloadConReq = PayloadConReq {
                         fragNum      : pktMetaData.pktFragNum,
-                        consumeInfo  : tagged SendWriteReqReadRespInfo DmaWriteMetaData {
-                            initiator: DMA_SRC_SQ_WR,
-                            sqpn     : cntrlStatus.comm.getSQPN,
+                        consumeInfo  : tagged SendWriteReqReadRespInfo DmaWriteMetaDataNew {
                             startAddr: nextReadRespWriteAddr,
-                            len      : pktMetaData.pktPayloadLen,
-                            psn      : bth.psn
+                            len      : pktMetaData.pktPayloadLen
                         }
                     };
                     // payloadConReqOutQ.enq(payloadConReq);
@@ -1298,12 +1295,9 @@ module mkRespHandleSQ#(
                     let atomicWriteReq = PayloadConReq {
                         fragNum    : 0,
                         consumeInfo: tagged AtomicRespInfoAndPayload {
-                            atomicRespDmaWriteMetaData: DmaWriteMetaData {
-                                initiator: DMA_SRC_SQ_ATOMIC,
-                                sqpn     : cntrlStatus.comm.getSQPN,
+                            atomicRespDmaWriteMetaData: DmaWriteMetaDataNew {
                                 startAddr: pendingWR.wr.laddr,
-                                len      : truncate(pendingWR.wr.len),
-                                psn      : bth.psn
+                                len      : truncate(pendingWR.wr.len)
                             },
                             atomicRespPayload: atomicAckAeth.orig
                         }

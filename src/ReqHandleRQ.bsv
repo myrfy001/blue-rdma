@@ -2263,12 +2263,9 @@ module mkReqHandleRQ#(
             if ((isSendReq || isWriteReq) && !isZeroDmaLen) begin
                 let payloadConReq = PayloadConReq {
                     fragNum      : pktMetaData.pktFragNum,
-                    consumeInfo  : tagged SendWriteReqReadRespInfo DmaWriteMetaData {
-                        initiator: DMA_SRC_RQ_WR,
-                        sqpn     : cntrlStatus.comm.getSQPN,
+                    consumeInfo  : tagged SendWriteReqReadRespInfo DmaWriteMetaDataNew {
                         startAddr: curDmaWriteAddr,
-                        len      : pktMetaData.pktPayloadLen,
-                        psn      : bth.psn
+                        len      : pktMetaData.pktPayloadLen
                     }
                 };
                 // payloadConReqOutQ.enq(payloadConReq);
