@@ -7,14 +7,13 @@ import PAClib :: *;
 import Vector :: *;
 
 import Headers :: *;
-import Controller :: *;
 import DataTypes :: *;
 import MetaData :: *;
-import PayloadConAndGen :: *;
+import PayloadCon :: *;
 import PrimUtils :: *;
 import Settings :: *;
 import SimDma :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 import Utils4Test :: *;
 
 (* doc = "testcase" *)
@@ -607,7 +606,7 @@ module mkTestDmaWriteCntrl(Empty);
 endmodule
 */
 (* doc = "testcase" *)
-module mkTestPayloadConAndGenNormalCase(Empty);
+module mkTestPayloadConNormalCase(Empty);
     let minPktLen = 2048;
     let maxPktLen = 4096;
     let qpType = IBV_QPT_XRC_SEND;
@@ -677,7 +676,7 @@ module mkTestPayloadConAndGenNormalCase(Empty);
         let payloadGenResp <- payloadGenerator.srvPort.response.get;
         immAssert(
             !payloadGenResp.isRespErr,
-            "payloadGenResp error assertion @ mkTestPayloadConAndGenNormalCase",
+            "payloadGenResp error assertion @ mkTestPayloadConNormalCase",
             $format(
                 "payloadGenResp.isRespErr=", fshow(payloadGenResp.isRespErr),
                 " should be false"
@@ -723,7 +722,7 @@ module mkTestPayloadConAndGenNormalCase(Empty);
 
         immAssert(
             payloadConResp.dmaWriteResp.psn == expectedPSN,
-            "payloadConResp PSN assertion @ mkTestPayloadConAndGenNormalCase",
+            "payloadConResp PSN assertion @ mkTestPayloadConNormalCase",
             $format(
                 "payloadConResp.dmaWriteResp.psn=%h should == expectedPSN=%h",
                 payloadConResp.dmaWriteResp.psn, expectedPSN
@@ -743,7 +742,7 @@ module mkTestPayloadConAndGenNormalCase(Empty);
 
         immAssert(
             dmaReadPayload == dmaWritePayload,
-            "dmaReadPayload == dmaWritePayload assertion @ mkTestPayloadConAndGenNormalCase",
+            "dmaReadPayload == dmaWritePayload assertion @ mkTestPayloadConNormalCase",
             $format(
                 "dmaReadPayload=", fshow(dmaReadPayload),
                 " should == dmaWritePayload=", fshow(dmaWritePayload)
@@ -833,7 +832,7 @@ module mkTestPayloadGenSegmentAndPaddingCase(Empty);
         // payloadGenerator.respPipeOut.deq;
         immAssert(
             !payloadGenResp.isRespErr,
-            "payloadGenResp error assertion @ mkTestPayloadConAndGenNormalCase",
+            "payloadGenResp error assertion @ mkTestPayloadConNormalCase",
             $format(
                 "payloadGenResp.isRespErr=", fshow(payloadGenResp.isRespErr),
                 " should be false"

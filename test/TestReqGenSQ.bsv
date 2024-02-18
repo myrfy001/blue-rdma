@@ -1,17 +1,16 @@
 import PAClib :: *;
 import Vector :: *;
 
-import Controller :: *;
 import DataTypes :: *;
 import ExtractAndPrependPipeOut :: *;
 import InputPktHandle :: *;
 import Headers :: *;
-import PayloadConAndGen :: *;
+import PayloadCon :: *;
 import PrimUtils :: *;
 import ReqGenSQ :: *;
 import Settings :: *;
 import SimDma :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 import Utils4Test :: *;
 
 (* doc = "testcase" *)

@@ -6,14 +6,13 @@ import PAClib :: *;
 import Vector :: *;
 
 import Headers :: *;
-import Controller :: *;
 import DataTypes :: *;
 import MetaData :: *;
 import PayloadGen :: *;
 import PrimUtils :: *;
 import Settings :: *;
 import SimDma :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 import Utils4Test :: *;
 
 (* doc = "testcase" *)
@@ -566,7 +565,7 @@ module mkTestDmaReadCntrlNormalOrCancelCase#(Bool normalOrCancelCase)(Empty);
             isLast : True
         };
         let dummySGE = sge;
-        let sgl = vec(sge, dummySGE, dummySGE, dummySGE, dummySGE, dummySGE, dummySGE, dummySGE);
+        let sgl = vec(sge, dummySGE, dummySGE, dummySGE);
 
         let dmaReadCntrlReq = DmaReadCntrlReq {
             pmtu              : pmtu,

@@ -7,7 +7,6 @@ import GetPut :: *;
 import PAClib :: *;
 import Vector :: *;
 
-import Controller :: *;
 import DataTypes :: *;
 import ExtractAndPrependPipeOut :: *;
 import Headers :: *;
@@ -17,7 +16,7 @@ import Settings :: *;
 import SimDma :: *;
 import SimGenRdmaReqResp :: *;
 import SimExtractRdmaHeaderPayload :: *;
-import Utils :: *;
+import RdmaUtils :: *;
 import Utils4Test :: *;
 
 interface SimPermCheckClt;

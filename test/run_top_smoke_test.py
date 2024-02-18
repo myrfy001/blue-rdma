@@ -1,5 +1,6 @@
 # coding: utf-8
 
+import subprocess
 from ctypes import *
 from itertools import islice
 
@@ -395,7 +396,7 @@ send_queue_common_header = SendQueueDescCommonHeader(
     F_IS_FIRST=1,
     F_SEGMENT_CNT=3,
     F_SIGNAL_CPLT=1,
-    F_TOTAL_LEN=0x0004
+    F_TOTAL_LEN=0x0003 + 1
 )
 
 obj = SendQueueDescSeg0(
@@ -465,3 +466,29 @@ memory[REQ_SIDE_VA_ADDR+2] = 0xDD
 memory[REQ_SIDE_VA_ADDR+3] = 0xEE
 
 dump_to_str(memory)
+
+
+def run_bluetcl():
+    memory = bytearray(TOTAL_MEMORY_SIZE)
+    mem_pos = 0
+    dump_start = False
+    process = subprocess.Popen(
+        ["bluetcl", 'top_smoke_test.tcl'], stdout=subprocess.PIPE, bufsize=1, universal_newlines=True)
+    for line in iter(process.stdout.readline, ''):
+        if not dump_start:
+            if line.startswith("///MEMORY DUMP BEGIN///"):
+                dump_start = True
+        else:
+            if line.startswith("512'h"):
+                data = int(line[5:], 16)
+                for _ in range(64):
+                    memory[mem_pos] = data & 0xff
+                    data = data >> 8
+                    mem_pos += 1
+
+    return memory
+
+
+new_mem = run_bluetcl()
+if new_mem[RESP_SIDE_VA_ADDR: RESP_SIDE_VA_ADDR+4] != b'\xbb\xcc\xdd\xee':
+    print("ImmAssert Failed")

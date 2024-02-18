@@ -20,7 +20,7 @@ import Axi4LiteTypes :: *;
 import ExtractAndPrependPipeOut :: *;
 
 import MemRegionAndAddressTranslate :: *;
-import PayloadConAndGen :: *;
+import PayloadCon :: *;
 import RecvStreamMocker :: *;
 import Headers :: *;
 

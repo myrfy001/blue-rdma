@@ -11,7 +11,7 @@ TESTBENCHS = \
             TestExtractAndPrependPipeOut.bsv \
             TestInputPktHandle.bsv \
             TestMetaData.bsv \
-            TestPayloadConAndGen.bsv \
+            TestPayloadCon.bsv \
             TestQueuePair.bsv \
             TestReqGenSQ.bsv \
             TestReqHandleRQ.bsv \
@@ -23,11 +23,9 @@ TESTBENCHS = \
             TestWorkCompGen.bsv \
             TestPayloadGen.bsv \
             TestSendQ.bsv \
-            TestQPContext.bsv \
 			TestRQ.bsv \
 			TestTop.bsv
 
-TestQPContext.bsv                       = mkTestQueryContxt 
 
 TestPayloadGen.bsv               = mkTestAddrChunkSrv \
                                     mkTestDmaReadCntrlScatterGatherListCase \
@@ -48,10 +46,17 @@ TestSendQ.bsv                    = mkTestSendQueueRawPktCase \
                                     mkTestSendQueueNoPayloadCase \
                                     mkTestSendQueueZeroPayloadLenCase
 
-all: $(TESTBENCHS)
+all: $(TESTBENCHS) top_smoke_test
 
 %.bsv:
 	$(foreach testcase, $($@), $(shell cd $(TESTDIR) && make simulate TESTFILE=$@ TOPMODULE=$(testcase) > $(LOGDIR)/$@-$(testcase).log 2>&1))
+
+top_smoke_test:
+    $(shell \
+        cd $(TESTDIR) && \
+        make link TESTFILE=TestTop.bsv TOPMODULE=mkTestTop > $(LOGDIR)/mkTestTop.log 2>&1 && \
+        python3 run_top_smoke_test.py >> $(LOGDIR)/mkTestTop.log 2>&1 \
+    )
 
 clean:
 	rm -f $(LOGDIR)/*.log

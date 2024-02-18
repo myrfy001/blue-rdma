@@ -27,7 +27,7 @@ import Headers :: *;
 import ExtractAndPrependPipeOut :: *;
 
 import MemRegionAndAddressTranslate :: *;
-import PayloadConAndGen :: *;
+import PayloadCon :: *;
 import XdmaWrapper :: *;
 
 import UserLogicSettings :: *;
@@ -301,7 +301,7 @@ module mkTopCore(
 
 
     Reg#(Bool) clearReg <- mkReg(True);
-    let sq <- mkFakeSQ(clearReg);
+    let sq <- mkSQ(clearReg);
     mkConnection(sq.dmaReadClt, addrTranslatorForSQ.sqReqInputSrv);
     mkConnection(workQueueRingbufController.workReq, sq.sendQ.srvPort.request);
 
