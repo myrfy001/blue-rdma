@@ -4,18 +4,20 @@ TCLDIR ?= xdc
 CLK ?= rdma_clock
 OOC ?= 1
 VLOGDIR ?= ../src/third_party/verilog
+BLUE_CRC_DIR ?= ../src/third_party/blue-crc
+BLUE_UDP_CRC_TABLE_GEN_INFO_DIR ?= ../src/third_party/blue-ethernet/scripts
 OUTPUTDIR ?= output
 LOGFILE ?= run.log
 RUNTOPHASE ?= all # synth place route all
 PARTNAME = xcvu13p-fhgb2104-2-i
-TARGETFILE ?= ../src/SendQ.bsv
-TOPMODULE ?= mkSQ
+# TARGETFILE ?= ../src/SendQ.bsv
+# TOPMODULE ?= mkSQ
 # TARGETFILE ?= ../src/QueuePair.bsv
 # TOPMODULE ?= mkQP
 TARGETFILE ?= ../src/third_party/Top.bsv
 TOPMODULE ?= mkBsvTop
 BACKENDDIR ?= .
-MAX_NET_PATH_NUM ?= 1000
+MAX_NET_PATH_NUM ?= 10000
 VERILOG_TOPMODULE ?= top
 
 export TOP = $(TOPMODULE)
@@ -33,11 +35,17 @@ export RUNTO = $(RUNTOPHASE)
 export PART = $(PARTNAME)
 export MAX_NET_PATH_NUM
 
+gen_udp_crc_tab:
+	python3 $(BLUE_CRC_DIR)/scripts/gen_crc_tab.py \
+			$(BLUE_UDP_CRC_TABLE_GEN_INFO_DIR)/crc_ieee_32_256.json \
+			$(DIR_BSV_GENERATED)
+
+
 compile:
 	mkdir -p $(BUILDDIR)
 	bsc -elab -sim -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(TOPMODULE) $(TARGETFILE)
 
-verilog: compile
+verilog: compile gen_udp_crc_tab
 	mkdir -p $(DIR_BSV_GENERATED)
 	bsc $(VERILOGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(TRANSFLAGS) -g $(TOPMODULE) $(TARGETFILE)
 	bluetcl listVlogFiles.tcl -bdir $(BUILDDIR) -vdir $(BUILDDIR) $(TOPMODULE) $(TOPMODULE) | grep -i '\.v' | xargs -I {} cp {} $(DIR_BSV_GENERATED)

@@ -3,7 +3,7 @@ file mkdir $dir_ooc_out
 
 read_verilog [ glob $dir_bsv_gen/*.v ]
 read_xdc ${dir_ooc_scripts}/bsv_ooc_module_common.xdc -mode out_of_context
-synth_design -part $part -top $ooc_top -mode out_of_context
+synth_design -part $part -top $ooc_top -mode out_of_context -flatten_hierarchy none
 write_checkpoint -force ${dir_ooc_out}/${ooc_top}.dcp
 
 

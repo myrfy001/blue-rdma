@@ -1059,7 +1059,7 @@ interface SQ;
     interface SendQ sendQ;
 endinterface
 
-(* synthesize *)
+// (* synthesize *)
 module mkSQ#(Bool clearAll)(SQ);
     FIFOF#(DmaReadReq)   dmaReadReqQ <- mkFIFOF;
     FIFOF#(DmaReadResp) dmaReadRespQ <- mkFIFOF;

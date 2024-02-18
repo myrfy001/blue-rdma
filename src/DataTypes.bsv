@@ -817,12 +817,12 @@ typedef struct {
 } WriteReqCommonQPC deriving(Bits, Eq, FShow);
 
 typedef struct {
-    Bool                            isError;
-    KeyQP                           qpnKeyPart;
-    HandlerPD                       pdHandler;
-    TypeQP                          qpType;
-    FlagsType#(MemAccessTypeFlag)   rqAccessFlags;
-    PMTU                            pmtu;
+    Bool                            isError;            // 1 bit
+    KeyQP                           qpnKeyPart;         // TSub#(QPN_WIDTH, QP_INDEX_WIDTH) bits = 24-11 = 13 bits
+    HandlerPD                       pdHandler;          // 24 bits
+    TypeQP                          qpType;             // 4 bits
+    FlagsType#(MemAccessTypeFlag)   rqAccessFlags;      // 8 bits
+    PMTU                            pmtu;               // 3 bits
 } EntryCommonQPC deriving(Bits, Eq, FShow);
 
 

@@ -7,6 +7,7 @@ import BRAM :: *;
 
 import UserLogicSettings :: *;
 import UserLogicTypes :: *;
+import RdmaUtils :: *;
 
 import DataTypes :: *;
 import SemiFifo :: *;
@@ -392,104 +393,6 @@ typedef struct {
 } UserLogicBluerdmaDmaProxyCustomDataC2h deriving(Bits, FShow);
 
 
-// interface BluerdmaDmaProxyForSQ;
-//     interface Server#(DmaReadReqNew, DmaReadRespNew) blueSideReadSrv;
-//     interface Server#(DmaWriteReqNew, DmaWriteRespNew) blueSideWriteSrv;
-//     interface UserLogicDmaReadClt userlogicSideReadClt;
-//     interface UserLogicDmaWriteClt userlogicSideWriteClt;
-// endinterface
-
-
-// module mkBluerdmaDmaProxyForSQ(BluerdmaDmaProxyForSQ);
-
-//     function Bit#(width) swapEndian(Bit#(width) data) provisos(Mul#(8, byteNum, width));
-//         Vector#(byteNum, Bit#(BYTE_WIDTH)) dataVec = unpack(data);
-//         return pack(reverse(dataVec));
-//     endfunction
-
-//     function Bit#(width) swapEndianBit(Bit#(width) data) provisos(Mul#(1, byteNum, width));
-//         Vector#(byteNum, Bit#(1)) dataVec = unpack(data);
-//         return pack(reverse(dataVec));
-//     endfunction
-
-//     function DataStream reverseStream(DataStream st);
-//         st.data = swapEndian(st.data);
-//         st.byteEn = swapEndianBit(st.byteEn);
-//         return st;
-//     endfunction
-
-//     function Tuple2#(UserLogicDmaH2cReq, Maybe#(UserLogicBluerdmaDmaProxyCustomDataH2c)) reqTransFnH2c(DmaReadReqNew req);
-//         return tuple2(
-//             UserLogicDmaH2cReq{
-//                 addr: req.startAddr,
-//                 len: zeroExtend(pack(req.len))
-//             },
-//             tagged Valid UserLogicBluerdmaDmaProxyCustomDataH2c {
-//                 initiator: req.initiator,
-//                 sqpn: req.sqpn
-//             }
-//         );
-//     endfunction
-
-//     function Tuple2#(DmaReadRespNew, Bool) respTransFnH2c(UserLogicDmaH2cResp resp, UserLogicBluerdmaDmaProxyCustomDataH2c customData);
-//         return tuple2(
-//             DmaReadRespNew{
-//                 initiator: customData.initiator,
-//                 sqpn: customData.sqpn,
-//                 isRespErr: False,
-//                 dataStream: reverseStream(resp.dataStream)
-//             },
-//             resp.dataStream.isLast
-//         );
-//     endfunction 
-
-
-//     function Tuple2#(UserLogicDmaC2hReq, Maybe#(UserLogicBluerdmaDmaProxyCustomDataC2h)) reqTransFnC2h(DmaWriteReqNew req);
-        
-//         return tuple2(
-//             UserLogicDmaC2hReq{
-//                 addr: req.metaData.startAddr,
-//                 len: zeroExtend(pack(req.metaData.len)),
-//                 dataStream: reverseStream(req.dataStream)
-//             },
-//             req.dataStream.isFirst ? 
-//                 (tagged Valid UserLogicBluerdmaDmaProxyCustomDataC2h {
-//                 initiator: req.metaData.initiator,
-//                 sqpn: req.metaData.sqpn,
-//                 psn: req.metaData.psn
-//                 }) : tagged Invalid
-//         );
-//     endfunction
-
-//     function Tuple2#(DmaWriteRespNew, Bool) respTransFnC2h(UserLogicDmaC2hResp resp, UserLogicBluerdmaDmaProxyCustomDataC2h customData);
-//         return tuple2(
-//             DmaWriteRespNew{
-//                 initiator: customData.initiator,
-//                 sqpn: customData.sqpn,
-//                 psn: customData.psn,
-//                 isRespErr: False
-//             },
-//             True
-//         );
-//     endfunction 
-
-//     StreamReqProxy#(
-//         DmaReadReqNew, DmaReadRespNew, UserLogicDmaH2cReq, UserLogicDmaH2cResp
-//     ) h2cProxy <- mkStreamReqProxy(reqTransFnH2c, respTransFnH2c);
-
-//     StreamReqProxy#(
-//         DmaWriteReqNew, DmaWriteRespNew, UserLogicDmaC2hReq, UserLogicDmaC2hResp
-//     ) c2hProxy <- mkStreamReqProxy(reqTransFnC2h, respTransFnC2h);
-
-
-//     interface blueSideReadSrv = h2cProxy.inSrv;
-//     interface blueSideWriteSrv = c2hProxy.inSrv;
-//     interface userlogicSideReadClt = h2cProxy.outClt;
-//     interface userlogicSideWriteClt = c2hProxy.outClt;
-
-// endmodule
-
-
 interface BluerdmaDmaProxyForRQ;
     interface Server#(DmaReadReqNew, DmaReadRespNew) blueSideReadSrv;
     interface Server#(DmaWriteReqNew, DmaWriteRespNew) blueSideWriteSrv;
@@ -499,22 +402,6 @@ endinterface
 
 
 module mkBluerdmaDmaProxyForRQ(BluerdmaDmaProxyForRQ);
-
-    function Bit#(width) swapEndian(Bit#(width) data) provisos(Mul#(8, byteNum, width));
-        Vector#(byteNum, Bit#(BYTE_WIDTH)) dataVec = unpack(data);
-        return pack(reverse(dataVec));
-    endfunction
-
-    function Bit#(width) swapEndianBit(Bit#(width) data) provisos(Mul#(1, byteNum, width));
-        Vector#(byteNum, Bit#(1)) dataVec = unpack(data);
-        return pack(reverse(dataVec));
-    endfunction
-
-    function DataStream reverseStream(DataStream st);
-        st.data = swapEndian(st.data);
-        st.byteEn = swapEndianBit(st.byteEn);
-        return st;
-    endfunction
 
     function Tuple2#(UserLogicDmaH2cReq, Maybe#(UserLogicBluerdmaDmaProxyCustomDataH2c)) reqTransFnH2c(DmaReadReqNew req);
         return tuple2(
@@ -1079,14 +966,15 @@ module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
                 (1 << (prevBeatInfo.beatValidByteCnt - readStreamInfo.rightShiftByteCnt)
             ) - 1);
 
-            xdmaH2cRespQ.enq(UserLogicDmaH2cWideResp{
+            let resp = UserLogicDmaH2cWideResp{
                 dataStream: DataStreamWide{
                     data: outData,
                     isFirst: prevBeatInfo.isFirst,
                     isLast: True,
                     byteEn: outEn
                 }
-            });
+            };
+            xdmaH2cRespQ.enq(resp);
             respStreamInfoQ.deq;
 
             if (memReadRespQ.notEmpty) begin
@@ -1109,14 +997,15 @@ module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
             let outData = (prevMemReadResp >> rightShiftBit) | (newMemReadResp << leftShiftBit);
             let outEn = hasMoreData ? -1 : (1 << (readStreamInfo.leftShiftByteCnt + newBeatInfo.beatValidByteCnt)) - 1;
             
-            xdmaH2cRespQ.enq(UserLogicDmaH2cWideResp{
+            let resp = UserLogicDmaH2cWideResp{
                 dataStream: DataStreamWide{
                     data: outData,
                     isFirst: prevBeatInfo.isFirst,
                     isLast: !hasMoreData,
                     byteEn: outEn
                 }
-            });
+            };
+            xdmaH2cRespQ.enq(resp);
 
             if (hasMoreData) begin
                 // keep current state

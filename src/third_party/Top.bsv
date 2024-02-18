@@ -44,7 +44,6 @@ typedef 4791 TEST_UDP_PORT;
 interface BsvTop#(numeric type dataSz, numeric type userSz);
     interface XdmaChannel#(dataSz, userSz) xdmaChannel;
     interface RawAxi4LiteSlave#(CSR_ADDR_WIDTH, CSR_DATA_STRB_WIDTH) axilRegBlock;
-    interface Clock slowClockIfc;
     
     
     // Interface with CMAC IP
@@ -163,7 +162,6 @@ module mkBsvTop(
 
 
     interface xdmaChannel = xdmaWrap.xdmaChannel;
-    interface slowClockIfc = slowClock;
     interface axilRegBlock = xdmaAxiLiteWrap.cntrlAxil;
     interface cmacController = udp.cmacController;
 endmodule

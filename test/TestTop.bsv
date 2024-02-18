@@ -63,7 +63,13 @@ module mkTestTop(Empty);
     mkConnection(fakeXdmaA.xdmaC2hSrv, topA.dmaWriteClt);
 
     // loop tx stream to rx stream
-    mkConnection(toGet(topA.rdmaDataStreamPipeOut), topA.rdmaDataStreamInput);
+    // mkConnection(toGet(topA.rdmaDataStreamPipeOut), topA.rdmaDataStreamInput);
+    rule displayAndForwardWireData;
+        let d = topA.rdmaDataStreamPipeOut.first;
+        topA.rdmaDataStreamPipeOut.deq;
+        topA.rdmaDataStreamInput.put(d);
+        $display("on wire data: ", fshow(d));
+    endrule
 
 
     Reg#(Bool) stopReg <- mkReg(False);
@@ -146,7 +152,7 @@ module mkTestTop(Empty);
                     let t <- topA.csrReadSrv.response.get;
                     $display("t=%d", t);
                 endaction
-                delay(10);
+                delay(100);
             endseq
 
             delay(20000);

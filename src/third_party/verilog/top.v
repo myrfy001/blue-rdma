@@ -24,16 +24,16 @@ module top#(
     
 
     // CMAC
-    input qsfp1_ref_clk_p,
-    input qsfp1_ref_clk_n,
+    // input qsfp1_ref_clk_p,
+    // input qsfp1_ref_clk_n,
 
     input qsfp2_ref_clk_p,
     input qsfp2_ref_clk_n,
 
-    input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_rxn_in,
-    input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_rxp_in,
-    output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_txn_out,
-    output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_txp_out,
+    // input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_rxn_in,
+    // input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_rxp_in,
+    // output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_txn_out,
+    // output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp1_txp_out
 
     input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_rxn_in,
     input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_rxp_in,
@@ -41,10 +41,11 @@ module top#(
     output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_txp_out
 );
 
-   //-----------------------------------------------------------------------------------------------------------------------
+  localparam AXIL_ADDR_WIDTH = 20;
 
-
-
+  localparam CMAC_AXIS_TDATA_WIDTH = 512;
+  localparam CMAC_AXIS_TKEEP_WIDTH = 64;
+  localparam CMAC_AXIS_TUSER_WIDTH = 1;
    
    wire 					   user_lnk_up;
    
@@ -71,7 +72,7 @@ module top#(
 
 //////////////////////////////////////////////////  LITE
    //-- AXI Master Write Address Channel
-    wire [31:0] m_axil_awaddr;
+    wire [AXIL_ADDR_WIDTH-1 : 0] m_axil_awaddr;
     wire [2:0]  m_axil_awprot;
     wire 	m_axil_awvalid;
     wire 	m_axil_awready;
@@ -85,7 +86,7 @@ module top#(
     wire 	m_axil_bvalid;
     wire 	m_axil_bready;
     //-- AXI Master Read Address Channel
-    wire [31:0] m_axil_araddr;
+    wire [AXIL_ADDR_WIDTH-1:0] m_axil_araddr;
     wire [2:0]  m_axil_arprot;
     wire 	m_axil_arvalid;
     wire 	m_axil_arready;
@@ -136,7 +137,81 @@ module top#(
   wire h2c_dsc_byp_load_0;
 
 
-  wire clk_wiz_udp_and_cmac_locked;
+// GT Signals
+    wire            gt_txusrclk2;
+    wire            gt_usr_tx_reset;
+    wire            gt_usr_rx_reset;
+
+    wire            gt_rx_axis_tvalid;
+    wire            gt_rx_axis_tready;
+    wire            gt_rx_axis_tlast;
+    wire [CMAC_AXIS_TDATA_WIDTH - 1 : 0] gt_rx_axis_tdata;
+    wire [CMAC_AXIS_TKEEP_WIDTH - 1 : 0] gt_rx_axis_tkeep;
+    wire [CMAC_AXIS_TUSER_WIDTH - 1 : 0] gt_rx_axis_tuser;
+
+    wire            gt_stat_rx_aligned;
+    wire [8:0]      gt_stat_rx_pause_req;
+    wire [2:0]      gt_stat_rx_bad_fcs;
+    wire [2:0]      gt_stat_rx_stomped_fcs;
+    wire            gt_ctl_rx_enable;
+    wire            gt_ctl_rx_force_resync;
+    wire            gt_ctl_rx_test_pattern;
+    wire            gt_ctl_rx_check_etype_gcp;
+    wire            gt_ctl_rx_check_etype_gpp;
+    wire            gt_ctl_rx_check_etype_pcp;
+    wire            gt_ctl_rx_check_etype_ppp;
+    wire            gt_ctl_rx_check_mcast_gcp;
+    wire            gt_ctl_rx_check_mcast_gpp;
+    wire            gt_ctl_rx_check_mcast_pcp;
+    wire            gt_ctl_rx_check_mcast_ppp;
+    wire            gt_ctl_rx_check_opcode_gcp;
+    wire            gt_ctl_rx_check_opcode_gpp;
+    wire            gt_ctl_rx_check_opcode_pcp;
+    wire            gt_ctl_rx_check_opcode_ppp;
+    wire            gt_ctl_rx_check_sa_gcp;
+    wire            gt_ctl_rx_check_sa_gpp;
+    wire            gt_ctl_rx_check_sa_pcp;
+    wire            gt_ctl_rx_check_sa_ppp;
+    wire            gt_ctl_rx_check_ucast_gcp;
+    wire            gt_ctl_rx_check_ucast_gpp;
+    wire            gt_ctl_rx_check_ucast_pcp;
+    wire            gt_ctl_rx_check_ucast_ppp;
+    wire            gt_ctl_rx_enable_gcp;
+    wire            gt_ctl_rx_enable_gpp;
+    wire            gt_ctl_rx_enable_pcp;
+    wire            gt_ctl_rx_enable_ppp;
+    wire [8:0]      gt_ctl_rx_pause_ack;
+    wire [8:0]      gt_ctl_rx_pause_enable;
+
+    wire            gt_tx_axis_tready;
+    wire            gt_tx_axis_tvalid;
+    wire            gt_tx_axis_tlast;
+    wire [CMAC_AXIS_TDATA_WIDTH - 1 : 0] gt_tx_axis_tdata;
+    wire [CMAC_AXIS_TKEEP_WIDTH - 1 : 0] gt_tx_axis_tkeep;
+    wire [CMAC_AXIS_TUSER_WIDTH - 1 : 0] gt_tx_axis_tuser;
+
+    wire            gt_tx_ovfout;
+    wire            gt_tx_unfout;
+    wire            gt_ctl_tx_enable;
+    wire            gt_ctl_tx_test_pattern;
+    wire            gt_ctl_tx_send_idle;
+    wire            gt_ctl_tx_send_rfi;
+    wire            gt_ctl_tx_send_lfi;
+    wire [8:0]      gt_ctl_tx_pause_enable;
+    wire [15:0]     gt_ctl_tx_pause_quanta0;
+    wire [15:0]     gt_ctl_tx_pause_quanta1;
+    wire [15:0]     gt_ctl_tx_pause_quanta2;
+    wire [15:0]     gt_ctl_tx_pause_quanta3;
+    wire [15:0]     gt_ctl_tx_pause_quanta4;
+    wire [15:0]     gt_ctl_tx_pause_quanta5;
+    wire [15:0]     gt_ctl_tx_pause_quanta6;
+    wire [15:0]     gt_ctl_tx_pause_quanta7;
+    wire [15:0]     gt_ctl_tx_pause_quanta8;
+    wire [8:0]      gt_ctl_tx_pause_req;
+    wire            gt_ctl_tx_resend_pause;
+
+
+  wire clk_wiz_user_clock_locked;
 
   clk_wiz_xdma_250_to_500 mmcm_250_to_500
    (
@@ -187,7 +262,7 @@ module top#(
 
       // LITE interface   
       //-- AXI Master Write Address Channel
-      .m_axil_awaddr    (m_axil_awaddr),
+      .m_axil_awaddr    ({0, m_axil_awaddr}),
       .m_axil_awprot    (m_axil_awprot),
       .m_axil_awvalid   (m_axil_awvalid),
       .m_axil_awready   (m_axil_awready),
@@ -201,7 +276,7 @@ module top#(
       .m_axil_bresp     (m_axil_bresp),
       .m_axil_bready    (m_axil_bready),
       //-- AXI Master Read Address Channel
-      .m_axil_araddr    (m_axil_araddr),
+      .m_axil_araddr    ({0, m_axil_araddr}),
       .m_axil_arprot    (m_axil_arprot),
       .m_axil_arvalid   (m_axil_arvalid),
       .m_axil_arready   (m_axil_arready),
@@ -406,23 +481,23 @@ module top#(
   assign gtwiz_reset_tx_datapath    = 1'b0;
   assign gtwiz_reset_rx_datapath    = 1'b0;
 
-  assign udp_reset = clk_wiz_udp_and_cmac_locked;
-  assign cmac_sys_reset = ~ clk_wiz_udp_and_cmac_locked;
+  assign udp_reset = clk_wiz_user_clock_locked;
+  assign cmac_sys_reset = ~ clk_wiz_user_clock_locked;
   assign gt_init_clk = user_clk_250;
 
 
   cmac_usplus_0 cmac_inst(
-        .gt_rxp_in                            (qsfp1_rxp_in  ),
-        .gt_rxn_in                            (qsfp1_rxn_in  ),
-        .gt_txp_out                           (qsfp1_txp_out ),
-        .gt_txn_out                           (qsfp1_txn_out ),
+        .gt_rxp_in                            (qsfp2_rxp_in  ),
+        .gt_rxn_in                            (qsfp2_rxn_in  ),
+        .gt_txp_out                           (qsfp2_txp_out ),
+        .gt_txn_out                           (qsfp2_txn_out ),
         .gt_loopback_in                       (gt_loopback_in),
         
         .gtwiz_reset_tx_datapath              (gtwiz_reset_tx_datapath),
         .gtwiz_reset_rx_datapath              (gtwiz_reset_rx_datapath),
         .sys_reset                            (cmac_sys_reset),
-        .gt_ref_clk_p                         (qsfp1_ref_clk_p),
-        .gt_ref_clk_n                         (qsfp1_ref_clk_p),
+        .gt_ref_clk_p                         (qsfp2_ref_clk_p),
+        .gt_ref_clk_n                         (qsfp2_ref_clk_n),
         .init_clk                             (gt_init_clk),
 
         .gt_txusrclk2                         (gt_txusrclk2),

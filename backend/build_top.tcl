@@ -75,7 +75,7 @@ proc addExtFiles {args} {
 proc runSynthDesign {args} {
     global dir_output top_module max_net_path_num
 
-    synth_design -top $top_module -retiming
+    synth_design -top $top_module -retiming -flatten_hierarchy none
     write_checkpoint -force $dir_output/post_synth_design.dcp
     write_xdc -force -exclude_physical $dir_output/post_synth.xdc
 
@@ -256,10 +256,10 @@ proc runProgramDevice {args} {
 # runGenerateIP -open_checkpoint false
 # runSynthIP -open_checkpoint false
 # runSynthOOC
-# addExtFiles -open_checkpoint false
-# runSynthDesign -open_checkpoint false
-# runPostSynthReport -open_checkpoint false
-runPlacement -open_checkpoint true
+addExtFiles -open_checkpoint false
+runSynthDesign -open_checkpoint false
+runPostSynthReport -open_checkpoint false
+runPlacement -open_checkpoint false
 runRoute -open_checkpoint false
 runPostRouteReport -open_checkpoint false
 # runWriteBitStream -open_checkpoint false

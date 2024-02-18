@@ -391,7 +391,6 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             let isFirstOrMidPkt = isFirstOrMiddleRdmaOpCode(bth.opcode);
             let isLastOrOnlyPkt = isLastOrOnlyRdmaOpCode(bth.opcode);
             let dqpn            = bth.dqpn;
-            $display("recv bth=", fshow(bth));
             qpcReadCommonCltInst.putReq(ReadReqCommonQPC{qpn: dqpn});
 
             let headerValidateInfo = HeaderValidateInfo {
@@ -425,7 +424,6 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             let isValidHeader = False;
 
             let qpcCommonMaybe <- qpcReadCommonCltInst.getResp;
-            $display("qpcCommonMaybe=", fshow(qpcCommonMaybe));
 
             PMTU pmtu = IBV_MTU_256;
             if (qpcCommonMaybe matches tagged Valid .qpcCommon) begin

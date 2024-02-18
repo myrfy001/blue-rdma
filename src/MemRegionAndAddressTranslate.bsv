@@ -184,7 +184,7 @@ endfunction
 (* synthesize *)
 module mkTLB(TLB);
     
-    BramCache#(PTEIndex, PageTableEntry, 1) pageTableStorage <- mkBramCache;
+    BramCache#(PTEIndex, PageTableEntry, 2) pageTableStorage <- mkBramCache;
 
     BypassServer#(PgtAddrTranslateReq, ADDR) translateSrvInst <- mkBypassServer;
     BypassServer#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkBypassServer;
