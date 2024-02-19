@@ -27,6 +27,10 @@ BSVSRCDIR = -p +:$(abspath ../src) \
 			-p +:$(abspath ../src/third_party/blue-ethernet/src/includes) \
 			-p +:$(abspath ../src/third_party/blue-crc/src)
 
+
+BSV_C_EXT_FILES += \
+	$(abspath ../src/third_party)/MockHost.c
+
 DIRFLAGS = $(BSVSRCDIR) $(OUTDIR) $(WORKDIR)
 MISCFLAGS = -print-flags -show-timestamps -show-version -steps 6000000 -D IS_SUPPORT_RDMA=True # -D macro
 RUNTIMEFLAGS = +RTS -K4095M -RTS

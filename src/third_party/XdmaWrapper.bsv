@@ -22,6 +22,7 @@ import PrimUtils :: *;
 import Connectable :: * ;
 import StmtFSM::*;
 import Randomizable :: * ;
+import MockHost :: *;
 
 
 typedef Bit#(64) XdmaDescBypAddr;
@@ -736,7 +737,9 @@ module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
     cfg.loadFormat = initData;
     // BRAM2PortBE#(ADDR, DATA_WIDE, SizeOf#(ByteEnWide)) hostMem <- mkBRAM2ServerBE(cfg);
 
-    BRAM2PortBE#(Bit#(32), Bit#(512), 64) hostMem <- mkBRAM2ServerBE(cfg);
+    // BRAM2PortBE#(Bit#(32), Bit#(512), 64) hostMem <- mkBRAM2ServerBE(cfg);
+    BRAM2PortBE#(Bit#(32), Bit#(512), 64) hostMem <- mkMockHost(cfg);
+    
 
     Reg#(Bool) currentIsH2cReg <- mkReg(True);
     Reg#(Bool) currentNotFinished <- mkReg(False);
@@ -943,7 +946,6 @@ module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
         let newMemReadResp = memReadRespQ.first;
         memReadRespQ.deq;
         respBeatInfoQ.deq;
-        
         prevMemReadRespReg <= tuple2(newMemReadResp, respBeatInfoQ.first);
         readRespHandleStateReg <= fromInteger(readRespHandleStateHandleMiddle);
     endrule
