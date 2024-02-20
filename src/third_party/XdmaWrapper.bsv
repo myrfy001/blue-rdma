@@ -738,7 +738,8 @@ module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
     // BRAM2PortBE#(ADDR, DATA_WIDE, SizeOf#(ByteEnWide)) hostMem <- mkBRAM2ServerBE(cfg);
 
     // BRAM2PortBE#(Bit#(32), Bit#(512), 64) hostMem <- mkBRAM2ServerBE(cfg);
-    BRAM2PortBE#(Bit#(32), Bit#(512), 64) hostMem <- mkMockHost(cfg);
+    MockHost#(Bit#(32), Bit#(512), 64, CsrAddr, CsrData) mockHost <- mkMockHost(cfg);
+    let hostMem = mockHost.hostMem;
     
 
     Reg#(Bool) currentIsH2cReg <- mkReg(True);
