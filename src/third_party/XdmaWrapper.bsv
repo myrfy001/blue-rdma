@@ -734,10 +734,7 @@ module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
     BRAM_Configure cfg = defaultValue;
     cfg.allowWriteResponseBypass = False;
     cfg.memorySize = 1024*1024; // 64 MB, word size is 64B
-    cfg.loadFormat = initData;
     // BRAM2PortBE#(ADDR, DATA_WIDE, SizeOf#(ByteEnWide)) hostMem <- mkBRAM2ServerBE(cfg);
-
-    // BRAM2PortBE#(Bit#(32), Bit#(512), 64) hostMem <- mkBRAM2ServerBE(cfg);
     MockHost#(Bit#(32), Bit#(512), 64, CsrAddr, CsrData) mockHost <- mkMockHost(cfg);
     let hostMem = mockHost.hostMem;
     

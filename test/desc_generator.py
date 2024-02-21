@@ -51,22 +51,6 @@ SEND_SIDE_QPN = 0x6611
 SEND_SIDE_PD_HANDLER = 0x6611  # in practise, this should be returned by hardware
 
 
-def batched(iterable, n):
-    it = iter(iterable)
-    while True:
-        batch = list(islice(it, n))
-        if not batch:
-            return
-        yield batch
-
-
-def dump_to_str(memory):
-    with open("test_host_memory.hex", "w") as fo:
-        for i, line in enumerate(batched(memory, 64)):
-            fo.write(bytes(reversed(line)).hex())
-            fo.write("\n")
-
-
 def memcpy(dst, start_addr, src):
     dst[start_addr:start_addr + len(src)] = src
 
@@ -304,191 +288,149 @@ class WorkReqSendFlag:
     IBV_SEND_IP_CSUM = 16
 
 
-# class SendQueueDesc(Structure):
-#     _fields_ = [("common_header", RecvQueueDescCommonHeader),
-#                 ("F_L_ADDR", c_longlong, 64),
-#                 ("F_RESERVED_0", c_longlong, 64),
-#                 ("F_LKEY", c_int, 32),
-#                 ("F_SQ_SQPN", c_int, 24),
-#                 ("F_RESERVED_1", c_int, 8),
-#                 ]
+def generate_memory_image():
 
+    cmd_queue_common_header = CmdQueueReqDescCommonHeader(
+        F_VALID=1,
+        F_SEGMENT_CNT=0,
+        F_SIGNAL_CPLT=0,
+    )
 
-cmd_queue_common_header = CmdQueueReqDescCommonHeader(
-    F_VALID=1,
-    F_SEGMENT_CNT=0,
-    F_SIGNAL_CPLT=0,
-)
-
-memory = bytearray(TOTAL_MEMORY_SIZE)
-
-
-PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_256
-
-
-# generate create MR request
-
-cmd_queue_desc_current_write_addr = CMD_QUEUE_H2C_RINGBUF_START_PA
-
-cmd_queue_common_header.F_OP_CODE = CmdQueueDescOperators.F_OPCODE_CMDQ_UPDATE_MR_TABLE
-cmd_queue_common_header.F_CMD_QUEUE_USER_DATA = 0x00
-obj = CmdQueueDescUpdateMrTable(
-    common_header=cmd_queue_common_header,
-    F_MR_TABLE_MR_BASE_VA=PGT_MR0_BASE_VA,
-    F_MR_TABLE_MR_LENGTH=MR_0_LENGTH,
-    F_MR_TABLE_MR_KEY=SEND_SIDE_LKEY,
-    F_MR_TABLE_PD_HANDLER=SEND_SIDE_PD_HANDLER,
-    F_MR_TABLE_ACC_FLAGS=MemAccessTypeFlag.IBV_ACCESS_LOCAL_WRITE | MemAccessTypeFlag.IBV_ACCESS_REMOTE_READ | MemAccessTypeFlag.IBV_ACCESS_REMOTE_WRITE,
-    F_MR_TABLE_PGT_OFFSET=PGT_ENTRY_OFFSET,
-)
-memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
-
-# generate pgt modify descriptor
-
-cmd_queue_common_header.F_OP_CODE = CmdQueueDescOperators.F_OPCODE_CMDQ_UPDATE_PGT
-cmd_queue_common_header.F_CMD_QUEUE_USER_DATA = 0x01
-obj = CmdQueueDescUpdatePGT(
-    common_header=cmd_queue_common_header,
-    F_PGT_DMA_ADDR=PGT_TABLE_START_ADDR,
-    F_PGT_START_INDEX=PGT_ENTRY_OFFSET,
-    F_PGT_DMA_READ_LENGTH=PGT_ENTRY_SIZE * PGT_ENTRY_CNT,
-)
-memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
-
-
-# generate update QP context request
-
-cmd_queue_common_header.F_OP_CODE = CmdQueueDescOperators.F_OPCODE_CMDQ_MANAGE_QP
-cmd_queue_common_header.F_CMD_QUEUE_USER_DATA = 0x04
-obj = CmdQueueDescQpManagementSeg0(
-    common_header=cmd_queue_common_header,
-    F_QP_ADMIN_IS_VALID=True,
-    F_QP_ADMIN_IS_ERROR=False,
-    F_QP_ADMIN_QPN=SEND_SIDE_QPN,
-    F_QP_ADMIN_PD_HANDLER=SEND_SIDE_PD_HANDLER,
-    F_QP_ADMIN_QP_TYPE=TypeQP.IBV_QPT_RC,
-    F_QP_ADMIN_ACCESS_FLAG=MemAccessTypeFlag.IBV_ACCESS_LOCAL_WRITE | MemAccessTypeFlag.IBV_ACCESS_REMOTE_READ | MemAccessTypeFlag.IBV_ACCESS_REMOTE_WRITE,
-    F_QP_ADMIN_PMTU=PMTU_VALUE_FOR_TEST,
-)
-memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
-cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
-
-
-# generate second level PGT entry
-PgtEntries = c_longlong * MR_0_PTE_COUNT
-entries = PgtEntries()
-
-
-for i in range(len(entries)):
-    entries[i] = MR_0_PA_START + i * (1 << 21)  # 2MB page size
-
-memcpy(memory, PGT_TABLE_START_ADDR, bytes(entries))
-
-
-# generate send queue WQE
-send_queue_desc_current_write_addr = SQ_RINGBUF_START_PA
-send_queue_common_header = SendQueueDescCommonHeader(
-    F_VALID=1,
-    F_OP_CODE=WorkReqOpCode.IBV_WR_RDMA_WRITE,
-    F_IS_LAST=1,
-    F_IS_FIRST=1,
-    F_SEGMENT_CNT=3,
-    F_SIGNAL_CPLT=1,
-    F_TOTAL_LEN=0x0003 + 1
-)
-
-obj = SendQueueDescSeg0(
-    common_header=send_queue_common_header,
-    F_R_ADDR=RESP_SIDE_VA_ADDR,
-    F_RKEY=SEND_SIDE_RKEY,
-    F_DST_IP=0x11223344,
-)
-memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
-send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
-
-
-obj = SendQueueDescSeg1(
-    F_IMM=1,
-    F_DQPN=0x6611,
-    F_MAC_ADDR=0xAABBCCDDEEFF,
-    F_PSN=0x22,
-    F_SEG_CNT=4,
-    F_QP_TYPE=TypeQP.IBV_QPT_RC,
-    F_FLAGS=WorkReqSendFlag.IBV_SEND_NO_FLAGS,
-    F_PMTU=PMTU_VALUE_FOR_TEST
-)
-memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
-send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
-
-
-sge1 = SendQueueReqDescFragSGE(
-    F_LKEY=SEND_SIDE_LKEY,
-    F_LEN=1,
-    F_LADDR=REQ_SIDE_VA_ADDR
-)
-sge2 = SendQueueReqDescFragSGE(
-    F_LKEY=SEND_SIDE_LKEY,
-    F_LEN=1,
-    F_LADDR=REQ_SIDE_VA_ADDR+1
-)
-
-obj = SendQueueReqDescVariableLenSGE(
-    F_SGE1=sge1,
-    F_SGE2=sge2
-)
-memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
-send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
-
-sge1 = SendQueueReqDescFragSGE(
-    F_LKEY=SEND_SIDE_LKEY,
-    F_LEN=1,
-    F_LADDR=REQ_SIDE_VA_ADDR+2
-)
-sge2 = SendQueueReqDescFragSGE(
-    F_LKEY=SEND_SIDE_LKEY,
-    F_LEN=1,
-    F_LADDR=REQ_SIDE_VA_ADDR+3
-)
-
-obj = SendQueueReqDescVariableLenSGE(
-    F_SGE1=sge1,
-    F_SGE2=sge2
-)
-memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
-send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
-
-# Put some data at send side memory to debug
-memory[REQ_SIDE_VA_ADDR] = 0xBB
-memory[REQ_SIDE_VA_ADDR+1] = 0xCC
-memory[REQ_SIDE_VA_ADDR+2] = 0xDD
-memory[REQ_SIDE_VA_ADDR+3] = 0xEE
-
-dump_to_str(memory)
-
-
-def run_bluetcl():
     memory = bytearray(TOTAL_MEMORY_SIZE)
-    mem_pos = 0
-    dump_start = False
-    process = subprocess.Popen(
-        ["bluetcl", 'top_smoke_test.tcl'], stdout=subprocess.PIPE, bufsize=1, universal_newlines=True)
-    for line in iter(process.stdout.readline, ''):
-        if not dump_start:
-            if line.startswith("///MEMORY DUMP BEGIN///"):
-                dump_start = True
-        else:
-            if line.startswith("512'h"):
-                data = int(line[5:], 16)
-                for _ in range(64):
-                    memory[mem_pos] = data & 0xff
-                    data = data >> 8
-                    mem_pos += 1
+
+    PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_256
+
+    # generate create MR request
+
+    cmd_queue_desc_current_write_addr = CMD_QUEUE_H2C_RINGBUF_START_PA
+
+    cmd_queue_common_header.F_OP_CODE = CmdQueueDescOperators.F_OPCODE_CMDQ_UPDATE_MR_TABLE
+    cmd_queue_common_header.F_CMD_QUEUE_USER_DATA = 0x00
+    obj = CmdQueueDescUpdateMrTable(
+        common_header=cmd_queue_common_header,
+        F_MR_TABLE_MR_BASE_VA=PGT_MR0_BASE_VA,
+        F_MR_TABLE_MR_LENGTH=MR_0_LENGTH,
+        F_MR_TABLE_MR_KEY=SEND_SIDE_LKEY,
+        F_MR_TABLE_PD_HANDLER=SEND_SIDE_PD_HANDLER,
+        F_MR_TABLE_ACC_FLAGS=MemAccessTypeFlag.IBV_ACCESS_LOCAL_WRITE | MemAccessTypeFlag.IBV_ACCESS_REMOTE_READ | MemAccessTypeFlag.IBV_ACCESS_REMOTE_WRITE,
+        F_MR_TABLE_PGT_OFFSET=PGT_ENTRY_OFFSET,
+    )
+    memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
+    cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
+
+    # generate pgt modify descriptor
+
+    cmd_queue_common_header.F_OP_CODE = CmdQueueDescOperators.F_OPCODE_CMDQ_UPDATE_PGT
+    cmd_queue_common_header.F_CMD_QUEUE_USER_DATA = 0x01
+    obj = CmdQueueDescUpdatePGT(
+        common_header=cmd_queue_common_header,
+        F_PGT_DMA_ADDR=PGT_TABLE_START_ADDR,
+        F_PGT_START_INDEX=PGT_ENTRY_OFFSET,
+        F_PGT_DMA_READ_LENGTH=PGT_ENTRY_SIZE * PGT_ENTRY_CNT,
+    )
+    memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
+    cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
+
+    # generate update QP context request
+
+    cmd_queue_common_header.F_OP_CODE = CmdQueueDescOperators.F_OPCODE_CMDQ_MANAGE_QP
+    cmd_queue_common_header.F_CMD_QUEUE_USER_DATA = 0x04
+    obj = CmdQueueDescQpManagementSeg0(
+        common_header=cmd_queue_common_header,
+        F_QP_ADMIN_IS_VALID=True,
+        F_QP_ADMIN_IS_ERROR=False,
+        F_QP_ADMIN_QPN=SEND_SIDE_QPN,
+        F_QP_ADMIN_PD_HANDLER=SEND_SIDE_PD_HANDLER,
+        F_QP_ADMIN_QP_TYPE=TypeQP.IBV_QPT_RC,
+        F_QP_ADMIN_ACCESS_FLAG=MemAccessTypeFlag.IBV_ACCESS_LOCAL_WRITE | MemAccessTypeFlag.IBV_ACCESS_REMOTE_READ | MemAccessTypeFlag.IBV_ACCESS_REMOTE_WRITE,
+        F_QP_ADMIN_PMTU=PMTU_VALUE_FOR_TEST,
+    )
+    memcpy(memory, cmd_queue_desc_current_write_addr, bytes(obj))
+    cmd_queue_desc_current_write_addr += DESCRIPTOR_SIZE
+
+    # generate second level PGT entry
+    PgtEntries = c_longlong * MR_0_PTE_COUNT
+    entries = PgtEntries()
+
+    for i in range(len(entries)):
+        entries[i] = MR_0_PA_START + i * (1 << 21)  # 2MB page size
+
+    memcpy(memory, PGT_TABLE_START_ADDR, bytes(entries))
+
+    # generate send queue WQE
+    send_queue_desc_current_write_addr = SQ_RINGBUF_START_PA
+    send_queue_common_header = SendQueueDescCommonHeader(
+        F_VALID=1,
+        F_OP_CODE=WorkReqOpCode.IBV_WR_RDMA_WRITE,
+        F_IS_LAST=1,
+        F_IS_FIRST=1,
+        F_SEGMENT_CNT=3,
+        F_SIGNAL_CPLT=1,
+        F_TOTAL_LEN=0x0003 + 1
+    )
+
+    obj = SendQueueDescSeg0(
+        common_header=send_queue_common_header,
+        F_R_ADDR=RESP_SIDE_VA_ADDR,
+        F_RKEY=SEND_SIDE_RKEY,
+        F_DST_IP=0x11223344,
+    )
+    memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
+    send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
+
+    obj = SendQueueDescSeg1(
+        F_IMM=1,
+        F_DQPN=0x6611,
+        F_MAC_ADDR=0xAABBCCDDEEFF,
+        F_PSN=0x22,
+        F_SEG_CNT=4,
+        F_QP_TYPE=TypeQP.IBV_QPT_RC,
+        F_FLAGS=WorkReqSendFlag.IBV_SEND_NO_FLAGS,
+        F_PMTU=PMTU_VALUE_FOR_TEST
+    )
+    memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
+    send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
+
+    sge1 = SendQueueReqDescFragSGE(
+        F_LKEY=SEND_SIDE_LKEY,
+        F_LEN=1,
+        F_LADDR=REQ_SIDE_VA_ADDR
+    )
+    sge2 = SendQueueReqDescFragSGE(
+        F_LKEY=SEND_SIDE_LKEY,
+        F_LEN=1,
+        F_LADDR=REQ_SIDE_VA_ADDR+1
+    )
+
+    obj = SendQueueReqDescVariableLenSGE(
+        F_SGE1=sge1,
+        F_SGE2=sge2
+    )
+    memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
+    send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
+
+    sge1 = SendQueueReqDescFragSGE(
+        F_LKEY=SEND_SIDE_LKEY,
+        F_LEN=1,
+        F_LADDR=REQ_SIDE_VA_ADDR+2
+    )
+    sge2 = SendQueueReqDescFragSGE(
+        F_LKEY=SEND_SIDE_LKEY,
+        F_LEN=1,
+        F_LADDR=REQ_SIDE_VA_ADDR+3
+    )
+
+    obj = SendQueueReqDescVariableLenSGE(
+        F_SGE1=sge1,
+        F_SGE2=sge2
+    )
+    memcpy(memory, send_queue_desc_current_write_addr, bytes(obj))
+    send_queue_desc_current_write_addr += DESCRIPTOR_SIZE
+
+    # Put some data at send side memory to debug
+    memory[REQ_SIDE_VA_ADDR] = 0xBB
+    memory[REQ_SIDE_VA_ADDR+1] = 0xCC
+    memory[REQ_SIDE_VA_ADDR+2] = 0xDD
+    memory[REQ_SIDE_VA_ADDR+3] = 0xEE
 
     return memory
-
-
-new_mem = run_bluetcl()
-if new_mem[RESP_SIDE_VA_ADDR: RESP_SIDE_VA_ADDR+4] != b'\xbb\xcc\xdd\xee':
-    print("ImmAssert Failed")

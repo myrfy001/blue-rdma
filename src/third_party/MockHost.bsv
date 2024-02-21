@@ -53,6 +53,7 @@ interface MockHost#(type addr, type data, numeric type n, type bar_addr_t, type 
 	interface BRAM2PortBE #(addr, data, n) hostMem;
 	interface Client#(bar_addr_t, bar_data_t) barReadClt;
 	interface Client#(Tuple2#(bar_addr_t, bar_data_t), Bool) barWriteClt; 
+	method Bool ready;
 endinterface
 
 typedef struct {
@@ -138,6 +139,7 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 		c_putPcieBarWriteResp(memHandle, resp);
 	endrule
 
+	method Bool ready = initDone;
 
 	interface BRAM2PortBE hostMem;
 		interface BRAMServer portA;
@@ -198,6 +200,7 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 
 	interface barWriteClt = toGPClient(barWriteReqQ, barWriteRespQ);
     interface barReadClt = toGPClient(barReadReqQ, barReadRespQ);
+
 endmodule
 
 endpackage

@@ -98,9 +98,6 @@ uint64_t c_createBRAM(uint32_t word_width, uint64_t memory_size) {
 void do_rpc(void *req_data, ssize_t req_len, void *resp_data,
             ssize_t resp_len) {
 
-  printf("try get lock\n");
-  fflush(stdout);
-
   pthread_mutex_lock(&mutex);
   send(rpc_socket_fd, req_data, req_len, 0);
 
@@ -116,37 +113,6 @@ void do_rpc(void *req_data, ssize_t req_len, void *resp_data,
     resp_len -= read_cnt;
   }
   pthread_mutex_unlock(&mutex);
-  printf("release lock\n");
-}
-
-void c_readBRAM(unsigned int *resultptr, uint64_t ptr, uint64_t wordAddr,
-                uint32_t word_width) {
-  uint8_t *mem = (uint8_t *)ptr;
-  uint8_t *dst_mem = (uint8_t *)resultptr;
-  ssize_t byte_cnt_per_word = word_width / 8;
-
-  ssize_t byte_pos = wordAddr * byte_cnt_per_word;
-  for (ssize_t byte_idx = 0; byte_idx < byte_cnt_per_word; byte_idx++) {
-    dst_mem[byte_idx] = mem[byte_pos];
-    byte_pos++;
-  }
-}
-
-void c_writeBRAM(uint64_t ptr, uint64_t wordAddr, uint32_t *data,
-                 uint32_t *byte_en, uint32_t word_width) {
-  uint8_t *mem = (uint8_t *)ptr;
-  uint8_t *data_mem = (uint8_t *)data;
-  ssize_t byte_cnt_per_word = word_width / 8;
-
-  ssize_t byte_pos = wordAddr * byte_cnt_per_word;
-  for (ssize_t byte_idx = 0; byte_idx < byte_cnt_per_word; byte_idx++) {
-    ssize_t byte_en_group_idx = byte_idx / 32;
-    ssize_t byte_en_group_off = byte_idx & 0x1f;
-    if (((byte_en[byte_en_group_idx] >> byte_en_group_off) & 0x01) == 0x01) {
-      mem[byte_pos] = data_mem[byte_idx];
-    }
-    byte_pos++;
-  }
 }
 
 typedef enum {
@@ -154,6 +120,9 @@ typedef enum {
   RpcOpcodePcieBarPutReadResp = 2,
   RpcOpcodePcieBarGetWriteReq = 3,
   RpcOpcodePcieBarPutWriteResp = 4,
+  RpcOpcodePcieMemWrite = 5,
+  RpcOpcodePcieMemRead = 6
+
 } RpcOpcode;
 
 typedef struct {
@@ -172,6 +141,18 @@ typedef struct {
   BarIoInfo payload;
 } RpcPcieBarAccessMessage;
 
+typedef struct {
+  uint64_t word_addr;
+  uint64_t word_width;
+  uint8_t data[64];
+  uint8_t byte_en[8];
+} MemoryIoInfo;
+
+typedef struct {
+  RpcHeader header;
+  MemoryIoInfo payload;
+} RpcPcieMemoryAccessMessage;
+
 void do_pcie_bar_get_request(BarIoInfo *resultptr, uint64_t client_id,
                              uint8_t is_read) {
   RpcPcieBarAccessMessage req;
@@ -184,14 +165,10 @@ void do_pcie_bar_get_request(BarIoInfo *resultptr, uint64_t client_id,
 }
 
 void c_getPcieBarReadReq(BarIoInfo *resultptr, uint64_t client_id) {
-  printf("1111111111\n");
-  fflush(stdout);
   do_pcie_bar_get_request(resultptr, client_id, 1);
 }
 
 void c_getPcieBarWriteReq(BarIoInfo *resultptr, uint64_t client_id) {
-  printf("2222222222\n");
-  fflush(stdout);
   do_pcie_bar_get_request(resultptr, client_id, 0);
 }
 
@@ -206,13 +183,39 @@ void do_pcie_bar_put_response(uint64_t client_id, BarIoInfo *result,
 }
 
 void c_putPcieBarReadResp(uint64_t client_id, BarIoInfo *result) {
-  printf("33333333\n");
-  fflush(stdout);
   do_pcie_bar_put_response(client_id, result, 1);
 }
 
 void c_putPcieBarWriteResp(uint64_t client_id, BarIoInfo *result) {
-  printf("444444444444\n");
-  fflush(stdout);
   do_pcie_bar_put_response(client_id, result, 0);
+}
+
+void c_readBRAM(unsigned int *resultptr, uint64_t client_id, uint64_t wordAddr,
+                uint32_t word_width) {
+  RpcPcieMemoryAccessMessage req_msg;
+  RpcPcieMemoryAccessMessage resp_msg;
+
+  req_msg.header.opcode = RpcOpcodePcieMemRead;
+  req_msg.header.client_id = client_id;
+  req_msg.payload.word_addr = wordAddr;
+  req_msg.payload.word_width = word_width;
+  do_rpc(&req_msg, sizeof(req_msg), &resp_msg, sizeof(resp_msg));
+
+  ssize_t byte_cnt_per_word = word_width / 8;
+  memcpy((uint8_t *)resultptr, resp_msg.payload.data, byte_cnt_per_word);
+}
+
+void c_writeBRAM(uint64_t client_id, uint64_t wordAddr, uint32_t *data,
+                 uint32_t *byte_en, uint32_t word_width) {
+  uint8_t *data_mem = (uint8_t *)data;
+  ssize_t byte_cnt_per_word = word_width / 8;
+
+  RpcPcieMemoryAccessMessage req_msg;
+  req_msg.header.opcode = RpcOpcodePcieMemWrite;
+  req_msg.header.client_id = client_id;
+  req_msg.payload.word_addr = wordAddr;
+  req_msg.payload.word_width = word_width;
+  memcpy(req_msg.payload.byte_en, byte_en, byte_cnt_per_word / 8);
+  memcpy(req_msg.payload.data, data, byte_cnt_per_word);
+  do_rpc(&req_msg, sizeof(req_msg), NULL, 0);
 }
