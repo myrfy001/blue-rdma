@@ -19,19 +19,19 @@ typedef Bit#(CSR_DATA_WIDTH) CsrData;
 typedef struct {
     t_addr addr;
     t_data data;
-} CsrWriteRequest#(type t_addr, type t_data) deriving(Bits);
+} CsrWriteRequest#(type t_addr, type t_data) deriving(Bits, FShow);
 
 typedef struct {
     Bit#(0) flag;
-} CsrWriteResponse deriving(Bits);
+} CsrWriteResponse deriving(Bits, FShow);
 
 typedef struct {
     t_addr addr;
-} CsrReadRequest#(type t_addr) deriving(Bits);
+} CsrReadRequest#(type t_addr) deriving(Bits, FShow);
 
 typedef struct {
     t_data data;
-} CsrReadResponse#(type t_data) deriving(Bits);
+} CsrReadResponse#(type t_data) deriving(Bits, FShow);
 
 
 

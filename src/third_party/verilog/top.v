@@ -262,7 +262,7 @@ module top#(
 
       // LITE interface   
       //-- AXI Master Write Address Channel
-      .m_axil_awaddr    ({0, m_axil_awaddr}),
+      .m_axil_awaddr    (m_axil_awaddr),
       .m_axil_awprot    (m_axil_awprot),
       .m_axil_awvalid   (m_axil_awvalid),
       .m_axil_awready   (m_axil_awready),
@@ -276,7 +276,7 @@ module top#(
       .m_axil_bresp     (m_axil_bresp),
       .m_axil_bready    (m_axil_bready),
       //-- AXI Master Read Address Channel
-      .m_axil_araddr    ({0, m_axil_araddr}),
+      .m_axil_araddr    (m_axil_araddr),
       .m_axil_arprot    (m_axil_arprot),
       .m_axil_arvalid   (m_axil_arvalid),
       .m_axil_arready   (m_axil_arready),

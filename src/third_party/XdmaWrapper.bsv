@@ -70,6 +70,7 @@ interface XdmaWrapper#(numeric type dataSz, numeric type userSz);
     interface XdmaChannel#(dataSz, userSz) xdmaChannel;
 endinterface
 
+(* synthesize *)
 module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH));
 
     FIFOF#(AxiStream#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)) xdmaH2cStFifo <- mkFIFOF();
@@ -676,6 +677,8 @@ endmodule
 interface FakeXdma;
     interface UserLogicDmaReadWideSrv xdmaH2cSrv;
     interface UserLogicDmaWriteWideSrv xdmaC2hSrv;
+    interface Client#(CsrAddr, CsrData) barReadClt;
+    interface Client#(Tuple2#(CsrAddr, CsrData), Bool) barWriteClt;
 endinterface
 
 
@@ -1025,6 +1028,8 @@ module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
 
     interface xdmaH2cSrv = toGPServer(xdmaH2cReqQ, xdmaH2cRespQ);
     interface xdmaC2hSrv = toGPServer(xdmaC2hReqQ, xdmaC2hRespQ);
+    interface barWriteClt = mockHost.barWriteClt;
+    interface barReadClt = mockHost.barReadClt;
 endmodule
 
 

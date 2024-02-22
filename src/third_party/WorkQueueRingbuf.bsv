@@ -21,7 +21,7 @@ interface WorkQueueRingbufController;
 endinterface
 
 
-
+(* synthesize *)
 module mkWorkQueueRingbufController(WorkQueueRingbufController ifc);
 
     FIFOF#(RingbufRawDescriptor) sqRingBufQ <- mkFIFOF;
@@ -36,7 +36,7 @@ module mkWorkQueueRingbufController(WorkQueueRingbufController ifc);
         // TODO: refactor the handling logic of multi descriptors, use stream mode instead. 
         let {reqSegBuf, headDescIdx} <- sqDescReadProxy.getWideDesc;
 
-            SendQueueReqDescSeg0 desc0 = unpack(reqSegBuf[headDescIdx]);
+        SendQueueReqDescSeg0 desc0 = unpack(reqSegBuf[headDescIdx]);
         SendQueueReqDescSeg1 desc1 = unpack(reqSegBuf[headDescIdx-1]);
         SendQueueReqDescVariableLenSGE desc2 = unpack(reqSegBuf[headDescIdx-2]);
         SendQueueReqDescVariableLenSGE desc3 = unpack(reqSegBuf[headDescIdx-3]);

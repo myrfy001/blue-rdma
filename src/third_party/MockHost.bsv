@@ -57,6 +57,7 @@ interface MockHost#(type addr, type data, numeric type n, type bar_addr_t, type 
 endinterface
 
 typedef struct {
+	Bit#(64) pci_tag;
 	Bit#(64) valid;
 	Bit#(64) addr;
 	Bit#(64) value;
@@ -89,6 +90,14 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 	FIFOF#(bar_addr_t) barReadReqQ <- mkFIFOF;
 	FIFOF#(bar_data_t) barReadRespQ <- mkFIFOF;
 
+	// Note, it assumes that the resp will keep order as the request.
+	// We do not support out of order now, to support OOO, the CSR
+	// handling logic must also pass the tag field all the way around.
+	// since the current CSR/BAR read logic is simple and will finish
+	// in one cycle, it can't be out of order, so we simply keep tag 
+	// in order in this queue.
+	FIFOF#(Bit#(64)) tagKeepOrderQ <- mkFIFOF;
+
     rule doInit(!initDone);
 		let ptr <- c_createBRAM(fromInteger(valueOf(data_sz)), fromInteger(cfg.memorySize));
 		if(ptr == 0) begin
@@ -104,12 +113,15 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 		let rawReq <- c_getPcieBarReadReq(memHandle);
 		if (rawReq.valid != 0) begin
 			barReadReqQ.enq(unpack(truncate(pack(rawReq.addr))));
+			tagKeepOrderQ.enq(rawReq.pci_tag);
 		end
 	endrule
 
 	rule forwardBarReadResp if (initDone);
 		barReadRespQ.deq;
+		tagKeepOrderQ.deq;
 		let resp = PcieBarAccessAction {
+			pci_tag: tagKeepOrderQ.first,
 			valid: 1,
 			addr: 0,
 			value: unpack(zeroExtend(pack(barReadRespQ.first)))
@@ -132,6 +144,7 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 	rule forwardBarWriteResp if (initDone);
 		barWriteRespQ.deq;
 		let resp = PcieBarAccessAction {
+			pci_tag: 0,
 			valid: barWriteRespQ.first ? 1 : 0,
 			addr: 0,
 			value: 0

@@ -128,12 +128,14 @@ typedef enum {
 typedef struct {
   RpcOpcode opcode;
   uint64_t client_id;
+  uint64_t tag;
 } RpcHeader;
 
 typedef struct {
   uint64_t value;
   uint64_t addr;
   uint64_t valid;
+  uint64_t pci_tag;
 } BarIoInfo;
 
 typedef struct {

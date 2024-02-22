@@ -18,7 +18,7 @@ interface CommandQueueController;
 endinterface
 
 
-
+(* synthesize *)
 module mkCommandQueueController(CommandQueueController ifc);
 
     
