@@ -253,17 +253,9 @@ module mkTopCore(
     mkConnection(payloadConsumer.dmaWriteClt, bluerdmaDmaProxyForRQ.blueSideWriteSrv);
 
 
-    Reg#(Bool) clearReg <- mkReg(True);
-    let sq <- mkSQ(clearReg);
+    let sq <- mkSQ();
     mkConnection(sq.dmaReadClt, addrTranslatorForSQ.sqReqInputSrv);
     mkConnection(workQueueRingbufController.workReq, sq.sendQ.srvPort.request);
-
-
-    rule exitReset;
-        if (clearReg) begin
-            clearReg <= False;
-        end
-    endrule
 
 
 
@@ -286,8 +278,8 @@ module mkTopCore(
         let data = sq.sendQ.rdmaDataStreamPipeOut.first;
         $display("rdma_A_out_data = ", fshow(data));
         udp.dataStreamIn.put(Ports::DataStream{
-            data:       data.data,
-            byteEn:     data.byteEn,
+            data: swapEndian(data.data),
+            byteEn: swapEndianBit(data.byteEn),
             isFirst:    data.isFirst,
             isLast:     data.isLast
         });
@@ -340,10 +332,8 @@ module mkTopCore(
             udp.dataStreamOut.deq;
 
             let outData = DataStream {
-                // data: swapEndian(data.data),
-                // byteEn: swapEndianBit(data.byteEn),
-                data: data.data,
-                byteEn: data.byteEn,
+                data: swapEndian(data.data),
+                byteEn: swapEndianBit(data.byteEn),
                 isLast: data.isLast,
                 isFirst: data.isFirst
             };
@@ -384,7 +374,7 @@ module mkTopCore(
 endmodule
 
 // (* synthesize *)
-module mkFakeSQ#(Bool clearAll)(SQ);
+module mkFakeSQ(SQ);
     FIFOF#(DmaReadReq)   dmaReadReqQ <- mkFIFOF;
     FIFOF#(DmaReadResp) dmaReadRespQ <- mkFIFOF;
 
@@ -417,6 +407,8 @@ module mkFakeSQ#(Bool clearAll)(SQ);
         interface rdmaDataStreamPipeOut = toPipeOut(dataStreamQ);
         method Bool isEmpty() = unpack(tReg[0]);
     endinterface
+    method Action clearAll();
+    endmethod
 endmodule
 
 function Bit#(width) swapEndian(Bit#(width) data) provisos(Mul#(8, byteNum, width));

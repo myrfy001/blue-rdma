@@ -134,7 +134,6 @@ typedef struct {
     ByteEnBitNum firstPktLastFragValidByteNum;
     ByteEnBitNum origLastFragValidByteNum;
     PktNum       adjustedPktNum;
-    PktNum       origPktNum;
     PMTU         pmtu;
 } AdjustedTotalPayloadMetaData deriving(Bits, FShow);
 
@@ -187,12 +186,10 @@ function ADDR alignAddrByPMTU(ADDR addr, PMTU pmtu);
     endcase;
 endfunction
 
-function Tuple5#(PktLen, PktLen, PktLen, PktNum, ADDR) calcPktNumAndPktLenByAddrAndPMTU(
+function Tuple7#(PktLen, PktLen, PktLen, PktLen, PktLen, PktNum, ADDR) stepOneCalcPktNumAndPktLenByAddrAndPMTU(
     ADDR startAddr, Length len, PMTU pmtu
 );
-    let oneAsPSN = 1;
     let pmtuAlignedStartAddr = alignAddrByPMTU(startAddr, pmtu);
-    let secondChunkStartAddr = addrAddPsnMultiplyPMTU(pmtuAlignedStartAddr, oneAsPSN, pmtu);
     let pmtuLen = calcPmtuLen(pmtu);
 
     Tuple4#(PktLen, PktNum, PktLen, PktLen) tmpTuple = case (pmtu)
@@ -235,25 +232,83 @@ function Tuple5#(PktLen, PktLen, PktLen, PktNum, ADDR) calcPktNumAndPktLenByAddr
 
     let { pmtuMask, truncatedPktNum, addrLowPart, lenLowPart } = tmpTuple;
     let maxFirstPktLen = pmtuLen - addrLowPart;
-    let tmpSum = addrLowPart + lenLowPart;
-    ResiduePMTU residue = truncateByPMTU(tmpSum, pmtu);
+    let addrAndLenLowPartSum = addrLowPart + lenLowPart;
+
+    return tuple7(
+        pmtuMask, addrAndLenLowPartSum, pmtuLen, lenLowPart,
+        maxFirstPktLen, truncatedPktNum, pmtuAlignedStartAddr
+    );
+endfunction
+
+typedef Bit#(TWO) PktNumAddOn;
+
+function Tuple6#(ADDR, PktLen, PktNumAddOn, Bool, Bool, Bool) stepTwoCalcPktNumAndPktLenByAddrAndPMTU(
+    ADDR pmtuAlignedStartAddr, PMTU pmtu, PktLen pmtuMask,
+    PktLen addrAndLenLowPartSum, PktNum truncatedPktNum
+);
+    let oneAsPSN = 1;
+    let secondChunkStartAddr = addrAddPsnMultiplyPMTU(pmtuAlignedStartAddr, oneAsPSN, pmtu);
+
+    ResiduePMTU residue  = truncateByPMTU(addrAndLenLowPartSum, pmtu);
     PktLen tmpLastPktLen = zeroExtend(residue);
 
     let pmtuInvMask = ~pmtuMask;
-    let residuePktNum = |(pmtuMask & tmpSum);
-    let extraPktNum = |(pmtuInvMask & tmpSum);
-    Bool hasResidue = unpack(residuePktNum);
-    Bool hasExtraPkt = unpack(extraPktNum);
-    let notFullPkt = isZeroR(truncatedPktNum);
+    let noResidue   = isZeroR(pmtuMask & addrAndLenLowPartSum);
+    let noExtraPkt  = isZeroR(pmtuInvMask & addrAndLenLowPartSum);
+    let hasResidue  = !noResidue;
+    let hasExtraPkt = !noExtraPkt;
+    let notFullPkt  = isZeroR(truncatedPktNum);
+    PktNumAddOn residuePktNum = zeroExtend(pack(hasResidue));
+    PktNumAddOn extraPktNum   = zeroExtend(pack(hasExtraPkt));
+
+    let pktNumAddOne = residuePktNum + extraPktNum;
+    return tuple6(secondChunkStartAddr, tmpLastPktLen, pktNumAddOne, notFullPkt, hasExtraPkt, hasResidue);
+endfunction
+
+function Tuple3#(PktLen, PktLen, PktNum) stepThreeCalcPktNumAndPktLenByAddrAndPMTU(
+    PktNum truncatedPktNum, PktNumAddOn pktNumAddOne, PktLen lenLowPart,
+    PktLen maxFirstPktLen, PktLen tmpLastPktLen, PktLen pmtuLen,
+    Bool notFullPkt, Bool hasExtraPkt, Bool hasResidue
+);
+    let totalPktNum = truncatedPktNum + zeroExtend(pktNumAddOne);
+    let firstPktLen = (notFullPkt && !hasExtraPkt) ? lenLowPart : maxFirstPktLen;
+    let lastPktLen  = notFullPkt ? (hasExtraPkt ? tmpLastPktLen : lenLowPart) : (hasResidue ? tmpLastPktLen : pmtuLen);
+    // let isSinglePkt = isLessOrEqOneR(totalPktNum);
+
+    return tuple3(firstPktLen, lastPktLen, totalPktNum);
+endfunction
+/*
+function Tuple4#(PktLen, PktLen, PktNum, ADDR) stepTwoCalcPktNumAndPktLenByAddrAndPMTU(
+    PktLen pmtuMask, PktLen addrAndLenLowPartSum, PktLen pmtuLen, PktLen lenLowPart,
+    PktLen maxFirstPktLen, PktNum truncatedPktNum, ADDR pmtuAlignedStartAddr, PMTU pmtu
+);
+    let oneAsPSN = 1;
+    let secondChunkStartAddr = addrAddPsnMultiplyPMTU(pmtuAlignedStartAddr, oneAsPSN, pmtu);
+
+    ResiduePMTU residue  = truncateByPMTU(addrAndLenLowPartSum, pmtu);
+    PktLen tmpLastPktLen = zeroExtend(residue);
+
+    let pmtuInvMask   = ~pmtuMask;
+    let noResidue     = isZeroR(pmtuMask & addrAndLenLowPartSum);
+    let noExtraPkt    = isZeroR(pmtuInvMask & addrAndLenLowPartSum);
+    let hasResidue    = !noResidue;
+    let hasExtraPkt   = !noExtraPkt;
+    let residuePktNum = pack(hasResidue);
+    let extraPktNum   = pack(hasExtraPkt);
+    let notFullPkt    = isZeroR(truncatedPktNum);
+    // let residuePktNum = |(pmtuMask & addrAndLenLowPartSum);
+    // let extraPktNum = |(pmtuInvMask & addrAndLenLowPartSum);
+    // Bool hasResidue = unpack(residuePktNum);
+    // Bool hasExtraPkt = unpack(extraPktNum);
 
     let totalPktNum = truncatedPktNum + zeroExtend(residuePktNum) + zeroExtend(extraPktNum);
     let firstPktLen = (notFullPkt && !hasExtraPkt) ? lenLowPart : maxFirstPktLen;
-    let lastPktLen = notFullPkt ? (hasExtraPkt ? tmpLastPktLen : lenLowPart) : (hasResidue ? tmpLastPktLen : pmtuLen);
+    let lastPktLen  = notFullPkt ? (hasExtraPkt ? tmpLastPktLen : lenLowPart) : (hasResidue ? tmpLastPktLen : pmtuLen);
     // let isSinglePkt = isLessOrEqOneR(totalPktNum);
 
-    return tuple5(pmtuLen, firstPktLen, lastPktLen, totalPktNum, secondChunkStartAddr);
+    return tuple4(firstPktLen, lastPktLen, totalPktNum, secondChunkStartAddr);
 endfunction
-
+*/
 function PktFragNum calcFragNumByPktLen(PktLen pktLen) provisos(
     Add#(PMTU_FRAG_NUM_WIDTH, DATA_BUS_BYTE_NUM_WIDTH, PKT_LEN_WIDTH)
 );
@@ -306,16 +361,26 @@ function Tuple2#(PktLen, PktNum) calcPktNumAndLastPktLenByPMTU(Length len, PMTU 
     return tuple2(lastPktLen, totalPktNum);
 endfunction
 
-function DataStream mergeFragData(
+// the output DataStream keeps isFirst and isLast from preFrag
+function DataStream leftShiftMergeFragData(
     DataStream preFrag,
     DataStream curFrag,
     ByteEnBitNum preFragInvalidByteNum,
     BusBitNum preFragInvalidBitNum
 );
-    let resultFrag = preFrag;
+    let resultFrag    = preFrag;
     resultFrag.byteEn = truncateLSB({ preFrag.byteEn, curFrag.byteEn } << preFragInvalidByteNum);
-    resultFrag.data = truncateLSB({ preFrag.data, curFrag.data } << preFragInvalidBitNum);
+    resultFrag.data   = truncateLSB({ preFrag.data,   curFrag.data   } << preFragInvalidBitNum);
     return resultFrag;
+endfunction
+
+function DataStream genEmptyDataStream();
+    return DataStream {
+        data: 0,
+        byteEn: 0,
+        isFirst: False,
+        isLast: False
+    };
 endfunction
 
 interface AddrChunkSrv;
@@ -325,7 +390,24 @@ interface AddrChunkSrv;
 endinterface
 
 typedef struct {
-    PktNum remainingPktNum;
+    PktNumAddOn pktNumAddOne;
+    PktNum      truncatedPktNum;
+    PktLen      lenLowPart;
+    PktLen      maxFirstPktLen;
+    PktLen      tmpLastPktLen;
+    PktLen      pmtuLen;
+    PMTU        pmtu;
+    ADDR        startAddr;
+    ADDR        nextAddr;
+    Bool        notFullPkt;
+    Bool        hasExtraPkt;
+    Bool        hasResidue;
+    Bool        isOrigFirst;
+    Bool        isOrigLast;
+} TmpPktMetaDataSGE deriving(Bits);
+
+typedef struct {
+    PktNum sgePktNum;
     PktLen firstPktLen;
     PktLen pmtuLen;
     PktLen lastPktLen;
@@ -334,7 +416,7 @@ typedef struct {
     ADDR   nextAddr;
     Bool   isOrigFirst;
     Bool   isOrigLast;
-} ChunkMetaData deriving(Bits);
+} TmpChunkRespData deriving(Bits);
 
 module mkAddrChunkSrv#(Bool clearAll)(AddrChunkSrv);
     FIFOF#(AddrChunkReq)   reqQ <- mkSizedFIFOF(valueOf(MAX_SGE));
@@ -342,7 +424,11 @@ module mkAddrChunkSrv#(Bool clearAll)(AddrChunkSrv);
     FIFOF#(PktMetaDataSGE) sgePktMetaDataOutQ <- mkFIFOF;
 
     // Pipeline FIFOF
-    FIFOF#(ChunkMetaData) chunkMetaDataQ <- mkFIFOF;
+    FIFOF#(Tuple8#(
+        PktLen, PktLen, PktLen, PktLen, PktLen, PktNum, ADDR, AddrChunkReq
+    )) calcChunkMetaDataQ <- mkFIFOF;
+    FIFOF#(TmpPktMetaDataSGE) calcPktMetaDataQ4SGE <- mkFIFOF;
+    FIFOF#(TmpChunkRespData) calcAddrChunkRespQ <- mkFIFOF;
 
     Reg#(PktNum) remainingPktNumReg <- mkRegU;
     Reg#(ADDR)     nextChunkAddrReg <- mkRegU;
@@ -353,7 +439,10 @@ module mkAddrChunkSrv#(Bool clearAll)(AddrChunkSrv);
         respQ.clear;
         sgePktMetaDataOutQ.clear;
 
-        chunkMetaDataQ.clear;
+        calcChunkMetaDataQ.clear;
+        calcPktMetaDataQ4SGE.clear;
+        calcAddrChunkRespQ.clear;
+
         isFirstChunkReg <= True;
     endrule
 
@@ -370,31 +459,50 @@ module mkAddrChunkSrv#(Bool clearAll)(AddrChunkSrv);
         );
 
         let {
-            pmtuLen, firstPktLen, lastPktLen, sgePktNum, secondChunkStartAddr //, isSinglePkt
-        } = calcPktNumAndPktLenByAddrAndPMTU(
+            pmtuMask, addrAndLenLowPartSum, pmtuLen, lenLowPart,
+            maxFirstPktLen, truncatedPktNum, pmtuAlignedStartAddr
+        } = stepOneCalcPktNumAndPktLenByAddrAndPMTU(
             addrChunkReq.startAddr, addrChunkReq.len, addrChunkReq.pmtu
         );
 
-        let chunkMetaData = ChunkMetaData {
-            remainingPktNum: sgePktNum - 1,
-            firstPktLen    : firstPktLen,
+        calcChunkMetaDataQ.enq(tuple8(
+            pmtuMask, addrAndLenLowPartSum, pmtuLen, lenLowPart, maxFirstPktLen,
+            truncatedPktNum, pmtuAlignedStartAddr, addrChunkReq
+        ));
+    endrule
+
+    rule calcChunkMetaData if (!clearAll);
+        let {
+            pmtuMask, addrAndLenLowPartSum, pmtuLen, lenLowPart, maxFirstPktLen,
+            truncatedPktNum, pmtuAlignedStartAddr, addrChunkReq
+        } = calcChunkMetaDataQ.first;
+        calcChunkMetaDataQ.deq;
+
+        let {
+            secondChunkStartAddr, tmpLastPktLen, pktNumAddOne,
+            notFullPkt, hasExtraPkt, hasResidue
+        } = stepTwoCalcPktNumAndPktLenByAddrAndPMTU(
+            pmtuAlignedStartAddr, addrChunkReq.pmtu, pmtuMask,
+            addrAndLenLowPartSum, truncatedPktNum
+        );
+
+        let tmpPktMetaDataSGE = TmpPktMetaDataSGE {
+            pktNumAddOne   : pktNumAddOne,
+            truncatedPktNum: truncatedPktNum,
+            lenLowPart     : lenLowPart,
+            maxFirstPktLen : maxFirstPktLen,
+            tmpLastPktLen  : tmpLastPktLen,
             pmtuLen        : pmtuLen,
-            lastPktLen     : lastPktLen,
             pmtu           : addrChunkReq.pmtu,
             startAddr      : addrChunkReq.startAddr,
             nextAddr       : secondChunkStartAddr,
+            notFullPkt     : notFullPkt,
+            hasExtraPkt    : hasExtraPkt,
+            hasResidue     : hasResidue,
             isOrigFirst    : addrChunkReq.isFirst,
             isOrigLast     : addrChunkReq.isLast
         };
-        chunkMetaDataQ.enq(chunkMetaData);
-
-        let sgePktMetaData = PktMetaDataSGE {
-            firstPktLen: firstPktLen,
-            lastPktLen : lastPktLen,
-            sgePktNum  : sgePktNum,
-            pmtu       : addrChunkReq.pmtu
-        };
-        sgePktMetaDataOutQ.enq(sgePktMetaData);
+        calcPktMetaDataQ4SGE.enq(tmpPktMetaDataSGE);
 
         // $display(
         //     "time=%0t: mkAddrChunkSrv recvReq", $time,
@@ -405,29 +513,77 @@ module mkAddrChunkSrv#(Bool clearAll)(AddrChunkSrv);
         // );
     endrule
 
-    rule genResp if (!clearAll);
-        let chunkMetaData = chunkMetaDataQ.first;
+    rule genPktMetaDataSGE if (!clearAll);
+        let tmpPktMetaDataSGE = calcPktMetaDataQ4SGE.first;
+        calcPktMetaDataQ4SGE.deq;
 
-        let firstPktLen = chunkMetaData.firstPktLen;
-        let pmtuLen     = chunkMetaData.pmtuLen;
-        let lastPktLen  = chunkMetaData.lastPktLen;
-        let pmtu        = chunkMetaData.pmtu;
-        let startAddr   = chunkMetaData.startAddr;
-        let nextAddr    = chunkMetaData.nextAddr;
-        let isOrigFirst = chunkMetaData.isOrigFirst;
-        let isOrigLast  = chunkMetaData.isOrigLast;
+        let pktNumAddOne    = tmpPktMetaDataSGE.pktNumAddOne;
+        let truncatedPktNum = tmpPktMetaDataSGE.truncatedPktNum;
+        let lenLowPart      = tmpPktMetaDataSGE.lenLowPart;
+        let maxFirstPktLen  = tmpPktMetaDataSGE.maxFirstPktLen;
+        let tmpLastPktLen   = tmpPktMetaDataSGE.tmpLastPktLen;
+        let pmtuLen         = tmpPktMetaDataSGE.pmtuLen;
+        let pmtu            = tmpPktMetaDataSGE.pmtu;
+        let startAddr       = tmpPktMetaDataSGE.startAddr;
+        let nextAddr        = tmpPktMetaDataSGE.nextAddr;
+        let notFullPkt      = tmpPktMetaDataSGE.notFullPkt;
+        let hasExtraPkt     = tmpPktMetaDataSGE.hasExtraPkt;
+        let hasResidue      = tmpPktMetaDataSGE.hasResidue;
+        let isOrigFirst     = tmpPktMetaDataSGE.isOrigFirst;
+        let isOrigLast      = tmpPktMetaDataSGE.isOrigLast;
+
+        let {
+            firstPktLen, lastPktLen, sgePktNum
+        } = stepThreeCalcPktNumAndPktLenByAddrAndPMTU(
+            truncatedPktNum, pktNumAddOne, lenLowPart, maxFirstPktLen,
+            tmpLastPktLen, pmtuLen, notFullPkt, hasExtraPkt, hasResidue
+        );
+        let sgePktMetaData = PktMetaDataSGE {
+            firstPktLen: firstPktLen,
+            lastPktLen : lastPktLen,
+            sgePktNum  : sgePktNum,
+            pmtu       : pmtu
+        };
+        sgePktMetaDataOutQ.enq(sgePktMetaData);
+
+        let tmpChunkRespData = TmpChunkRespData {
+            sgePktNum  : sgePktNum,
+            firstPktLen: firstPktLen,
+            pmtuLen    : pmtuLen,
+            lastPktLen : lastPktLen,
+            pmtu       : pmtu,
+            startAddr  : startAddr,
+            nextAddr   : nextAddr,
+            isOrigFirst: isOrigFirst,
+            isOrigLast : isOrigLast
+        };
+        calcAddrChunkRespQ.enq(tmpChunkRespData);
+    endrule
+
+    rule genResp if (!clearAll);
+        let tmpChunkRespData = calcAddrChunkRespQ.first;
+
+        let sgePktNum   = tmpChunkRespData.sgePktNum;
+        let firstPktLen = tmpChunkRespData.firstPktLen;
+        let pmtuLen     = tmpChunkRespData.pmtuLen;
+        let lastPktLen  = tmpChunkRespData.lastPktLen;
+        let pmtu        = tmpChunkRespData.pmtu;
+        let startAddr   = tmpChunkRespData.startAddr;
+        let nextAddr    = tmpChunkRespData.nextAddr;
+        let isOrigFirst = tmpChunkRespData.isOrigFirst;
+        let isOrigLast  = tmpChunkRespData.isOrigLast;
 
         let oneAsPSN = 1;
         let nextChunkAddr   = addrAddPsnMultiplyPMTU(nextChunkAddrReg, oneAsPSN, pmtu);
         let remainingPktNum = remainingPktNumReg;
         if (isFirstChunkReg) begin
             nextChunkAddr   = nextAddr;
-            remainingPktNum = chunkMetaData.remainingPktNum;
+            remainingPktNum = sgePktNum;
         end
 
-        let isLastChunk = isZeroR(remainingPktNum);
+        let isLastChunk = isOneR(remainingPktNum);
         if (isLastChunk) begin
-            chunkMetaDataQ.deq;
+            calcAddrChunkRespQ.deq;
         end
         else begin
             remainingPktNumReg <= remainingPktNum - 1;
@@ -459,125 +615,15 @@ module mkAddrChunkSrv#(Bool clearAll)(AddrChunkSrv);
     interface srvPort = toGPServer(reqQ, respQ);
     interface sgePktMetaDataPipeOut = toPipeOut(sgePktMetaDataOutQ);
     method Bool isIdle() = !(
-        reqQ.notEmpty           ||
-        respQ.notEmpty          ||
-        chunkMetaDataQ.notEmpty ||
+        reqQ.notEmpty                 ||
+        respQ.notEmpty                ||
+        calcChunkMetaDataQ.notEmpty   ||
+        calcPktMetaDataQ4SGE.notEmpty ||
+        calcAddrChunkRespQ.notEmpty   ||
         sgePktMetaDataOutQ.notEmpty
     );
 endmodule
-/*
-module mkAddrChunkSrv#(Bool clearAll)(AddrChunkSrv);
-    FIFOF#(AddrChunkReq)           reqQ <- mkSizedFIFOF(valueOf(MAX_SGE));
-    FIFOF#(AddrChunkResp)         respQ <- mkFIFOF;
-    FIFOF#(PktMetaDataSGE) sgePktMetaDataOutQ <- mkFIFOF;
 
-    Reg#(PktLen)  firstPktLenReg <- mkRegU;
-    Reg#(PktLen)   fullPktLenReg <- mkRegU;
-    Reg#(PktLen)   lastPktLenReg <- mkRegU;
-    Reg#(Bool)    isOrigFirstReg <- mkRegU;
-    Reg#(Bool)     isOrigLastReg <- mkRegU;
-
-    Reg#(PktNum) remainingPktNumReg <- mkRegU;
-
-    Reg#(ADDR)   chunkAddrReg <- mkRegU;
-    Reg#(ADDR)    nextAddrReg <- mkRegU;
-    Reg#(PMTU)        pmtuReg <- mkRegU;
-    Reg#(Bool)     isFirstReg <- mkRegU;
-    Reg#(Bool)        busyReg <- mkReg(False);
-
-    PSN oneAsPSN = 1;
-
-    rule resetAndClear if (clearAll);
-        reqQ.clear;
-        respQ.clear;
-        busyReg <= False;
-    endrule
-
-    rule recvReq if (!clearAll && !busyReg);
-        let addrChunkReq = reqQ.first;
-        reqQ.deq;
-
-        immAssert(
-            !isZeroR(addrChunkReq.len),
-            "addrChunkReq.len assertion @ mkAddrChunkSrv",
-            $format(
-                "addrChunkReq.len=%0d cannot be zero", addrChunkReq.len
-            )
-        );
-
-        let {
-            pmtuLen, firstPktLen, lastPktLen, sgePktNum, secondChunkStartAddr //, isSinglePkt
-        } = calcPktNumAndPktLenByAddrAndPMTU(
-            addrChunkReq.startAddr, addrChunkReq.len, addrChunkReq.pmtu
-        );
-        remainingPktNumReg <= sgePktNum - 1;
-
-        firstPktLenReg   <= firstPktLen;
-        fullPktLenReg    <= pmtuLen;
-        lastPktLenReg    <= lastPktLen;
-        chunkAddrReg     <= addrChunkReq.startAddr;
-        nextAddrReg      <= secondChunkStartAddr;
-        pmtuReg          <= addrChunkReq.pmtu;
-        isOrigFirstReg   <= addrChunkReq.isFirst;
-        isOrigLastReg    <= addrChunkReq.isLast;
-        isFirstReg       <= True;
-        busyReg          <= True;
-
-        let sgePktMetaData = PktMetaDataSGE {
-            firstPktLen: firstPktLen,
-            lastPktLen : lastPktLen,
-            sgePktNum  : sgePktNum,
-            pmtu       : addrChunkReq.pmtu
-        };
-        sgePktMetaDataOutQ.enq(sgePktMetaData);
-
-        // $display(
-        //     "time=%0t: mkAddrChunkSrv recvReq", $time,
-        //     ", addrChunkReq.len=%0d", addrChunkReq.len,
-        //     ", sgePktNum=%0d", sgePktNum,
-        //     ", firstPktLen=%0d", firstPktLen,
-        //     ", lastPktLen=%0d", lastPktLen
-        // );
-    endrule
-
-    rule genResp if (!clearAll && busyReg);
-        let isLast = isZeroR(remainingPktNumReg);
-        if (!isLast) begin
-            remainingPktNumReg <= remainingPktNumReg - 1;
-        end
-
-        busyReg      <= !isLast;
-        isFirstReg   <= False;
-        chunkAddrReg <= nextAddrReg;
-        nextAddrReg  <= addrAddPsnMultiplyPMTU(nextAddrReg, oneAsPSN, pmtuReg);
-
-        let chunkLen = isFirstReg ? firstPktLenReg : (isLast ? lastPktLenReg : fullPktLenReg);
-        let addrChunkResp = AddrChunkResp {
-            chunkAddr  : chunkAddrReg,
-            chunkLen   : chunkLen,
-            isFirst    : isFirstReg,
-            isLast     : isLast,
-            isOrigFirst: isOrigFirstReg,
-            isOrigLast : isOrigLastReg
-        };
-        respQ.enq(addrChunkResp);
-
-        // $display(
-        //     "time=%0t: mkAddrChunkSrv genResp", $time,
-        //     ", isSQ=", fshow(isSQ),
-        //     ", remainingPktNumReg=%0d", remainingPktNumReg,
-        //     ", chunkAddrReg=%h", chunkAddrReg,
-        //     ", nextAddrReg=%h", nextAddrReg,
-        //     ", addrChunkResp=", fshow(addrChunkResp)
-        // );
-    endrule
-
-    interface srvPort = toGPServer(reqQ, respQ);
-    interface sgePktMetaDataPipeOut = toPipeOut(sgePktMetaDataOutQ);
-    method Bool isIdle() = !busyReg &&
-        !reqQ.notEmpty && !sgePktMetaDataOutQ.notEmpty && !respQ.notEmpty;
-endmodule
-*/
 typedef struct {
     DmaReadMetaDataSGL sglDmaReadMetaData;
     PMTU               pmtu;
@@ -613,6 +659,7 @@ module mkDmaReadCntrl#(
     FIFOF#(MergedMetaDataSGE) sgeMergedMetaDataOutQ <- mkSizedFIFOF(valueOf(MAX_SGE));
     // FIFOF#(TotalPayloadLenMetaDataSGL) sglTotalPayloadLenMetaDataOutQ <- mkFIFOF;
 
+    // Pipeline FIFO
     FIFOF#(Tuple2#(ScatterGatherElem, PMTU)) pendingScatterGatherElemQ <- mkSizedFIFOF(valueOf(MAX_SGE));
     FIFOF#(LKEY) pendingLKeyQ <- mkFIFOF;
     FIFOF#(Tuple2#(QPN, WorkReqID)) pendingDmaCntrlReqQ <- mkFIFOF; // TODO: remove it
@@ -883,53 +930,32 @@ module mkMergePayloadEachSGE#(
 )(DataStreamPipeOut);
     FIFOF#(DataStream) pktPayloadOutQ <- mkFIFOF;
 
+    // Pipeline FIFO
+    FIFOF#(Tuple6#(ByteEnBitNum, BusBitNum, PktNum, Bool, Bool, Bool)) sgeCurPktMetaDataQ <- mkFIFOF;
+    FIFOF#(Tuple5#(DataStream, DataStream, Bool, ByteEnBitNum, BusBitNum)) payloadFragShiftQ <- mkFIFOF;
+
     // Reg#(ByteEnBitNum)   sgeFirstPktLastFragValidByteNumReg <- mkRegU;
     Reg#(ByteEnBitNum) sgeFirstPktLastFragInvalidByteNumReg <- mkRegU;
     Reg#(BusBitNum)     sgeFirstPktLastFragInvalidBitNumReg <- mkRegU;
 
-    Reg#(Bool) isFirstFragReg <- mkRegU;
-    Reg#(Bool) isFirstPktReg <- mkRegU;
     Reg#(Bool) sgeHasOnlyPktReg <- mkRegU;
     Reg#(Bool) hasExtraFragReg <- mkRegU;
+    Reg#(Bool) isFirstFragReg <- mkRegU;
+    Reg#(Bool) isFirstPktReg <- mkRegU;
     Reg#(PktNum) remainingPktNumReg <- mkRegU;
     Reg#(DataStream) prePayloadFragReg <- mkRegU;
     Reg#(MergePayloadStateEachSGE) stateReg <- mkReg(MERGE_SGE_PAYLOAD_INIT);
 
-    // TODO: emptyDataStream should be an input parameter
-    let emptyDataStream = DataStream {
-        data: 0,
-        byteEn: 0,
-        isFirst: False,
-        isLast: False
-    };
-
     function ActionValue#(DataStream) prepareNextSGE();
         actionvalue
-            let sgePktMetaData = sgePktMetaDataPipeIn.first;
-            sgePktMetaDataPipeIn.deq;
-
-            let firstPktLastFragValidByteNum = calcLastFragValidByteNum(sgePktMetaData.firstPktLen);
-            let lastPktLastFragValidByteNum = calcLastFragValidByteNum(sgePktMetaData.lastPktLen);
-
             let {
-                firstPktLastFragValidBitNum,
-                firstPktLastFragInvalidByteNum,
-                firstPktLastFragInvalidBitNum
-            } = calcFragBitNumAndByteNum(firstPktLastFragValidByteNum);
-            let {
-                lastPktLastFragValidBitNum,
-                lastPktLastFragInvalidByteNum,
-                lastPktLastFragInvalidBitNum
-            } = calcFragBitNumAndByteNum(lastPktLastFragValidByteNum);
+                firstPktLastFragInvalidByteNum, firstPktLastFragInvalidBitNum,
+                sgePktNum, sgeHasJustTwoPkts, sgeHasOnlyPkt, hasExtraFrag
+            } = sgeCurPktMetaDataQ.first;
+            sgeCurPktMetaDataQ.deq;
 
-            let sgeHasJustTwoPkts = isTwoR(sgePktMetaData.sgePktNum);
-            let sgeHasOnlyPkt     = isLessOrEqOneR(sgePktMetaData.sgePktNum);
-            sgeHasOnlyPktReg     <= sgeHasOnlyPkt;
-
-            let hasExtraFrag = lastPktLastFragValidByteNum > firstPktLastFragInvalidByteNum;
-            hasExtraFragReg <= hasExtraFrag;
-
-            // sgeFirstPktLastFragValidByteNumReg   <= firstPktLastFragValidByteNum;
+            sgeHasOnlyPktReg <= sgeHasOnlyPkt;
+            hasExtraFragReg  <= hasExtraFrag;
             sgeFirstPktLastFragInvalidByteNumReg <= firstPktLastFragInvalidByteNum;
             sgeFirstPktLastFragInvalidBitNumReg  <= firstPktLastFragInvalidBitNum;
 
@@ -954,12 +980,12 @@ module mkMergePayloadEachSGE#(
                     end
                     else begin
                         stateReg <= MERGE_SGE_PAYLOAD_FIRST_OR_MID_PKT;
-                        remainingPktNum = sgePktMetaData.sgePktNum - 2;
+                        remainingPktNum = sgePktNum - 2;
                     end
                 end
                 else begin
                     stateReg <= MERGE_SGE_PAYLOAD_FIRST_OR_MID_PKT;
-                    remainingPktNum = sgePktMetaData.sgePktNum - 1;
+                    remainingPktNum = sgePktNum - 1;
                 end
             end
             remainingPktNumReg <= remainingPktNum;
@@ -990,10 +1016,43 @@ module mkMergePayloadEachSGE#(
 
     rule resetAndClear if (clearAll);
         pktPayloadOutQ.clear;
+
+        sgeCurPktMetaDataQ.clear;
+        payloadFragShiftQ.clear;
         stateReg <= MERGE_SGE_PAYLOAD_INIT;
     endrule
 
-    rule init if (!clearAll && stateReg == MERGE_SGE_PAYLOAD_INIT);
+    rule handleEachPktMetaData4SGE if (!clearAll);
+        let sgePktMetaData = sgePktMetaDataPipeIn.first;
+        sgePktMetaDataPipeIn.deq;
+
+        let firstPktLastFragValidByteNum = calcLastFragValidByteNum(sgePktMetaData.firstPktLen);
+        let lastPktLastFragValidByteNum  = calcLastFragValidByteNum(sgePktMetaData.lastPktLen);
+
+        let {
+            firstPktLastFragValidBitNum,
+            firstPktLastFragInvalidByteNum,
+            firstPktLastFragInvalidBitNum
+        } = calcFragBitNumAndByteNum(firstPktLastFragValidByteNum);
+        // let {
+        //     lastPktLastFragValidBitNum,
+        //     lastPktLastFragInvalidByteNum,
+        //     lastPktLastFragInvalidBitNum
+        // } = calcFragBitNumAndByteNum(lastPktLastFragValidByteNum);
+
+        let sgeHasJustTwoPkts = isTwoR(sgePktMetaData.sgePktNum);
+        let sgeHasOnlyPkt     = isLessOrEqOneR(sgePktMetaData.sgePktNum);
+
+        let hasExtraFrag = lastPktLastFragValidByteNum > firstPktLastFragInvalidByteNum;
+
+        // sgeFirstPktLastFragValidByteNumReg   <= firstPktLastFragValidByteNum;
+        sgeCurPktMetaDataQ.enq(tuple6(
+            firstPktLastFragInvalidByteNum, firstPktLastFragInvalidBitNum,
+            sgePktMetaData.sgePktNum, sgeHasJustTwoPkts, sgeHasOnlyPkt, hasExtraFrag
+        ));
+    endrule
+
+    rule mergePayloadInit if (!clearAll && stateReg == MERGE_SGE_PAYLOAD_INIT);
         let nextPrePayloadFrag <- prepareNextSGE;
         prePayloadFragReg <= nextPrePayloadFrag;
     endrule
@@ -1030,15 +1089,14 @@ module mkMergePayloadEachSGE#(
             )
         );
 
-        let mergedFrag = mergeFragData(
-            prePayloadFragReg, curPayloadFrag,
-            sgeFirstPktLastFragInvalidByteNumReg, sgeFirstPktLastFragInvalidBitNumReg
-        );
-
-        let outPayloadFrag = isFirstPktReg ? prePayloadFragReg : mergedFrag;
-        outPayloadFrag.isFirst = isFirstFragReg;
+        let prePayloadFrag = prePayloadFragReg;
+        prePayloadFrag.isFirst = isFirstFragReg;
         isFirstFragReg <= False;
-        pktPayloadOutQ.enq(outPayloadFrag);
+        let shouldShiftPayloadFrag = !isFirstPktReg;
+        payloadFragShiftQ.enq(tuple5(
+            prePayloadFrag, curPayloadFrag, shouldShiftPayloadFrag,
+            sgeFirstPktLastFragInvalidByteNumReg, sgeFirstPktLastFragInvalidBitNumReg
+        ));
         // $display(
         //     "time=%0t: mergeFirstOrMidPktSGE", $time,
         //     ", sgeFirstPktLastFragInvalidByteNumReg=%0d", sgeFirstPktLastFragInvalidByteNumReg,
@@ -1053,12 +1111,11 @@ module mkMergePayloadEachSGE#(
     endrule
 
     rule mergeLastOrOnlyPktSGE if (!clearAll && stateReg == MERGE_SGE_PAYLOAD_LAST_OR_ONLY_PKT);
-        let nextPayloadFrag = emptyDataStream;
-        let outPayloadFrag = prePayloadFragReg;
+        let nextPayloadFrag = genEmptyDataStream;
 
         let isLastFrag = prePayloadFragReg.isLast;
         if (prePayloadFragReg.isLast) begin
-            if (sgePktMetaDataPipeIn.notEmpty && sgePayloadPipeIn.notEmpty) begin
+            if (sgeCurPktMetaDataQ.notEmpty && sgePayloadPipeIn.notEmpty) begin
                 nextPayloadFrag <- prepareNextSGE;
             end
             else begin
@@ -1090,14 +1147,13 @@ module mkMergePayloadEachSGE#(
             )
         );
 
-        if (!sgeHasOnlyPktReg) begin
-            outPayloadFrag = mergeFragData(
-                prePayloadFragReg, nextPayloadFrag,
-                sgeFirstPktLastFragInvalidByteNumReg, sgeFirstPktLastFragInvalidBitNumReg
-            );
-            outPayloadFrag.isLast = isLastFrag;
-        end
-        pktPayloadOutQ.enq(outPayloadFrag);
+        let prePayloadFrag = prePayloadFragReg;
+        prePayloadFrag.isLast = isLastFrag;
+        let shouldShiftPayloadFrag = !sgeHasOnlyPktReg;
+        payloadFragShiftQ.enq(tuple5(
+            prePayloadFrag, nextPayloadFrag, shouldShiftPayloadFrag,
+            sgeFirstPktLastFragInvalidByteNumReg, sgeFirstPktLastFragInvalidBitNumReg
+        ));
         // $display(
         //     "time=%0t: mergeLastOrOnlyPktSGE", $time,
         //     ", sgeHasOnlyPktReg=", fshow(sgeHasOnlyPktReg),
@@ -1114,6 +1170,31 @@ module mkMergePayloadEachSGE#(
         // );
     endrule
 
+    rule shiftPayloadFrag if (!clearAll);
+        let {
+            prePayloadFrag, curPayloadFrag, shouldShiftPayloadFrag,
+            leftShiftInvalidByteNum, leftShiftInvalidBitNum
+        } = payloadFragShiftQ.first;
+        payloadFragShiftQ.deq;
+
+        if (!shouldShiftPayloadFrag) begin
+            leftShiftInvalidByteNum = 0;
+            leftShiftInvalidBitNum = 0;
+        end
+        let outPayloadFrag = leftShiftMergeFragData(
+            prePayloadFrag, curPayloadFrag,
+            leftShiftInvalidByteNum, leftShiftInvalidBitNum
+        );
+        // let outPayloadFrag = prePayloadFrag;
+        // if (shouldShiftPayloadFrag) begin
+        //     outPayloadFrag = leftShiftMergeFragData(
+        //         prePayloadFrag, curPayloadFrag,
+        //         leftShiftInvalidByteNum, leftShiftInvalidBitNum
+        //     );
+        // end
+        pktPayloadOutQ.enq(outPayloadFrag);
+    endrule
+
     return toPipeOut(pktPayloadOutQ);
 endmodule
 
@@ -1123,6 +1204,17 @@ typedef enum {
     MERGE_SGL_PAYLOAD_LAST_OR_ONLY_SGE
 } MergePayloadStateAllSGE deriving(Bits, Eq, FShow);
 
+typedef struct {
+    ByteEnBitNum lastFragInvalidByteNum;
+    BusBitNum    lastFragInvalidBitNum;
+    ByteEnBitNum curInvalidByteNum;
+    BusBitNum    curInvalidBitNum;
+    Bool         isOnlySGE;
+    Bool         sgeIsFirst;
+    Bool         sgeIsLast;
+    Bool         hasLessFrag;
+} TmpMergedMetaDataSGE deriving(Bits);
+
 module mkMergePayloadAllSGE#(
     Bool clearAll,
     PipeOut#(MergedMetaDataSGE) sgeMergedMetaDataPipeIn,
@@ -1130,16 +1222,22 @@ module mkMergePayloadAllSGE#(
 )(DataStreamPipeOut);
     FIFOF#(DataStream) pktPayloadOutQ <- mkFIFOF;
 
-    // Reg#(ByteEnBitNum)    curValidByteNumReg <- mkRegU;
+    // Pipeline FIFO
+    FIFOF#(TmpMergedMetaDataSGE) mergedMetaDataQ4EachSGE <- mkFIFOF;
+    FIFOF#(Tuple4#(DataStream, DataStream, ByteEnBitNum, BusBitNum)) payloadFragShiftQ <- mkFIFOF;
+
+    Reg#(ByteEnBitNum) preInvalidByteNumReg <- mkRegU;
+    Reg#(BusBitNum)     preInvalidBitNumReg <- mkRegU;
+
+    Reg#(ByteEnBitNum) lastFragInvalidByteNumReg <- mkRegU;
+    Reg#(BusBitNum)     lastFragInvalidBitNumReg <- mkRegU;
+
     Reg#(ByteEnBitNum)  curInvalidByteNumReg <- mkRegU;
     Reg#(BusBitNum)      curInvalidBitNumReg <- mkRegU;
-    // Reg#(ByteEnBitNum)   nextValidByteNumReg <- mkRegU;
-    Reg#(ByteEnBitNum) nextInvalidByteNumReg <- mkRegU;
-    Reg#(BusBitNum)     nextInvalidBitNumReg <- mkRegU;
 
     Reg#(Bool) isFirstFragReg <- mkRegU;
-    Reg#(Bool) sgeIsOnlyReg <- mkRegU;
-    Reg#(Bool) sgeIsLastReg <- mkRegU;
+    Reg#(Bool) sgeIsOnlyReg   <- mkRegU;
+    Reg#(Bool) sgeIsLastReg   <- mkRegU;
     Reg#(Bool) hasLessFragReg <- mkRegU;
     Reg#(DataStream) prePayloadFragReg <- mkRegU;
     Reg#(MergePayloadStateAllSGE) stateReg <- mkReg(MERGE_SGL_PAYLOAD_INIT);
@@ -1147,26 +1245,24 @@ module mkMergePayloadAllSGE#(
     BusByteWidthMask busByteNumMask = maxBound;
     BusBitWidthMask  busBitNumMask  = maxBound;
 
-    // TODO: emptyDataStream should be an input parameter
-    let emptyDataStream = DataStream {
-        data: 0,
-        byteEn: 0,
-        isFirst: False,
-        isLast: False
-    };
-
     function ActionValue#(DataStream) preprocessNextSGL();
         actionvalue
-            let sgeMergedMetaData = sgeMergedMetaDataPipeIn.first;
-            sgeMergedMetaDataPipeIn.deq;
+            let tmpMergedMetaDataSGE = mergedMetaDataQ4EachSGE.first;
+            mergedMetaDataQ4EachSGE.deq;
 
-            let isOnlySGE = sgeMergedMetaData.isFirst && sgeMergedMetaData.isLast;
-            sgeIsOnlyReg <= isOnlySGE;
-            sgeIsLastReg <= sgeMergedMetaData.isLast;
+            let lastFragInvalidByteNum = tmpMergedMetaDataSGE.lastFragInvalidByteNum;
+            let lastFragInvalidBitNum  = tmpMergedMetaDataSGE.lastFragInvalidBitNum;
+            let curInvalidByteNum      = tmpMergedMetaDataSGE.curInvalidByteNum;
+            let curInvalidBitNum       = tmpMergedMetaDataSGE.curInvalidBitNum;
+            let isOnlySGE              = tmpMergedMetaDataSGE.isOnlySGE;
+            let sgeIsFirst             = tmpMergedMetaDataSGE.sgeIsFirst;
+            let sgeIsLast              = tmpMergedMetaDataSGE.sgeIsLast;
+            let hasLessFrag            = tmpMergedMetaDataSGE.hasLessFrag;
+
+            sgeIsOnlyReg   <= isOnlySGE;
+            sgeIsLastReg   <= sgeIsLast;
             isFirstFragReg <= True;
 
-            let lastFragValidByteNum = sgeMergedMetaData.lastFragValidByteNum;
-            let hasLessFrag = lastFragValidByteNum < fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
             let curPayloadFrag = sgeMergedPayloadPipeIn.first;
             let nextPrePayloadFrag = curPayloadFrag;
 
@@ -1174,7 +1270,7 @@ module mkMergePayloadAllSGE#(
             // If first SGE is single fragment without full byteEn,
             // Wait for the first fragment of next SGE to merge
             if (!isOnlySGE && curPayloadFrag.isLast && hasLessFrag) begin
-                nextPrePayloadFrag = emptyDataStream;
+                nextPrePayloadFrag = genEmptyDataStream;
                 nextHasLessFrag = True;
             end
             else begin
@@ -1183,25 +1279,17 @@ module mkMergePayloadAllSGE#(
             end
             hasLessFragReg <= nextHasLessFrag;
 
-            let {
-                lastFragValidBitNum, lastFragInvalidByteNum, lastFragInvalidBitNum
-            } = calcFragBitNumAndByteNum(lastFragValidByteNum);
+            lastFragInvalidByteNumReg <= lastFragInvalidByteNum;
+            lastFragInvalidBitNumReg  <= lastFragInvalidBitNum;
 
-            // curValidByteNumReg    <= nextHasLessFrag ? 0 : fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
             curInvalidByteNumReg  <= nextHasLessFrag ? fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) : 0;
             curInvalidBitNumReg   <= nextHasLessFrag ? fromInteger(valueOf(DATA_BUS_WIDTH)) : 0;
-            // nextValidByteNumReg   <= lastFragValidByteNum;
-            nextInvalidByteNumReg <= lastFragInvalidByteNum;
-            nextInvalidBitNumReg  <= lastFragInvalidBitNum;
 
-            case ({ pack(sgeMergedMetaData.isFirst), pack(sgeMergedMetaData.isLast) })
-                2'b11, 2'b01: begin
-                    stateReg <= MERGE_SGL_PAYLOAD_LAST_OR_ONLY_SGE;
-                end
-                2'b10, 2'b00: begin
-                    stateReg <= MERGE_SGL_PAYLOAD_FIRST_OR_MID_SGE;
-                end
-            endcase
+            let nextState = case ({ pack(sgeIsFirst), pack(sgeIsLast) })
+                2'b11, 2'b01: MERGE_SGL_PAYLOAD_LAST_OR_ONLY_SGE;
+                2'b10, 2'b00: MERGE_SGL_PAYLOAD_FIRST_OR_MID_SGE;
+            endcase;
+            stateReg <= nextState;
             // $display(
             //     "time=%0t: preprocessNextSGL", $time,
             //     ", isOnlySGE=", fshow(isOnlySGE),
@@ -1232,46 +1320,32 @@ module mkMergePayloadAllSGE#(
 
     function Action preprocessNextSGE();
         action
-            let sgeMergedMetaData = sgeMergedMetaDataPipeIn.first;
-            sgeMergedMetaDataPipeIn.deq;
+            let tmpMergedMetaDataSGE = mergedMetaDataQ4EachSGE.first;
+            mergedMetaDataQ4EachSGE.deq;
 
-            sgeIsLastReg <= sgeMergedMetaData.isLast;
+            let lastFragInvalidByteNum = tmpMergedMetaDataSGE.lastFragInvalidByteNum;
+            let lastFragInvalidBitNum  = tmpMergedMetaDataSGE.lastFragInvalidBitNum;
+            let curInvalidByteNum      = tmpMergedMetaDataSGE.curInvalidByteNum;
+            let curInvalidBitNum       = tmpMergedMetaDataSGE.curInvalidBitNum;
+            let isOnlySGE              = tmpMergedMetaDataSGE.isOnlySGE;
+            let sgeIsFirst             = tmpMergedMetaDataSGE.sgeIsFirst;
+            let sgeIsLast              = tmpMergedMetaDataSGE.sgeIsLast;
+            let hasLessFrag            = tmpMergedMetaDataSGE.hasLessFrag;
 
-            let lastFragValidByteNum = sgeMergedMetaData.lastFragValidByteNum;
-            let {
-                lastFragValidBitNum, lastFragInvalidByteNum, lastFragInvalidBitNum
-            } = calcFragBitNumAndByteNum(lastFragValidByteNum);
-
-            // let sumValidByteNum   = nextValidByteNumReg   + lastFragValidByteNum;
-            let sumInvalidByteNum = nextInvalidByteNumReg + lastFragInvalidByteNum;
-            let sumInvalidBitNum  = nextInvalidBitNumReg  + lastFragInvalidBitNum;
-
-            let hasLessFrag = nextInvalidByteNumReg >= lastFragValidByteNum;
-            // let hasLessFrag = !sgeIsOnlyReg && (sumInvalidByteNum >= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)));
+            sgeIsLastReg   <= sgeIsLast;
             hasLessFragReg <= hasLessFrag;
 
-            // let curValidByteNum   = nextValidByteNumReg;
-            let curInvalidByteNum = nextInvalidByteNumReg;
-            let curInvalidBitNum  = nextInvalidBitNumReg;
-            // curValidByteNumReg   <= curValidByteNum;
+            lastFragInvalidByteNumReg <= lastFragInvalidByteNum;
+            lastFragInvalidBitNumReg  <= lastFragInvalidBitNum;
+
             curInvalidByteNumReg <= curInvalidByteNum;
             curInvalidBitNumReg  <= curInvalidBitNum;
 
-            // let nextValidByteNum   = sumValidByteNum   & zeroExtend(busByteNumMask);
-            let nextInvalidByteNum = sumInvalidByteNum & zeroExtend(busByteNumMask);
-            let nextInvalidBitNum  = sumInvalidBitNum  & zeroExtend(busBitNumMask);
-            // nextValidByteNumReg   <= nextValidByteNum;
-            nextInvalidByteNumReg <= nextInvalidByteNum;
-            nextInvalidBitNumReg  <= nextInvalidBitNum;
-
-            case ({ pack(sgeMergedMetaData.isFirst), pack(sgeMergedMetaData.isLast) })
-                2'b11, 2'b01: begin
-                    stateReg <= MERGE_SGL_PAYLOAD_LAST_OR_ONLY_SGE;
-                end
-                2'b10, 2'b00: begin
-                    stateReg <= MERGE_SGL_PAYLOAD_FIRST_OR_MID_SGE;
-                end
-            endcase
+            let nextState = case ({ pack(sgeIsFirst), pack(sgeIsLast) })
+                2'b11, 2'b01: MERGE_SGL_PAYLOAD_LAST_OR_ONLY_SGE;
+                2'b10, 2'b00: MERGE_SGL_PAYLOAD_FIRST_OR_MID_SGE;
+            endcase;
+            stateReg <= nextState;
             // $display(
             //     "time=%0t: preprocessNextSGE", $time,
             //     ", hasLessFrag=", fshow(hasLessFrag),
@@ -1297,10 +1371,64 @@ module mkMergePayloadAllSGE#(
     rule resetAndClear if (clearAll);
         pktPayloadOutQ.clear;
 
+        mergedMetaDataQ4EachSGE.clear;
+        payloadFragShiftQ.clear;
+
         stateReg <= MERGE_SGL_PAYLOAD_INIT;
     endrule
 
-    rule init if (!clearAll && stateReg == MERGE_SGL_PAYLOAD_INIT);
+    rule handleMetaDataEachSGE if (!clearAll);
+        let sgeMergedMetaData = sgeMergedMetaDataPipeIn.first;
+        sgeMergedMetaDataPipeIn.deq;
+
+        let isOnlySGE  = sgeMergedMetaData.isFirst && sgeMergedMetaData.isLast;
+        let sgeIsFirst = sgeMergedMetaData.isFirst;
+        let sgeIsLast  = sgeMergedMetaData.isLast;
+
+        let lastFragValidByteNum = sgeMergedMetaData.lastFragValidByteNum;
+        let {
+            lastFragValidBitNum, lastFragInvalidByteNum, lastFragInvalidBitNum
+        } = calcFragBitNumAndByteNum(lastFragValidByteNum);
+
+        let curInvalidByteNum  =  0;
+        let curInvalidBitNum   =  0;
+        let preInvalidByteNum = lastFragInvalidByteNum;
+        let preInvalidBitNum  = lastFragInvalidBitNum;
+
+        let hasLessFrag = lastFragValidByteNum < fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        if (!sgeIsFirst) begin
+            hasLessFrag = preInvalidByteNumReg >= lastFragValidByteNum;
+
+            // let sumValidByteNum   = preValidByteNumReg   + lastFragValidByteNum;
+            let sumInvalidByteNum = preInvalidByteNumReg + lastFragInvalidByteNum;
+            let sumInvalidBitNum  = preInvalidBitNumReg  + lastFragInvalidBitNum;
+
+            // curValidByteNum   = preValidByteNumReg;
+            curInvalidByteNum = preInvalidByteNumReg;
+            curInvalidBitNum  = preInvalidBitNumReg;
+
+            // preValidByteNum   = sumValidByteNum   & zeroExtend(busByteNumMask);
+            preInvalidByteNum = sumInvalidByteNum & zeroExtend(busByteNumMask);
+            preInvalidBitNum  = sumInvalidBitNum  & zeroExtend(busBitNumMask);
+        end
+
+        preInvalidByteNumReg <= preInvalidByteNum;
+        preInvalidBitNumReg  <= preInvalidBitNum;
+
+        let tmpMergedMetaDataSGE = TmpMergedMetaDataSGE {
+            lastFragInvalidByteNum: lastFragInvalidByteNum,
+            lastFragInvalidBitNum : lastFragInvalidBitNum,
+            curInvalidByteNum     : curInvalidByteNum,
+            curInvalidBitNum      : curInvalidBitNum,
+            isOnlySGE             : isOnlySGE,
+            sgeIsFirst            : sgeIsFirst,
+            sgeIsLast             : sgeIsLast,
+            hasLessFrag           : hasLessFrag
+        };
+        mergedMetaDataQ4EachSGE.enq(tmpMergedMetaDataSGE);
+    endrule
+
+    rule mergePayloadInit if (!clearAll && stateReg == MERGE_SGL_PAYLOAD_INIT);
         let nextPayloadFrag <- preprocessNextSGL;
         prePayloadFragReg <= nextPayloadFrag;
     endrule
@@ -1309,33 +1437,32 @@ module mkMergePayloadAllSGE#(
         let curPayloadFrag = sgeMergedPayloadPipeIn.first;
         sgeMergedPayloadPipeIn.deq;
 
-        let mergedFrag = mergeFragData(
-            prePayloadFragReg, curPayloadFrag,
-            curInvalidByteNumReg, curInvalidBitNumReg
-        );
-        // In case prePayloadFragReg is emptyDataStream,
-        // then it should set mergeFrag.isFirst as true.
-        mergedFrag.isFirst = isFirstFragReg;
-
         let shouldOutput = True;
-        let nextPrePayloadFrag = mergedFrag;
+        let nextPrePayloadFrag = curPayloadFrag;
         if (curPayloadFrag.isLast) begin
             preprocessNextSGE;
 
-            if (hasLessFragReg) begin
-                shouldOutput = False;
-                nextPrePayloadFrag.byteEn = mergedFrag.byteEn >> nextInvalidByteNumReg;
-                nextPrePayloadFrag.data   = mergedFrag.data   >> nextInvalidBitNumReg;
-            end
+            nextPrePayloadFrag.isLast = False;
+            nextPrePayloadFrag.byteEn = truncate({ prePayloadFragReg.byteEn, curPayloadFrag.byteEn } >> lastFragInvalidByteNumReg);
+            nextPrePayloadFrag.data   = truncate({ prePayloadFragReg.data,   curPayloadFrag.data   } >> lastFragInvalidBitNumReg);
+
+            shouldOutput = !hasLessFragReg;
         end
         prePayloadFragReg <= nextPrePayloadFrag;
 
-        let outPayloadFrag = mergedFrag;
-        outPayloadFrag.isLast = False;
         if (shouldOutput) begin
             isFirstFragReg <= False;
 
-            pktPayloadOutQ.enq(outPayloadFrag);
+            let prePayloadFrag = prePayloadFragReg;
+            // In case prePayloadFragReg is emptyDataStream,
+            // then it should set mergeFrag.isFirst as true.
+            prePayloadFrag.isFirst = isFirstFragReg;
+            prePayloadFrag.isLast = False;
+
+            payloadFragShiftQ.enq(tuple4(
+                prePayloadFrag, curPayloadFrag,
+                curInvalidByteNumReg, curInvalidBitNumReg
+            ));
         end
         // $display(
         //     "time=%0t: mergeFirstOrMidSGE", $time,
@@ -1359,12 +1486,12 @@ module mkMergePayloadAllSGE#(
     endrule
 
     rule mergeLastOrOnlySGE if (!clearAll && stateReg == MERGE_SGL_PAYLOAD_LAST_OR_ONLY_SGE);
-        let nextPayloadFrag = emptyDataStream;
+        let nextPayloadFrag = genEmptyDataStream;
         let outPayloadFrag = prePayloadFragReg;
 
         let isLastFrag = prePayloadFragReg.isLast;
         if (prePayloadFragReg.isLast) begin
-            if (sgeMergedMetaDataPipeIn.notEmpty && sgeMergedPayloadPipeIn.notEmpty) begin
+            if (mergedMetaDataQ4EachSGE.notEmpty && sgeMergedPayloadPipeIn.notEmpty) begin
                 nextPayloadFrag <- preprocessNextSGL;
             end
             else begin
@@ -1385,12 +1512,12 @@ module mkMergePayloadAllSGE#(
         end
         prePayloadFragReg <= nextPayloadFrag;
 
-        outPayloadFrag = mergeFragData(
-            prePayloadFragReg, nextPayloadFrag,
+        let prePayloadFrag = prePayloadFragReg;
+        prePayloadFrag.isLast = isLastFrag;
+        payloadFragShiftQ.enq(tuple4(
+            prePayloadFrag, nextPayloadFrag,
             curInvalidByteNumReg, curInvalidBitNumReg
-        );
-        outPayloadFrag.isLast = isLastFrag;
-        pktPayloadOutQ.enq(outPayloadFrag);
+        ));
         // $display(
         //     "time=%0t: mergeLastOrOnlySGE", $time,
         //     ", sgeIsOnlyReg=", fshow(sgeIsOnlyReg),
@@ -1401,6 +1528,37 @@ module mkMergePayloadAllSGE#(
         //     ", nextPayloadFrag.isFirst=", fshow(nextPayloadFrag.isFirst),
         //     ", nextPayloadFrag.isLast=", fshow(nextPayloadFrag.isLast),
         //     ", nextPayloadFrag.byteEn=%h", nextPayloadFrag.byteEn,
+        //     ", outPayloadFrag.isFirst=", fshow(outPayloadFrag.isFirst),
+        //     ", outPayloadFrag.isLast=", fshow(outPayloadFrag.isLast),
+        //     ", outPayloadFrag.byteEn=%h", outPayloadFrag.byteEn
+        // );
+    endrule
+
+    rule shiftPayloadFrag if (!clearAll);
+        let {
+            prePayloadFrag, curPayloadFrag,
+            leftShiftInvalidByteNum, leftShiftInvalidBitNum
+        } = payloadFragShiftQ.first;
+        payloadFragShiftQ.deq;
+
+        let outPayloadFrag = prePayloadFrag;
+        outPayloadFrag = leftShiftMergeFragData(
+            prePayloadFrag, curPayloadFrag,
+            leftShiftInvalidByteNum, leftShiftInvalidBitNum
+        );
+        pktPayloadOutQ.enq(outPayloadFrag);
+        // $display(
+        //     "time=%0t: shiftPayloadFrag", $time,
+        //     ", sgeIsOnlyReg=", fshow(sgeIsOnlyReg),
+        //     ", hasLessFragReg=", fshow(hasLessFragReg),
+        //     ", leftShiftInvalidByteNum=%0d", leftShiftInvalidByteNum,
+        //     ", leftShiftInvalidBitNum=%0d", leftShiftInvalidBitNum,
+        //     ", prePayloadFragReg.isFirst=", fshow(prePayloadFragReg.isFirst),
+        //     ", prePayloadFragReg.isLast=", fshow(prePayloadFragReg.isLast),
+        //     ", prePayloadFragReg.byteEn=%h", prePayloadFragReg.byteEn,
+        //     ", curPayloadFrag.isFirst=", fshow(curPayloadFrag.isFirst),
+        //     ", curPayloadFrag.isLast=", fshow(curPayloadFrag.isLast),
+        //     ", curPayloadFrag.byteEn=%h", curPayloadFrag.byteEn,
         //     ", outPayloadFrag.isFirst=", fshow(outPayloadFrag.isFirst),
         //     ", outPayloadFrag.isLast=", fshow(outPayloadFrag.isLast),
         //     ", outPayloadFrag.byteEn=%h", outPayloadFrag.byteEn
@@ -1421,7 +1579,6 @@ typedef enum {
     ADJUST_PAYLOAD_SEGMENT_LAST_OR_ONLY_PKT
 } AdjustPayloadSegmentState deriving(Bits, Eq, FShow);
 
-// TODO: output target address, isFirst, isLast of each packet
 module mkAdjustPayloadSegment#(
     Bool clearAll,
     PipeOut#(AdjustedTotalPayloadMetaData) adjustedTotalPayloadMetaDataPipeIn,
@@ -1429,77 +1586,51 @@ module mkAdjustPayloadSegment#(
 )(DataStreamPipeOut);
     FIFOF#(DataStream) pktPayloadOutQ <- mkFIFOF;
 
+    // Pipeline FIFO
+    FIFOF#(Tuple7#(
+        PMTU, PktFragNum, PktNum, ByteEnBitNum, BusBitNum, Bool, Bool
+    )) sglAdjustedPktMetaDataQ <- mkFIFOF;
+    FIFOF#(Tuple7#(
+        DataStream, DataStream, Bool, ByteEnBitNum, BusBitNum, Bool, ByteEn
+    )) payloadFragShiftQ <- mkFIFOF;
+
     Reg#(DataStream) prePayloadFragReg <- mkRegU;
     Reg#(ByteEn) firstPktLastFragByteEnReg <- mkRegU;
 
     Reg#(ByteEnBitNum) firstPktLastFragValidByteNumReg <- mkRegU;
     Reg#(BusBitNum)     firstPktLastFragValidBitNumReg <- mkRegU;
-    // Reg#(ByteEnBitNum) firstPktLastFragInvalidByteNumReg <- mkRegU;
-    // Reg#(BusBitNum)     firstPktLastFragInvalidBitNumReg <- mkRegU;
-    // Reg#(ByteEnBitNum)  lastPktLastFragInvalidByteNumReg <- mkRegU;
-    // Reg#(BusBitNum)      lastPktLastFragInvalidBitNumReg <- mkRegU;
 
-    // Reg#(Bool) isFirstFragReg <- mkRegU;
     Reg#(Bool) isFirstPktReg <- mkRegU;
     Reg#(Bool) hasExtraFragReg <- mkRegU;
     Reg#(Bool) sglHasOnlyPktReg <- mkRegU;
-    Reg#(Bool) sglHasOnlyFragOnlyPktReg <- mkRegU;
 
-    // Reg#(PktFragNum) lastPktFragNumReg <- mkRegU;
     Reg#(PktFragNum) pmtuFragNumReg <- mkRegU;
     Reg#(PktFragNum) pktRemainingFragNumReg <- mkRegU;
     Reg#(PktNum) sglRemainingPktNumReg <- mkRegU;
     Reg#(AdjustPayloadSegmentState) stateReg <- mkReg(ADJUST_PAYLOAD_SEGMENT_INIT);
 
-    let emptyDataStream = DataStream {
-        data: 0,
-        byteEn: 0,
-        isFirst: False,
-        isLast: False
-    };
-
-    rule resetAndClear if (clearAll);
-        pktPayloadOutQ.clear;
-        stateReg <= ADJUST_PAYLOAD_SEGMENT_INIT;
-    endrule
-
     function ActionValue#(DataStream) prepareNextSGL();
         actionvalue
-            let adjustedTotalPayloadMeta = adjustedTotalPayloadMetaDataPipeIn.first;
-            adjustedTotalPayloadMetaDataPipeIn.deq;
-
-            pmtuFragNumReg <= calcFragNumByPMTU(adjustedTotalPayloadMeta.pmtu);
-
-            pktRemainingFragNumReg <= adjustedTotalPayloadMeta.firstPktFragNum;
-            sglRemainingPktNumReg <= adjustedTotalPayloadMeta.adjustedPktNum;
-            // lastPktFragNumReg <= adjustedTotalPayloadMeta.lastPktFragNum;
-
-            let origLastFragValidByteNum     = adjustedTotalPayloadMeta.origLastFragValidByteNum;
-            let firstPktLastFragValidByteNum = adjustedTotalPayloadMeta.firstPktLastFragValidByteNum;
-            // let lastPktLastFragValidByteNum  = adjustedTotalPayloadMeta.lastPktLastFragValidByteNum;
             let {
-                firstPktLastFragValidBitNum,
-                firstPktLastFragInvalidByteNum,
-                firstPktLastFragInvalidBitNum
-            } = calcFragBitNumAndByteNum(firstPktLastFragValidByteNum);
+                pmtu, firstPktFragNum, adjustedPktNum, firstPktLastFragValidByteNum,
+                firstPktLastFragValidBitNum, sglHasOnlyPkt, hasExtraFrag
+            } = sglAdjustedPktMetaDataQ.first;
+            sglAdjustedPktMetaDataQ.deq;
+
+            pmtuFragNumReg <= calcFragNumByPMTU(pmtu);
+
+            pktRemainingFragNumReg <= firstPktFragNum;
+            sglRemainingPktNumReg  <= adjustedPktNum;
 
             firstPktLastFragValidByteNumReg <= firstPktLastFragValidByteNum;
             firstPktLastFragValidBitNumReg  <= firstPktLastFragValidBitNum;
-            // firstPktLastFragInvalidByteNumReg <= firstPktLastFragInvalidByteNum;
-            // firstPktLastFragInvalidBitNumReg <= firstPktLastFragInvalidBitNum;
-            firstPktLastFragByteEnReg <= genByteEn(firstPktLastFragValidByteNum);
 
-            // let {
-            //     lastPktLastFragValidBitNum,
-            //     lastPktLastFragInvalidByteNum,
-            //     lastPktLastFragInvalidBitNum
-            // } = calcFragBitNumAndByteNum(lastPktLastFragValidByteNum);
-            // lastPktLastFragInvalidByteNumReg <= lastPktLastFragInvalidByteNum;
-            // lastPktLastFragInvalidBitNumReg <= lastPktLastFragInvalidBitNum;
-            let sglHasOnlyPkt = isOneR(adjustedTotalPayloadMeta.adjustedPktNum);
+            let firstPktLastFragByteEn = genByteEn(firstPktLastFragValidByteNum);
+            firstPktLastFragByteEnReg <= firstPktLastFragByteEn;
+
             sglHasOnlyPktReg <= sglHasOnlyPkt;
-            let hasExtraFrag = firstPktLastFragValidByteNum < origLastFragValidByteNum;
-            hasExtraFragReg <= hasExtraFrag;
+            hasExtraFragReg  <= hasExtraFrag;
+            isFirstPktReg    <= True;
 
             if (sglHasOnlyPkt) begin
                 stateReg <= ADJUST_PAYLOAD_SEGMENT_LAST_OR_ONLY_PKT;
@@ -1511,58 +1642,83 @@ module mkAdjustPayloadSegment#(
             let curPayloadFrag = sglAllPayloadPipeIn.first;
             sglAllPayloadPipeIn.deq;
 
-            let isOrigOnlyPkt = isOneR(adjustedTotalPayloadMeta.origPktNum);
-            let sglHasOnlyFragOnlyPkt = isOrigOnlyPkt && curPayloadFrag.isLast;
-            sglHasOnlyFragOnlyPktReg <= sglHasOnlyFragOnlyPkt;
-
-            isFirstPktReg  <= True;
             // $display(
             //     "time=%0t: prepareNextSGL", $time,
             //     ", sglHasOnlyPkt=", fshow(sglHasOnlyPkt),
+            //     // ", hasExtraFragReg=", fshow(hasExtraFragReg),
             //     ", hasExtraFrag=", fshow(hasExtraFrag),
-            //     ", hasExtraFragReg=", fshow(hasExtraFragReg),
             //     // ", sgeMergedMetaData.isFirst=", fshow(sgeMergedMetaData.isFirst),
             //     // ", sgeMergedMetaData.isLast=", fshow(sgeMergedMetaData.isLast),
             //     ", firstPktLastFragValidByteNum=%0d", firstPktLastFragValidByteNum,
             //     ", firstPktLastFragValidBitNum=%0d", firstPktLastFragValidBitNum,
-            //     ", firstPktLastFragInvalidByteNum=%0d", firstPktLastFragInvalidByteNum,
-            //     ", firstPktLastFragInvalidBitNum=%0d", firstPktLastFragInvalidBitNum,
-            //     // ", lastPktLastFragValidByteNum=%0d", lastPktLastFragValidByteNum,
-            //     ", adjustedTotalPayloadMeta.pktNum=%0d", adjustedTotalPayloadMeta.adjustedPktNum,
+            //     ", firstPktLastFragByteEn=%h", firstPktLastFragByteEn,
+            //     ", adjustedPktNum=%0d", adjustedPktNum,
             //     ", curPayloadFrag.isFirst=", fshow(curPayloadFrag.isFirst),
             //     ", curPayloadFrag.isLast=", fshow(curPayloadFrag.isLast),
             //     ", curPayloadFrag.byteEn=%h", curPayloadFrag.byteEn
-            //     // ", nextPrePayloadFrag.isFirst=", fshow(nextPrePayloadFrag.isFirst),
-            //     // ", nextPrePayloadFrag.isLast=", fshow(nextPrePayloadFrag.isLast),
-            //     // ", nextPrePayloadFrag.byteEn=%h", nextPrePayloadFrag.byteEn
             // );
             return curPayloadFrag;
         endactionvalue
     endfunction
 
-    rule init if (!clearAll && stateReg == ADJUST_PAYLOAD_SEGMENT_INIT);
+    rule resetAndClear if (clearAll);
+        pktPayloadOutQ.clear;
+
+        sglAdjustedPktMetaDataQ.clear;
+        payloadFragShiftQ.clear;
+
+        stateReg <= ADJUST_PAYLOAD_SEGMENT_INIT;
+    endrule
+
+    rule handleMetaDataEachSGL if (!clearAll);
+        let adjustedTotalPayloadMeta = adjustedTotalPayloadMetaDataPipeIn.first;
+        adjustedTotalPayloadMetaDataPipeIn.deq;
+
+        let origLastFragValidByteNum     = adjustedTotalPayloadMeta.origLastFragValidByteNum;
+        let firstPktLastFragValidByteNum = adjustedTotalPayloadMeta.firstPktLastFragValidByteNum;
+
+        let {
+            firstPktLastFragValidBitNum,
+            firstPktLastFragInvalidByteNum,
+            firstPktLastFragInvalidBitNum
+        } = calcFragBitNumAndByteNum(firstPktLastFragValidByteNum);
+
+        let sglHasOnlyPkt = isOneR(adjustedTotalPayloadMeta.adjustedPktNum);
+        let hasExtraFrag  = firstPktLastFragValidByteNum < origLastFragValidByteNum;
+
+        sglAdjustedPktMetaDataQ.enq(tuple7(
+            adjustedTotalPayloadMeta.pmtu, adjustedTotalPayloadMeta.firstPktFragNum,
+            adjustedTotalPayloadMeta.adjustedPktNum, firstPktLastFragValidByteNum,
+            firstPktLastFragValidBitNum, sglHasOnlyPkt, hasExtraFrag
+        ));
+    endrule
+
+    rule adjustPayloadInit if (!clearAll && stateReg == ADJUST_PAYLOAD_SEGMENT_INIT);
         let nextPrePayloadFrag <- prepareNextSGL;
         prePayloadFragReg <= nextPrePayloadFrag;
     endrule
 
     rule adjustFirstOrMidPkt if (!clearAll && stateReg == ADJUST_PAYLOAD_SEGMENT_FIRST_OR_MID_PKT);
-        let isLastFrag = isOneR(pktRemainingFragNumReg);
-        let outPayloadFrag = prePayloadFragReg;
+        let isAdjustedLastFrag = isOneR(pktRemainingFragNumReg);
+        let curPayloadFrag = genEmptyDataStream;
 
-        if (!sglHasOnlyFragOnlyPktReg) begin
-            let curPayloadFrag  = sglAllPayloadPipeIn.first;
-            let nextPayloadFrag = curPayloadFrag;
-
-            let mergedFrag = mergeFragData(
-                prePayloadFragReg, curPayloadFrag,
-                firstPktLastFragValidByteNumReg, firstPktLastFragValidBitNumReg
+        if (prePayloadFragReg.isLast) begin
+            immAssert(
+                isOneR(pktRemainingFragNumReg) && isTwoR(sglRemainingPktNumReg),
+                "pktRemainingFragNumReg and sglRemainingPktNumReg assertion @ mkAdjustPayloadSegment",
+                $format(
+                    "pktRemainingFragNumReg=%0d", pktRemainingFragNumReg,
+                    " should be one, and sglRemainingPktNumReg=%0d", sglRemainingPktNumReg,
+                    " should be two when prePayloadFragReg.isLast=", fshow(prePayloadFragReg.isLast),
+                    " and stateReg=", fshow(stateReg)
+                )
             );
+        end
+        else begin
+            curPayloadFrag = sglAllPayloadPipeIn.first;
 
-            if (!isFirstPktReg) begin
-                outPayloadFrag = mergedFrag;
-            end
-
-            if (!(isFirstPktReg && isLastFrag)) begin
+            let nextPayloadFrag = curPayloadFrag;
+            if (!(isFirstPktReg && isAdjustedLastFrag)) begin
                 sglAllPayloadPipeIn.deq;
             end
             else begin
@@ -1571,13 +1727,14 @@ module mkAdjustPayloadSegment#(
                 // So keep the last fragment of the first packet in prePayloadFragReg.
                 nextPayloadFrag = prePayloadFragReg;
             end
-            nextPayloadFrag.isFirst = isLastFrag;
+            nextPayloadFrag.isFirst = isAdjustedLastFrag;
             prePayloadFragReg <= nextPayloadFrag;
         end
 
-        if (isLastFrag) begin
+        let shouldChangeByteEn = False;
+        if (isAdjustedLastFrag) begin
             if (isFirstPktReg) begin
-                outPayloadFrag.byteEn = firstPktLastFragByteEnReg;
+                shouldChangeByteEn = True;
                 isFirstPktReg <= False;
             end
 
@@ -1595,14 +1752,19 @@ module mkAdjustPayloadSegment#(
             pktRemainingFragNumReg <= pktRemainingFragNumReg - 1;
         end
 
-        outPayloadFrag.isLast = isLastFrag;
-        pktPayloadOutQ.enq(outPayloadFrag);
+        let shouldShiftPayloadFrag = !isFirstPktReg;
+        let prePayloadFrag = prePayloadFragReg;
+        prePayloadFrag.isLast = isAdjustedLastFrag;
+        payloadFragShiftQ.enq(tuple7(
+            prePayloadFrag, curPayloadFrag, shouldShiftPayloadFrag,
+            firstPktLastFragValidByteNumReg, firstPktLastFragValidBitNumReg,
+            shouldChangeByteEn, firstPktLastFragByteEnReg
+        ));
         // $display(
         //     "time=%0t: adjustFirstOrMidPkt", $time,
-        //     ", sglHasOnlyFragOnlyPktReg=", fshow(sglHasOnlyFragOnlyPktReg),
-        //     // ", isFirstFragReg=", fshow(isFirstFragReg),
         //     ", hasExtraFragReg=", fshow(hasExtraFragReg),
-        //     ", isLastFrag=", fshow(isLastFrag),
+        //     ", isAdjustedLastFrag=", fshow(isAdjustedLastFrag),
+        //     ", shouldShiftPayloadFrag=", fshow(shouldShiftPayloadFrag),
         //     ", pktRemainingFragNumReg=%0d", pktRemainingFragNumReg,
         //     ", sglRemainingPktNumReg=%0d", sglRemainingPktNumReg,
         //     ", firstPktLastFragValidByteNumReg=%0d", firstPktLastFragValidByteNumReg,
@@ -1610,12 +1772,9 @@ module mkAdjustPayloadSegment#(
         //     ", prePayloadFragReg.isFirst=", fshow(prePayloadFragReg.isFirst),
         //     ", prePayloadFragReg.isLast=", fshow(prePayloadFragReg.isLast),
         //     ", prePayloadFragReg.byteEn=%h", prePayloadFragReg.byteEn,
-        //     // ", curPayloadFrag.isFirst=", fshow(curPayloadFrag.isFirst),
-        //     // ", curPayloadFrag.isLast=", fshow(curPayloadFrag.isLast),
-        //     // ", curPayloadFrag.byteEn=%h", curPayloadFrag.byteEn,
-        //     // ", mergedFrag.isFirst=", fshow(mergedFrag.isFirst),
-        //     // ", mergedFrag.isLast=", fshow(mergedFrag.isLast),
-        //     // ", mergedFrag.byteEn=%h", mergedFrag.byteEn,
+        //     ", curPayloadFrag.isFirst=", fshow(curPayloadFrag.isFirst),
+        //     ", curPayloadFrag.isLast=", fshow(curPayloadFrag.isLast),
+        //     ", curPayloadFrag.byteEn=%h", curPayloadFrag.byteEn,
         //     ", outPayloadFrag.isFirst=", fshow(outPayloadFrag.isFirst),
         //     ", outPayloadFrag.isLast=", fshow(outPayloadFrag.isLast),
         //     ", outPayloadFrag.byteEn=%h", outPayloadFrag.byteEn
@@ -1623,11 +1782,11 @@ module mkAdjustPayloadSegment#(
     endrule
 
     rule adjustLastOrOnlyPkt if (!clearAll && stateReg == ADJUST_PAYLOAD_SEGMENT_LAST_OR_ONLY_PKT);
-        let nextPayloadFrag = emptyDataStream;
+        let nextPayloadFrag = genEmptyDataStream;
 
         let isLastFrag = prePayloadFragReg.isLast;
         if (prePayloadFragReg.isLast) begin
-            if (adjustedTotalPayloadMetaDataPipeIn.notEmpty && sglAllPayloadPipeIn.notEmpty) begin
+            if (sglAdjustedPktMetaDataQ.notEmpty && sglAllPayloadPipeIn.notEmpty) begin
                 nextPayloadFrag <- prepareNextSGL;
             end
             else begin
@@ -1646,28 +1805,28 @@ module mkAdjustPayloadSegment#(
                 isLastFrag = True;
             end
         end
-
-        let mergedFrag = mergeFragData(
-            prePayloadFragReg, nextPayloadFrag,
-            firstPktLastFragValidByteNumReg, firstPktLastFragValidBitNumReg
-        );
         prePayloadFragReg <= nextPayloadFrag;
 
         immAssert(
             isOne(sglRemainingPktNumReg),
             "sglRemainingPktNumReg assertion @ mkAdjustPayloadSegment",
             $format(
-                "sglRemainingPktNumReg=%0d", fshow(sglRemainingPktNumReg),
+                "sglRemainingPktNumReg=%0d", sglRemainingPktNumReg,
                 " should be one when stateReg=", fshow(stateReg)
             )
         );
 
-        let outPayloadFrag = prePayloadFragReg;
-        if (!sglHasOnlyPktReg) begin
-            outPayloadFrag = mergedFrag;
-            outPayloadFrag.isLast  = isLastFrag;
-        end
-        pktPayloadOutQ.enq(outPayloadFrag);
+        let shouldChangeByteEn = False;
+        let invalidByteEn = dontCareValue;
+        let shouldShiftPayloadFrag = !sglHasOnlyPktReg;
+        let prePayloadFrag = prePayloadFragReg;
+        prePayloadFrag.isLast = isLastFrag;
+        payloadFragShiftQ.enq(tuple7(
+            prePayloadFrag, nextPayloadFrag, shouldShiftPayloadFrag,
+            firstPktLastFragValidByteNumReg, firstPktLastFragValidBitNumReg,
+            shouldChangeByteEn, invalidByteEn
+        ));
+
         // $display(
         //     "time=%0t: adjustLastOrOnlyPkt", $time,
         //     ", sglHasOnlyPktReg=", fshow(sglHasOnlyPktReg),
@@ -1682,6 +1841,36 @@ module mkAdjustPayloadSegment#(
         //     ", outPayloadFrag.isLast=", fshow(outPayloadFrag.isLast),
         //     ", outPayloadFrag.byteEn=%h", outPayloadFrag.byteEn
         // );
+    endrule
+
+    rule shiftPayloadFrag if (!clearAll);
+        let {
+            prePayloadFrag, curPayloadFrag, shouldShiftPayloadFrag,
+            leftShiftValidByteNum, leftShiftValidBitNum,
+            shouldChangeByteEn, firstPktLastFragByteEn
+        } = payloadFragShiftQ.first;
+        payloadFragShiftQ.deq;
+
+        if (!shouldShiftPayloadFrag) begin
+            leftShiftValidByteNum = 0;
+            leftShiftValidBitNum = 0;
+        end
+        let outPayloadFrag = leftShiftMergeFragData(
+            prePayloadFrag, curPayloadFrag,
+            leftShiftValidByteNum, leftShiftValidBitNum
+        );
+        // let outPayloadFrag = prePayloadFrag;
+        // if (shouldShiftPayloadFrag) begin
+        //     outPayloadFrag = leftShiftMergeFragData(
+        //         prePayloadFrag, curPayloadFrag,
+        //         leftShiftValidByteNum, leftShiftValidBitNum
+        //     );
+        // end
+
+        if (shouldChangeByteEn) begin
+            outPayloadFrag.byteEn = firstPktLastFragByteEn;
+        end
+        pktPayloadOutQ.enq(outPayloadFrag);
     endrule
 
     return toPipeOut(pktPayloadOutQ);
@@ -1729,6 +1918,7 @@ typedef struct {
     Length            totalLen;
     ADDR              raddr;
     PMTU              pmtu;
+    Bool              addPadding;
 } PayloadGenReqSG deriving(Bits, FShow);
 
 typedef struct {
@@ -1747,17 +1937,50 @@ typedef struct {
 } PayloadGenTotalMetaData deriving(Bits, FShow);
 
 typedef struct {
+    // Length totalLen;
+    // ADDR   origRemoteAddr;
+    // PMTU   pmtu;
+    PktLen pmtuMask;
+    PktLen addrAndLenLowPartSum;
+    PktLen pmtuLen;
+    PktLen lenLowPart;
+    PktLen maxFirstPktLen;
+    PktNum truncatedPktNum;
+    ADDR   pmtuAlignedStartAddr;
+    Bool   isZeroPayloadLen;
+    // Bool   shouldAddPadding;
+} TmpPayloadGenMetaData deriving(Bits);
+
+typedef struct {
+    ADDR        origRemoteAddr;
+    ADDR        secondChunkStartAddr;
+    Length      totalLen;
+    PktNum      truncatedPktNum;
+    PktNumAddOn pktNumAddOne;
+    PktLen      lenLowPart;
+    PktLen      maxFirstPktLen;
+    PktLen      tmpLastPktLen;
+    PktLen      pmtuLen;
+    PMTU        pmtu;
+    Bool        notFullPkt;
+    Bool        hasExtraPkt;
+    Bool        hasResidue;
+    Bool        isZeroPayloadLen;
+    Bool        shouldAddPadding;
+} TmpAdjustFirstAndLastPktLen deriving(Bits);
+
+typedef struct {
     ADDR   firstRemoteAddr;
     ADDR   secondRemoteAddr;
     Length totalLen;
     PktNum totalPktNum;
-    PktNum origPktNum;
     PktLen firstPktLen;
     PktLen lastPktLen;
     PktLen pmtuLen;
     PMTU   pmtu;
     Bool   isZeroPayloadLen;
-} TmpAdjustMetaData deriving(Bits);
+    Bool   shouldAddPadding;
+} TmpAdjustTotalPayloadMetaData deriving(Bits);
 
 typedef struct {
     ADDR         firstRemoteAddr;
@@ -1765,15 +1988,25 @@ typedef struct {
     PktLen       firstPktLen;
     PktLen       lastPktLen;
     PktLen       pmtuLen;
-    ByteEnBitNum firstPktLastFragValidByteNum;
+    ByteEnBitNum firstPktLastFragValidByteNumWithPadding;
+    ByteEnBitNum lastPktLastFragValidByteNumWithPadding;
     PAD          firstPktPadCnt;
-    ByteEnBitNum lastPktLastFragValidByteNum;
     PAD          lastPktPadCnt;
     PktNum       totalPktNum;
     PMTU         pmtu;
     Bool         isOnlyPkt;
     Bool         isZeroPayloadLen;
-} TmpPaddingMetaData deriving(Bits);
+    Bool         shouldAddPadding;
+} TmpPayloadGenRespData deriving(Bits);
+
+typedef struct {
+    // ByteEnBitNum firstPktLastFragValidByteNumWithPadding;
+    // ByteEnBitNum lastPktLastFragValidByteNumWithPadding;
+    ByteEn       firstPktLastFragByteEnWithPadding;
+    ByteEn       lastPktLastFragByteEnWithPadding;
+    Bool         isZeroPayloadLen;
+    Bool         shouldAddPadding;
+} TmpPaddingData deriving(Bits);
 
 interface PayloadGenerator;
     interface Server#(PayloadGenReqSG, PayloadGenRespSG) srvPort;
@@ -1783,7 +2016,7 @@ interface PayloadGenerator;
 endinterface
 
 module mkPayloadGenerator#(
-    Bool clearAll, Bool shouldAddPadding, DmaReadCntrl dmaReadCntrl
+    Bool clearAll, DmaReadCntrl dmaReadCntrl
 )(PayloadGenerator);
     FIFOF#(PayloadGenReqSG)            payloadGenReqQ <- mkFIFOF;
     FIFOF#(PayloadGenRespSG)          payloadGenRespQ <- mkFIFOF;
@@ -1791,9 +2024,11 @@ module mkPayloadGenerator#(
 
     // Pipeline FIFO
     FIFOF#(DataStream) sgePayloadOutQ <- mkFIFOF;
-    FIFOF#(Tuple2#(PayloadGenReqSG, Bool)) adjustReqPktLenQ <- mkFIFOF;
-    FIFOF#(TmpAdjustMetaData) adjustedFirstAndLastPktLenQ <- mkFIFOF;
-    FIFOF#(TmpPaddingMetaData) addPadCntQ <- mkFIFOF;
+    FIFOF#(Tuple2#(PayloadGenReqSG, TmpPayloadGenMetaData)) adjustReqPktLenQ <- mkFIFOF;
+    FIFOF#(TmpAdjustFirstAndLastPktLen) adjustFirstAndLastPktLenQ <- mkFIFOF;
+    FIFOF#(TmpAdjustTotalPayloadMetaData) adjustTotalPayloadMetaDataQ <- mkFIFOF;
+    FIFOF#(TmpPayloadGenRespData) genPayloadRespQ <- mkFIFOF;
+    FIFOF#(Tuple2#(PayloadGenRespSG, TmpPaddingData)) addPaddingDataQ <- mkFIFOF;
     FIFOF#(AdjustedTotalPayloadMetaData) adjustedTotalPayloadMetaDataQ <- mkFIFOF;
 
     let sgeMergedPayloadPipeOut <- mkMergePayloadEachSGE(
@@ -1813,26 +2048,38 @@ module mkPayloadGenerator#(
 
     Reg#(ADDR)     pktRemoteAddrReg <- mkRegU;
     Reg#(Bool)        isFirstPktReg <- mkReg(True);
-    Reg#(PktNum) remainingPktNumReg <- mkReg(0);
+    Reg#(PktNum) remainingPktNumReg <- mkRegU;
 
     rule resetAndClear if (clearAll);
         payloadGenReqQ.clear;
         payloadGenRespQ.clear;
+        totalMetaDataOutQ.clear;
 
+        sgePayloadOutQ.clear;
         adjustReqPktLenQ.clear;
-        adjustedFirstAndLastPktLenQ.clear;
+        adjustFirstAndLastPktLenQ.clear;
+        adjustTotalPayloadMetaDataQ.clear;
+        genPayloadRespQ.clear;
+        addPaddingDataQ.clear;
         adjustedTotalPayloadMetaDataQ.clear;
+
         payloadBufQ.clear;
         bramQ2PipeOut.clear;
 
+        // remainingPktNumReg <= 0;
         isFirstPktReg <= True;
-        remainingPktNumReg <= 0;
-
         // $display(
         //     "time=%0t: reset and clear mkPayloadGenerator", $time
         // );
     endrule
 
+    (* conflict_free = "recvReq, \
+                        recvDmaReadCntrlResp, \
+                        issueDmaReadCntrlReq, \
+                        adjustFirstAndLastPktLen, \
+                        calcAdjustedTotalPayloadMetaData, \
+                        genPayloadGenResp, \
+                        outputAndAddPadding" *)
     rule recvReq if (!clearAll);
         let payloadGenReq = payloadGenReqQ.first;
         payloadGenReqQ.deq;
@@ -1855,6 +2102,70 @@ module mkPayloadGenerator#(
             );
         end
 
+        // if (!isZeroPayloadLen) begin
+        //     let dmaReadCntrlReq = DmaReadCntrlReq {
+        //         sglDmaReadMetaData: DmaReadMetaDataSGL {
+        //             sgl           : payloadGenReq.sgl,
+        //             totalLen      : payloadGenReq.totalLen,
+        //             sqpn          : payloadGenReq.sqpn,
+        //             wrID          : payloadGenReq.wrID
+        //         },
+        //         pmtu              : payloadGenReq.pmtu
+        //     };
+        //     dmaReadCntrl.srvPort.request.put(dmaReadCntrlReq);
+        // end
+
+        let {
+            pmtuMask, addrAndLenLowPartSum, pmtuLen, lenLowPart,
+            maxFirstPktLen, truncatedPktNum, pmtuAlignedStartAddr
+        } = stepOneCalcPktNumAndPktLenByAddrAndPMTU(
+            payloadGenReq.raddr, payloadGenReq.totalLen, payloadGenReq.pmtu
+        );
+
+        let tmpPayloadGenMetaData = TmpPayloadGenMetaData {
+            // totalLen            : payloadGenReq.totalLen,
+            // origRemoteAddr      : payloadGenReq.raddr,
+            // pmtu                : payloadGenReq.pmtu,
+            pmtuMask            : pmtuMask,
+            addrAndLenLowPartSum: addrAndLenLowPartSum,
+            pmtuLen             : pmtuLen,
+            lenLowPart          : lenLowPart,
+            maxFirstPktLen      : maxFirstPktLen,
+            truncatedPktNum     : truncatedPktNum,
+            pmtuAlignedStartAddr: pmtuAlignedStartAddr,
+            isZeroPayloadLen    : isZeroPayloadLen
+            // shouldAddPadding    : payloadGenReq.addPadding
+        };
+        adjustReqPktLenQ.enq(tuple2(payloadGenReq, tmpPayloadGenMetaData));
+        // $display(
+        //     "time=%0t: mkPayloadGenerator recvReq", $time,
+        //     // ", payloadGenReq=", fshow(payloadGenReq),
+        //     ", isZeroPayloadLen=", fshow(isZeroPayloadLen)
+        // );
+    endrule
+
+    rule recvDmaReadCntrlResp if (!clearAll);
+        let dmaReadCntrlResp <- dmaReadCntrl.srvPort.response.get;
+        sgePayloadOutQ.enq(dmaReadCntrlResp.dmaReadResp.dataStream);
+        // $display("time=%0t: recvDmaReadCntrlResp", $time);
+    endrule
+
+    rule issueDmaReadCntrlReq if (!clearAll);
+        let { payloadGenReq, tmpPayloadGenMetaData } = adjustReqPktLenQ.first;
+        adjustReqPktLenQ.deq;
+
+        // let totalLen             = tmpPayloadGenMetaData.totalLen;
+        // let origRemoteAddr       = tmpPayloadGenMetaData.origRemoteAddr;
+        // let pmtu                 = tmpPayloadGenMetaData.pmtu;
+        let pmtuMask             = tmpPayloadGenMetaData.pmtuMask;
+        let addrAndLenLowPartSum = tmpPayloadGenMetaData.addrAndLenLowPartSum;
+        let pmtuLen              = tmpPayloadGenMetaData.pmtuLen;
+        let lenLowPart           = tmpPayloadGenMetaData.lenLowPart;
+        let maxFirstPktLen       = tmpPayloadGenMetaData.maxFirstPktLen;
+        let truncatedPktNum      = tmpPayloadGenMetaData.truncatedPktNum;
+        let pmtuAlignedStartAddr = tmpPayloadGenMetaData.pmtuAlignedStartAddr;
+        let isZeroPayloadLen     = tmpPayloadGenMetaData.isZeroPayloadLen;
+
         if (!isZeroPayloadLen) begin
             let dmaReadCntrlReq = DmaReadCntrlReq {
                 sglDmaReadMetaData: DmaReadMetaDataSGL {
@@ -1867,70 +2178,96 @@ module mkPayloadGenerator#(
             };
             dmaReadCntrl.srvPort.request.put(dmaReadCntrlReq);
         end
-        adjustReqPktLenQ.enq(tuple2(payloadGenReq, isZeroPayloadLen));
-        // $display(
-        //     "time=%0t: mkPayloadGenerator recvReq", $time,
-        //     ", payloadGenReq=", fshow(payloadGenReq)
-        // );
-    endrule
 
-    rule recvDmaReadCntrlResp if (!clearAll);
-        let dmaReadCntrlResp <- dmaReadCntrl.srvPort.response.get;
-        sgePayloadOutQ.enq(dmaReadCntrlResp.dmaReadResp.dataStream);
+        let {
+            secondChunkStartAddr, tmpLastPktLen, pktNumAddOne,
+            notFullPkt, hasExtraPkt, hasResidue
+        } = stepTwoCalcPktNumAndPktLenByAddrAndPMTU(
+            pmtuAlignedStartAddr, payloadGenReq.pmtu, pmtuMask,
+            addrAndLenLowPartSum, truncatedPktNum
+        );
+
+        let tmpAdjustFirstAndLastPktLen = TmpAdjustFirstAndLastPktLen {
+            origRemoteAddr      : payloadGenReq.raddr,
+            secondChunkStartAddr: secondChunkStartAddr,
+            totalLen            : payloadGenReq.totalLen,
+            truncatedPktNum     : truncatedPktNum,
+            pktNumAddOne        : pktNumAddOne,
+            lenLowPart          : lenLowPart,
+            maxFirstPktLen      : maxFirstPktLen,
+            tmpLastPktLen       : tmpLastPktLen,
+            pmtuLen             : pmtuLen,
+            pmtu                : payloadGenReq.pmtu,
+            notFullPkt          : notFullPkt,
+            hasExtraPkt         : hasExtraPkt,
+            hasResidue          : hasResidue,
+            isZeroPayloadLen    : isZeroPayloadLen,
+            shouldAddPadding    : payloadGenReq.addPadding
+        };
+        adjustFirstAndLastPktLenQ.enq(tmpAdjustFirstAndLastPktLen);
     endrule
 
     rule adjustFirstAndLastPktLen if (!clearAll);
-        let { payloadGenReq, isZeroPayloadLen } = adjustReqPktLenQ.first;
-        adjustReqPktLenQ.deq;
+        let tmpAdjustFirstAndLastPktLen = adjustFirstAndLastPktLenQ.first;
+        adjustFirstAndLastPktLenQ.deq;
 
-        let totalLen = payloadGenReq.totalLen;
-        // if (!isZeroPayloadLen) begin
-        //     let sglTotalPayloadLenMetaData = dmaReadCntrl.sglTotalPayloadLenMetaDataPipeOut.first;
-        //     dmaReadCntrl.sglTotalPayloadLenMetaDataPipeOut.deq;
-        //     totalLen = sglTotalPayloadLenMetaData.totalLen;
-        // end
-        let { truncatedPktNum, residue } = truncateLenByPMTU(totalLen, payloadGenReq.pmtu);
-        let origPktNum = truncatedPktNum + (isZeroR(residue) ? 0 : 1);
+        let origRemoteAddr       = tmpAdjustFirstAndLastPktLen.origRemoteAddr;
+        let secondChunkStartAddr = tmpAdjustFirstAndLastPktLen.secondChunkStartAddr;
+        let totalLen             = tmpAdjustFirstAndLastPktLen.totalLen;
+        let truncatedPktNum      = tmpAdjustFirstAndLastPktLen.truncatedPktNum;
+        let pktNumAddOne         = tmpAdjustFirstAndLastPktLen.pktNumAddOne;
+        let lenLowPart           = tmpAdjustFirstAndLastPktLen.lenLowPart;
+        let maxFirstPktLen       = tmpAdjustFirstAndLastPktLen.maxFirstPktLen;
+        let tmpLastPktLen        = tmpAdjustFirstAndLastPktLen.tmpLastPktLen;
+        let pmtuLen              = tmpAdjustFirstAndLastPktLen.pmtuLen;
+        let pmtu                 = tmpAdjustFirstAndLastPktLen.pmtu;
+        let notFullPkt           = tmpAdjustFirstAndLastPktLen.notFullPkt;
+        let hasExtraPkt          = tmpAdjustFirstAndLastPktLen.hasExtraPkt;
+        let hasResidue           = tmpAdjustFirstAndLastPktLen.hasResidue;
+        let isZeroPayloadLen     = tmpAdjustFirstAndLastPktLen.isZeroPayloadLen;
+        let shouldAddPadding     = tmpAdjustFirstAndLastPktLen.shouldAddPadding;
 
         let {
-            pmtuLen, firstPktLen, lastPktLen, totalPktNum, secondChunkStartAddr //, isSinglePkt
-        } = calcPktNumAndPktLenByAddrAndPMTU(
-            payloadGenReq.raddr, totalLen, payloadGenReq.pmtu
+            firstPktLen, lastPktLen, totalPktNum
+        } = stepThreeCalcPktNumAndPktLenByAddrAndPMTU(
+            truncatedPktNum, pktNumAddOne, lenLowPart, maxFirstPktLen,
+            tmpLastPktLen, pmtuLen, notFullPkt, hasExtraPkt, hasResidue
         );
 
-        let adjustMetaData = TmpAdjustMetaData {
-            firstRemoteAddr : payloadGenReq.raddr,
+        let adjustTotalPayloadMetaData = TmpAdjustTotalPayloadMetaData {
+            firstRemoteAddr : origRemoteAddr,
             secondRemoteAddr: secondChunkStartAddr,
             totalLen        : totalLen,
             totalPktNum     : totalPktNum,
-            origPktNum      : origPktNum,
             firstPktLen     : firstPktLen,
             lastPktLen      : lastPktLen,
             pmtuLen         : pmtuLen,
-            pmtu            : payloadGenReq.pmtu,
-            isZeroPayloadLen: isZeroPayloadLen
+            pmtu            : pmtu,
+            isZeroPayloadLen: isZeroPayloadLen,
+            shouldAddPadding: shouldAddPadding
         };
-        adjustedFirstAndLastPktLenQ.enq(adjustMetaData);
+        adjustTotalPayloadMetaDataQ.enq(adjustTotalPayloadMetaData);
         // $display(
-        //     "time=%0t: mkPayloadGenerator adjustFirstAndLastPktLen", $time,
-        //     ", payloadGenReq=", fshow(payloadGenReq)
+        //     "time=%0t: mkPayloadGenerator issueDmaReqAndAdjustFirstAndLastPktLen", $time,
+        //     // ", payloadGenReq=", fshow(payloadGenReq),
+        //     ", isZeroPayloadLen=", fshow(isZeroPayloadLen)
         // );
     endrule
 
     rule calcAdjustedTotalPayloadMetaData if (!clearAll);
-        let adjustMetaData = adjustedFirstAndLastPktLenQ.first;
-        adjustedFirstAndLastPktLenQ.deq;
+        let adjustTotalPayloadMetaData = adjustTotalPayloadMetaDataQ.first;
+        adjustTotalPayloadMetaDataQ.deq;
 
-        let firstRemoteAddr  = adjustMetaData.firstRemoteAddr;
-        let secondRemoteAddr = adjustMetaData.secondRemoteAddr;
-        let totalLen         = adjustMetaData.totalLen;
-        let totalPktNum      = adjustMetaData.totalPktNum;
-        let origPktNum       = adjustMetaData.origPktNum;
-        let firstPktLen      = adjustMetaData.firstPktLen;
-        let lastPktLen       = adjustMetaData.lastPktLen;
-        let pmtuLen          = adjustMetaData.pmtuLen;
-        let pmtu             = adjustMetaData.pmtu;
-        let isZeroPayloadLen = adjustMetaData.isZeroPayloadLen;
+        let firstRemoteAddr  = adjustTotalPayloadMetaData.firstRemoteAddr;
+        let secondRemoteAddr = adjustTotalPayloadMetaData.secondRemoteAddr;
+        let totalLen         = adjustTotalPayloadMetaData.totalLen;
+        let totalPktNum      = adjustTotalPayloadMetaData.totalPktNum;
+        let firstPktLen      = adjustTotalPayloadMetaData.firstPktLen;
+        let lastPktLen       = adjustTotalPayloadMetaData.lastPktLen;
+        let pmtuLen          = adjustTotalPayloadMetaData.pmtuLen;
+        let pmtu             = adjustTotalPayloadMetaData.pmtu;
+        let isZeroPayloadLen = adjustTotalPayloadMetaData.isZeroPayloadLen;
+        let shouldAddPadding = adjustTotalPayloadMetaData.shouldAddPadding;
 
         let origLastFragValidByteNum     = calcLastFragValidByteNum(totalLen);
         let firstPktLastFragValidByteNum = calcLastFragValidByteNum(firstPktLen);
@@ -1941,35 +2278,51 @@ module mkPayloadGenerator#(
         let lastPktPadCnt   = calcPadCnt(lastPktLen);
         let isOnlyPkt       = isLessOrEqOneR(totalPktNum);
 
+        let firstPktLastFragValidByteNumWithPadding = firstPktLastFragValidByteNum + zeroExtend(firstPktPadCnt);
+        let lastPktLastFragValidByteNumWithPadding  = lastPktLastFragValidByteNum  + zeroExtend(lastPktPadCnt);
+        immAssert(
+            (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - zeroExtend(firstPktPadCnt) >= firstPktLastFragValidByteNum) &&
+            (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - zeroExtend(lastPktPadCnt)  >= lastPktLastFragValidByteNum),
+            "padding assertion @ mkPayloadGenerator",
+            $format(
+                "firstPktLastFragValidByteNum=%0d", firstPktLastFragValidByteNum,
+                " + firstPktPadCnt=%0d", firstPktPadCnt,
+                " should not > DATA_BUS_BYTE_WIDTH=%0d", valueOf(DATA_BUS_BYTE_WIDTH),
+                ", and lastPktLastFragValidByteNum=%0d", lastPktLastFragValidByteNum,
+                " + lastPktPadCnt=%0d", lastPktPadCnt,
+                " should not > DATA_BUS_BYTE_WIDTH=%0d", valueOf(DATA_BUS_BYTE_WIDTH)
+            )
+        );
+
         let adjustedTotalPayloadMetaData = AdjustedTotalPayloadMetaData {
             firstPktLen                  : firstPktLen,
             firstPktFragNum              : firstPktFragNum,
             firstPktLastFragValidByteNum : firstPktLastFragValidByteNum,
             origLastFragValidByteNum     : origLastFragValidByteNum,
             adjustedPktNum               : totalPktNum,
-            origPktNum                   : origPktNum,
             pmtu                         : pmtu
         };
         if (!isZeroPayloadLen) begin
             adjustedTotalPayloadMetaDataQ.enq(adjustedTotalPayloadMetaData);
         end
 
-        let paddingMetaData = TmpPaddingMetaData {
-            firstRemoteAddr             : firstRemoteAddr,
-            secondRemoteAddr            : secondRemoteAddr,
-            firstPktLen                 : firstPktLen,
-            lastPktLen                  : lastPktLen,
-            pmtuLen                     : pmtuLen,
-            firstPktLastFragValidByteNum: firstPktLastFragValidByteNum,
-            firstPktPadCnt              : firstPktPadCnt,
-            lastPktLastFragValidByteNum : lastPktLastFragValidByteNum,
-            lastPktPadCnt               : lastPktPadCnt,
-            totalPktNum                 : totalPktNum,
-            pmtu                        : pmtu,
-            isOnlyPkt                   : isOnlyPkt,
-            isZeroPayloadLen            : isZeroPayloadLen
+        let tmpPayloadGenRespData = TmpPayloadGenRespData {
+            firstRemoteAddr                        : firstRemoteAddr,
+            secondRemoteAddr                       : secondRemoteAddr,
+            firstPktLen                            : firstPktLen,
+            lastPktLen                             : lastPktLen,
+            pmtuLen                                : pmtuLen,
+            firstPktLastFragValidByteNumWithPadding: firstPktLastFragValidByteNumWithPadding,
+            lastPktLastFragValidByteNumWithPadding : lastPktLastFragValidByteNumWithPadding,
+            firstPktPadCnt                         : firstPktPadCnt,
+            lastPktPadCnt                          : lastPktPadCnt,
+            totalPktNum                            : totalPktNum,
+            pmtu                                   : pmtu,
+            isOnlyPkt                              : isOnlyPkt,
+            isZeroPayloadLen                       : isZeroPayloadLen,
+            shouldAddPadding                       : shouldAddPadding
         };
-        addPadCntQ.enq(paddingMetaData);
+        genPayloadRespQ.enq(tmpPayloadGenRespData);
 
         let totalMetaData = PayloadGenTotalMetaData {
             // totalLen        : totalLen,
@@ -1980,44 +2333,29 @@ module mkPayloadGenerator#(
         totalMetaDataOutQ.enq(totalMetaData);
         // $display(
         //     "time=%0t: mkPayloadGenerator calcAdjustedTotalPayloadMetaData", $time,
-        //     ", adjustedTotalPayloadMetaData=", fshow(adjustedTotalPayloadMetaData)
+        //     // ", adjustedTotalPayloadMetaData=", fshow(adjustedTotalPayloadMetaData),
+        //     ", isZeroPayloadLen=", fshow(isZeroPayloadLen)
         // );
     endrule
 
-    rule genRespAndAddPadding if (!clearAll);
-        let paddingMetaData = addPadCntQ.first;
+    rule genPayloadGenResp if (!clearAll);
+        let tmpPayloadGenRespData = genPayloadRespQ.first;
 
-        let firstRemoteAddr              = paddingMetaData.firstRemoteAddr;
-        let secondRemoteAddr             = paddingMetaData.secondRemoteAddr;
-        let firstPktLen                  = paddingMetaData.firstPktLen;
-        let lastPktLen                   = paddingMetaData.lastPktLen;
-        let pmtuLen                      = paddingMetaData.pmtuLen;
-        let firstPktLastFragValidByteNum = paddingMetaData.firstPktLastFragValidByteNum;
-        let firstPktPadCnt               = paddingMetaData.firstPktPadCnt;
-        let lastPktLastFragValidByteNum  = paddingMetaData.lastPktLastFragValidByteNum;
-        let lastPktPadCnt                = paddingMetaData.lastPktPadCnt;
-        let totalPktNum                  = paddingMetaData.totalPktNum;
-        let pmtu                         = paddingMetaData.pmtu;
-        let isOnlyPkt                    = paddingMetaData.isOnlyPkt;
-        let isZeroPayloadLen             = paddingMetaData.isZeroPayloadLen;
+        let firstRemoteAddr                         = tmpPayloadGenRespData.firstRemoteAddr;
+        let secondRemoteAddr                        = tmpPayloadGenRespData.secondRemoteAddr;
+        let firstPktLen                             = tmpPayloadGenRespData.firstPktLen;
+        let lastPktLen                              = tmpPayloadGenRespData.lastPktLen;
+        let pmtuLen                                 = tmpPayloadGenRespData.pmtuLen;
+        let firstPktLastFragValidByteNumWithPadding = tmpPayloadGenRespData.firstPktLastFragValidByteNumWithPadding;
+        let lastPktLastFragValidByteNumWithPadding  = tmpPayloadGenRespData.lastPktLastFragValidByteNumWithPadding;
+        let firstPktPadCnt                          = tmpPayloadGenRespData.firstPktPadCnt;
+        let lastPktPadCnt                           = tmpPayloadGenRespData.lastPktPadCnt;
+        let totalPktNum                             = tmpPayloadGenRespData.totalPktNum;
+        let pmtu                                    = tmpPayloadGenRespData.pmtu;
+        let isOnlyPkt                               = tmpPayloadGenRespData.isOnlyPkt;
+        let isZeroPayloadLen                        = tmpPayloadGenRespData.isZeroPayloadLen;
+        let shouldAddPadding                        = tmpPayloadGenRespData.shouldAddPadding;
 
-        let firstPktLastFragValidByteNumWithPadding = firstPktLastFragValidByteNum + zeroExtend(firstPktPadCnt);
-        let lastPktLastFragValidByteNumWithPadding  = lastPktLastFragValidByteNum  + zeroExtend(lastPktPadCnt);
-        let firstPktLastFragByteEnWithPadding = genByteEn(firstPktLastFragValidByteNumWithPadding);
-        let lastPktLastFragByteEnWithPadding  = genByteEn(lastPktLastFragValidByteNumWithPadding);
-        immAssert(
-            (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - zeroExtend(firstPktPadCnt) >= firstPktLastFragValidByteNum) &&
-            (fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - zeroExtend(lastPktPadCnt)  >= lastPktLastFragValidByteNum),
-            "zero SGE assertion @ mkPayloadGenerator",
-            $format(
-                "firstPktLastFragValidByteNum=%0d", firstPktLastFragValidByteNum,
-                " + firstPktPadCnt=%0d", firstPktPadCnt,
-                " should not > DATA_BUS_BYTE_WIDTH=%0d", valueOf(DATA_BUS_BYTE_WIDTH),
-                ", and lastPktLastFragValidByteNum=%0d", lastPktLastFragValidByteNum,
-                " + lastPktPadCnt=%0d", lastPktPadCnt,
-                " should not > DATA_BUS_BYTE_WIDTH=%0d", valueOf(DATA_BUS_BYTE_WIDTH)
-            )
-        );
         let oneAsPSN   = 1;
         let remoteAddr = firstRemoteAddr;
         let nextRemoteAddr  = pktRemoteAddrReg;
@@ -2026,10 +2364,10 @@ module mkPayloadGenerator#(
             nextRemoteAddr = secondRemoteAddr;
 
             if (isOnlyPkt) begin
-                remainingPktNum = 0;
+                remainingPktNum = 1;
             end
             else begin
-                remainingPktNum = totalPktNum - 2;
+                remainingPktNum = totalPktNum - 1;
             end
         end
         else begin
@@ -2041,68 +2379,117 @@ module mkPayloadGenerator#(
         end
 
         let isFirstPkt = isFirstPktReg;
-        let isLastPkt  = isOnlyPkt || (!isFirstPktReg && isZeroR(remainingPktNumReg));
+        let isLastPkt  = isOnlyPkt || (!isFirstPktReg && isOneR(remainingPktNumReg));
         let pktLen = isFirstPkt ? firstPktLen    : (isLastPkt ? lastPktLen : pmtuLen);
         let padCnt = isFirstPkt ? firstPktPadCnt : (isLastPkt ? lastPktPadCnt : 0);
 
-        if (isZeroPayloadLen) begin
-            isFirstPktReg <= True;
-            addPadCntQ.deq;
+        let payloadGenResp = PayloadGenRespSG {
+            raddr           : remoteAddr,
+            pktLen          : pktLen,
+            padCnt          : padCnt,
+            isFirst         : isFirstPkt,
+            isLast          : isLastPkt
+        };
 
-            let payloadGenResp = PayloadGenRespSG {
-                raddr           : remoteAddr,
-                pktLen          : 0,
-                padCnt          : 0,
-                isFirst         : True,
-                isLast          : True
-            };
+        let firstPktLastFragByteEnWithPadding = genByteEn(firstPktLastFragValidByteNumWithPadding);
+        let lastPktLastFragByteEnWithPadding  = genByteEn(lastPktLastFragValidByteNumWithPadding);
+        let tmpPaddingData = TmpPaddingData {
+            // firstPktLastFragValidByteNumWithPadding: firstPktLastFragValidByteNumWithPadding,
+            // lastPktLastFragValidByteNumWithPadding : lastPktLastFragValidByteNumWithPadding,
+            firstPktLastFragByteEnWithPadding      : firstPktLastFragByteEnWithPadding,
+            lastPktLastFragByteEnWithPadding       : lastPktLastFragByteEnWithPadding,
+            isZeroPayloadLen                       : isZeroPayloadLen,
+            shouldAddPadding                       : shouldAddPadding
+        };
+        addPaddingDataQ.enq(tuple2(payloadGenResp, tmpPaddingData));
+
+        if (isZeroPayloadLen) begin
+            immAssert(
+                isZero(pktLen) && isZero(padCnt),
+                "pktLen padCnt assertion @ mkPayloadGenerator",
+                $format(
+                    "pktLen=%0d", pktLen,
+                    " and padCnt=%0d", padCnt,
+                    " should both be zero when isZeroPayloadLen=", fshow(isZeroPayloadLen)
+                )
+            );
+        end
+
+        isFirstPktReg      <= isLastPkt;
+        pktRemoteAddrReg   <= nextRemoteAddr;
+        remainingPktNumReg <= remainingPktNum;
+        if (isLastPkt) begin
+            genPayloadRespQ.deq;
+        end
+        // $display(
+        //     "time=%0t: genPayloadGenResp", $time,
+        //     ", payloadGenResp=", fshow(payloadGenResp),
+        //     ", isFirstPkt=", fshow(isFirstPkt),
+        //     ", isLastPkt=", fshow(isLastPkt),
+        //     ", isOnlyPkt=", fshow(isOnlyPkt),
+        //     ", totalPktNum=%0d", totalPktNum,
+        //     ", remainingPktNum=%0d", remainingPktNum,
+        //     ", remainingPktNumReg=%0d", remainingPktNumReg
+        // );
+    endrule
+
+    rule outputAndAddPadding if (!clearAll);
+        let { payloadGenResp, tmpPaddingData } = addPaddingDataQ.first;
+
+        // let firstPktLastFragValidByteNumWithPadding = tmpPaddingData.firstPktLastFragValidByteNumWithPadding;
+        // let lastPktLastFragValidByteNumWithPadding  = tmpPaddingData.lastPktLastFragValidByteNumWithPadding;
+        let firstPktLastFragByteEnWithPadding = tmpPaddingData.firstPktLastFragByteEnWithPadding;
+        let lastPktLastFragByteEnWithPadding  = tmpPaddingData.lastPktLastFragByteEnWithPadding;
+        let isZeroPayloadLen = tmpPaddingData.isZeroPayloadLen;
+        let shouldAddPadding = tmpPaddingData.shouldAddPadding;
+        // let firstPktLastFragByteEnWithPadding = genByteEn(firstPktLastFragValidByteNumWithPadding);
+        // let lastPktLastFragByteEnWithPadding  = genByteEn(lastPktLastFragValidByteNumWithPadding);
+
+        let isFirstPkt = payloadGenResp.isFirst;
+        let isLastPkt  = payloadGenResp.isLast;
+        if (isZeroPayloadLen) begin
+            addPaddingDataQ.deq;
             payloadGenRespQ.enq(payloadGenResp);
+
+            immAssert(
+                isFirstPkt && isLastPkt,
+                "isZeroPayloadLen assertion @ mkPayloadGenerator",
+                $format(
+                    "isFirstPkt=", fshow(isFirstPkt),
+                    " and isLastPkt=", fshow(isLastPkt),
+                    " should both be true when isZeroPayloadLen=", fshow(isZeroPayloadLen)
+                )
+            );
         end
         else begin
             let curPayloadFrag = adjustedPayloadPipeOut.first;
             adjustedPayloadPipeOut.deq;
 
-            let isLastFragInFirstPkt = curPayloadFrag.isLast && isFirstPkt;
-            let isLastFragInLastPkt  = curPayloadFrag.isLast && isLastPkt;
-
-            if (isLastFragInLastPkt) begin
-                addPadCntQ.deq;
-
-                if (shouldAddPadding) begin
-                    curPayloadFrag.byteEn = lastPktLastFragByteEnWithPadding;
-                end
-            end
-            if (isLastFragInFirstPkt) begin
-                if (shouldAddPadding) begin
-                    curPayloadFrag.byteEn = firstPktLastFragByteEnWithPadding;
-                end
-            end
-
-            if (curPayloadFrag.isLast) begin
-                isFirstPktReg      <= isLastFragInLastPkt;
-                pktRemoteAddrReg   <= nextRemoteAddr;
-                remainingPktNumReg <= remainingPktNum;
-            end
             // Generate response by the end of the payload
             // Every segmented payload has a payloadGenResp
             if (curPayloadFrag.isLast) begin
-                let payloadGenResp = PayloadGenRespSG {
-                    raddr           : remoteAddr,
-                    pktLen          : pktLen,
-                    padCnt          : padCnt,
-                    isFirst         : isFirstPkt,
-                    isLast          : isLastPkt
-                };
+                if (shouldAddPadding) begin
+                    if (isFirstPkt) begin
+                        curPayloadFrag.byteEn = firstPktLastFragByteEnWithPadding;
+                    end
+                    else if (isLastPkt) begin
+                        curPayloadFrag.byteEn = lastPktLastFragByteEnWithPadding;
+                    end
+                end
+
+                addPaddingDataQ.deq;
                 payloadGenRespQ.enq(payloadGenResp);
                 // $display(
-                //     "time=%0t: genRespAndAddPadding", $time,
+                //     "time=%0t: outputAndAddPadding", $time,
                 //     ", payloadGenResp=", fshow(payloadGenResp)
                 // );
             end
-
             payloadBufQ.enq(curPayloadFrag);
+
+            // let isLastFragInFirstPkt = curPayloadFrag.isLast && isFirstPkt;
+            // let isLastFragInLastPkt  = curPayloadFrag.isLast && isLastPkt;
             // $display(
-            //     "time=%0t: genRespAndAddPadding", $time,
+            //     "time=%0t: outputAndAddPadding", $time,
             //     ", remainingPktNumReg=%0d", remainingPktNumReg,
             //     ", isFirstPktReg=", fshow(isFirstPktReg),
             //     ", isOnlyPkt=", fshow(isOnlyPkt),
@@ -2114,13 +2501,6 @@ module mkPayloadGenerator#(
             //     ", curPayloadFrag.isLast=", fshow(curPayloadFrag.isLast)
             // );
         end
-        // $display(
-        //     "time=%0t: PayloadGenerator genRespAndAddPadding", $time,
-        //     ", isZeroPayloadLen=", fshow(isZeroPayloadLen),
-        //     ", isFirstPkt=", fshow(isFirstPkt),
-        //     ", isLastPkt=", fshow(isLastPkt),
-        //     ", remainingPktNum=%0d", remainingPktNum
-        // );
     endrule
 
     interface srvPort = toGPServer(payloadGenReqQ, payloadGenRespQ);
