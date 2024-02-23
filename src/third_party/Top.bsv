@@ -12,6 +12,9 @@ import UdpIpArpEthCmacRxTx :: *;
 import Ports :: *;
 import EthernetTypes :: *;
 import SemiFifo :: *;
+import StreamHandler :: *;
+import XilinxAxiStreamAsyncFifo :: *;
+import UdpIpEthCmacRxTx :: *;
 
 import PipeIn :: *;
 import RQ :: *;
@@ -62,117 +65,68 @@ module mkBsvTop(
     BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc
 );
 
-    Reg#(Bool)  udpParamNotSetReg <- mkReg(True);
+    
 
     XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper(clocked_by slowClock, reset_by slowReset);
     XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(slowClock, slowReset);
-    TopCoreIfc bsvTopCore <- mkTopCore(slowClock, slowReset);
+    TopCoreRdma bsvTopCore <- mkTopCore(slowClock, slowReset);
     mkConnection(xdmaAxiLiteWrap.csrWriteClt, bsvTopCore.csrWriteSrv);
     mkConnection(xdmaAxiLiteWrap.csrReadClt, bsvTopCore.csrReadSrv);
     mkConnection(xdmaWrap.dmaReadSrv, bsvTopCore.dmaReadClt);
     mkConnection(xdmaWrap.dmaWriteSrv, bsvTopCore.dmaWriteClt);
 
-
+    let udpClk <- exposeCurrentClock;
+    let udpReset <- exposeCurrentReset;
 
 
     Bool isCmacTxWaitRxAligned = True;
     Integer syncBramBufDepth = 32;
     Integer cdcSyncStages = 4;
+    let isEnableFlowControl = False;
+    Bool isEnableRsFec = True;
 
-    let udp <- mkUdpIpArpEthCmacRxTx(
-        `IS_SUPPORT_RDMA,
-        isCmacTxWaitRxAligned,
+    let axiStream512TxOut <- mkDoubleAxiStreamPipeOut(bsvTopCore.axiStreamOutUdp);
+    let axiStreamRxIn <- mkPutToPipeIn(bsvTopCore.axiStreamInUdp);
+    let axiStream512RxIn <- mkDoubleAxiStreamPipeIn(axiStreamRxIn);
+
+    let axiStream512Sync <- mkDuplexAxiStreamAsyncFifo(
         syncBramBufDepth,
         cdcSyncStages,
+        udpClk,
+        udpReset,
         cmacRxTxClk,
         cmacRxReset,
-        cmacTxReset
+        cmacTxReset,
+        axiStream512RxIn,
+        axiStream512TxOut
     );
 
-    rule setInitParamUDP if (udpParamNotSetReg);
-        udp.udpConfig.put(UdpConfig{
-            macAddr: 0,
-            ipAddr: 0,
-            netMask: 32'hFFFFFFFF,
-            gateWay: 1
-        });
-        udpParamNotSetReg <= False;
-    endrule
 
-    rule forawrdTxStream;
-        bsvTopCore.rdmaDataStreamPipeOut.deq;
-        let data = bsvTopCore.rdmaDataStreamPipeOut.first;
-        $display("rdma_A_out_data = ", fshow(data));
-        udp.dataStreamTxIn.put(Ports::DataStream{
-            data:       data.data,
-            byteEn:     data.byteEn,
-            isFirst:    data.isFirst,
-            isLast:     data.isLast
-        });
-    endrule
-
-    rule forwardTxMeta;
-        bsvTopCore.udpInfoPipeOut.deq;
-        let meta = bsvTopCore.udpInfoPipeOut.first;
-        $display("rdma_A_out_meta = ", fshow(meta));
-
-        IpAddr dstIP = unpack(0);
-
-        if (meta.ipAddr matches tagged IPv4 .ipv4) begin
-            dstIP = unpack(pack(ipv4));
-        end 
-        else begin
-            $display("Error: Dest IP addr is not IPv4");
-            $finish;
-        end
-
-        udp.udpIpMetaDataTxIn.put(UdpIpMetaData{
-            dataLen: zeroExtend(meta.pktLen),
-            ipAddr:  dstIP,
-            ipDscp:  0,
-            ipEcn:   0,
-            dstPort: fromInteger(valueOf(TEST_UDP_PORT)),
-            srcPort: fromInteger(valueOf(TEST_UDP_PORT))
-        });
-
-    endrule
-
-    rule forwardRxStream;
-
-        if (udp.udpIpMetaDataRxOut.notEmpty) begin
-            udp.udpIpMetaDataRxOut.deq;
-            $display("udp recv meta = ", fshow(udp.udpIpMetaDataRxOut.first));
-        end
-
-        if (udp.dataStreamRxOut.notEmpty) begin
-            let data = udp.dataStreamRxOut.first;
-            udp.dataStreamRxOut.deq;
-
-            let outData = DataStream {
-                data: swapEndian(data.data),
-                byteEn: swapEndianBit(data.byteEn),
-                isLast: data.isLast,
-                isFirst: data.isFirst
-            };
-            bsvTopCore.rdmaDataStreamInput.put(outData);
-            $display("udp recv = ", fshow(outData));
-        end
-
-    endrule
-
+    SemiFifo::PipeOut#(FlowControlReqVec) txFlowCtrlReqVec <- mkDummyPipeOut;
+    SemiFifo::PipeIn#(FlowControlReqVec) rxFlowCtrlReqVec <- mkDummyPipeIn;
+    let xilinxCmacCtrl <- mkXilinxCmacController(
+        isEnableRsFec,
+        isEnableFlowControl,
+        isCmacTxWaitRxAligned,
+        axiStream512Sync.dstPipeOut,
+        axiStream512Sync.dstPipeIn,
+        txFlowCtrlReqVec,
+        rxFlowCtrlReqVec,
+        cmacRxReset,
+        cmacTxReset,
+        clocked_by cmacRxTxClk
+    );
 
     interface xdmaChannel = xdmaWrap.xdmaChannel;
     interface axilRegBlock = xdmaAxiLiteWrap.cntrlAxil;
-    interface cmacController = udp.cmacController;
+    interface cmacController = xilinxCmacCtrl;
 endmodule
 
-interface TopCoreIfc;
-    interface Put#(DataStream)      rdmaDataStreamInput;
-    interface DataStreamPipeOut     rdmaDataStreamPipeOut;
-    interface PipeOut#(PktInfo4UDP) udpInfoPipeOut;
+
+interface TopCoreRdma;
+    interface AxiStream256PipeOut axiStreamOutUdp;
+    interface Put#(AxiStream256)   axiStreamInUdp;
     
-
-
     interface UserLogicDmaReadWideClt dmaReadClt;
     interface UserLogicDmaWriteWideClt dmaWriteClt;
 
@@ -196,7 +150,7 @@ endinterface
 module mkTopCore(
     Clock slowClock, 
     Reset slowReset, 
-    TopCoreIfc ifc
+    TopCoreRdma ifc
 );
 
     // TODO try remove this proxy.
@@ -299,7 +253,6 @@ module mkTopCore(
     mkConnection(payloadConsumer.dmaWriteClt, bluerdmaDmaProxyForRQ.blueSideWriteSrv);
 
 
-
     Reg#(Bool) clearReg <- mkReg(True);
     let sq <- mkSQ(clearReg);
     mkConnection(sq.dmaReadClt, addrTranslatorForSQ.sqReqInputSrv);
@@ -311,6 +264,95 @@ module mkTopCore(
             clearReg <= False;
         end
     endrule
+
+
+
+    let udp <- mkGenericUdpIpEthRxTx(`IS_SUPPORT_RDMA);
+
+    Reg#(Bool)  udpParamNotSetReg <- mkReg(True);
+
+    rule setInitParamUDP if (udpParamNotSetReg);
+        udp.udpConfig.put(UdpConfig{
+            macAddr: 'hAABBCCDDEEFF,
+            ipAddr: 'h11223344,
+            netMask: 32'hFFFFFFFF,
+            gateWay: 1
+        });
+        udpParamNotSetReg <= False;
+    endrule
+
+    rule forawrdTxStream;
+        sq.sendQ.rdmaDataStreamPipeOut.deq;
+        let data = sq.sendQ.rdmaDataStreamPipeOut.first;
+        $display("rdma_A_out_data = ", fshow(data));
+        udp.dataStreamIn.put(Ports::DataStream{
+            data:       data.data,
+            byteEn:     data.byteEn,
+            isFirst:    data.isFirst,
+            isLast:     data.isLast
+        });
+    endrule
+
+    rule forwardTxMeta;
+        sq.sendQ.udpInfoPipeOut.deq;
+        let meta = sq.sendQ.udpInfoPipeOut.first;
+        $display("rdma_A_out_meta = ", fshow(meta));
+
+        IpAddr dstIP = unpack(0);
+
+        if (meta.ipAddr matches tagged IPv4 .ipv4) begin
+            dstIP = unpack(pack(ipv4));
+        end 
+        else begin
+            $display("Error: Dest IP addr is not IPv4");
+            $finish;
+        end
+
+        udp.udpIpMetaDataIn.put(UdpIpMetaData{
+            dataLen: zeroExtend(meta.pktLen),
+            ipAddr:  dstIP,
+            ipDscp:  0,
+            ipEcn:   0,
+            dstPort: fromInteger(valueOf(TEST_UDP_PORT)),
+            srcPort: fromInteger(valueOf(TEST_UDP_PORT))
+        });
+        udp.macMetaDataIn.put(MacMetaData{
+            macAddr: unpack(pack(meta.macAddr)),
+            ethType: fromInteger(valueOf(ETH_TYPE_IP))
+        });
+
+    endrule
+
+    rule forwardRxStream;
+
+        if (udp.udpIpMetaDataOut.notEmpty) begin
+            udp.udpIpMetaDataOut.deq;
+            $display("udp recv meta = ", fshow(udp.udpIpMetaDataOut.first));
+        end
+
+        if (udp.macMetaDataOut.notEmpty) begin
+            udp.macMetaDataOut.deq;
+            $display("udp recv mac meta = ", fshow(udp.macMetaDataOut.first));
+        end
+
+        if (udp.dataStreamOut.notEmpty) begin
+            let data = udp.dataStreamOut.first;
+            udp.dataStreamOut.deq;
+
+            let outData = DataStream {
+                // data: swapEndian(data.data),
+                // byteEn: swapEndianBit(data.byteEn),
+                data: data.data,
+                byteEn: data.byteEn,
+                isLast: data.isLast,
+                isFirst: data.isFirst
+            };
+            inputDataStreamQ.enq(outData);
+            $display("udp recv = ", fshow(outData));
+        end
+    endrule
+
+
 
     // use descending_urgency here since we need a simple fix-priority arbitter here.
     (* descending_urgency = "forwardRecvQueuePktReportDescToRingbuf, forwardSendQueueReportDescToRingbuf" *)
@@ -331,9 +373,9 @@ module mkTopCore(
         ringbufPool.c2hRings[1].enq(pack(desc));
     endrule
 
-    interface rdmaDataStreamInput       = toPut(inputDataStreamQ);
-    interface rdmaDataStreamPipeOut     = sq.sendQ.rdmaDataStreamPipeOut;
-    interface udpInfoPipeOut            = sq.sendQ.udpInfoPipeOut;
+    interface axiStreamOutUdp = udp.axiStreamOut;
+    interface axiStreamInUdp = udp.axiStreamIn;
+
 
     interface dmaReadClt = xdmaGearbox.h2cStreamClt;
     interface dmaWriteClt = xdmaGearbox.c2hStreamClt;

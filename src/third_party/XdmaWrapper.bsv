@@ -728,7 +728,7 @@ function FakeXdmaBeatByteNum calcFragByteNumFromByteEnWide(ByteEnWide fragByteEn
     return byteEnBitNum;
 endfunction
 
-module mkFakeXdma(Integer id, LoadFormat initData, FakeXdma ifc);
+module mkFakeXdma(Integer id, FakeXdma ifc);
     FIFOF#(UserLogicDmaH2cReq) xdmaH2cReqQ <- mkFIFOF;
     FIFOF#(UserLogicDmaH2cWideResp) xdmaH2cRespQ <- mkFIFOF;
     FIFOF#(UserLogicDmaC2hWideReq) xdmaC2hReqQ <- mkFIFOF;

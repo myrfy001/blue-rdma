@@ -16,6 +16,7 @@ import RdmaUtils :: *;
 import PrimUtils :: *;
 import StmtFSM::*;
 import Axi4LiteTypes :: *;
+import SemiFifo :: *;
 
 import ExtractAndPrependPipeOut :: *;
 
@@ -57,9 +58,9 @@ module mkTestTop(Empty);
     Reset fastReset <- exposeCurrentReset;
 
     RecvStreamMocker rsMocker <- mkRecvStreamMocker;
-    TopCoreIfc topA <- mkTopCore(slowClock, slowReset);
+    TopCoreRdma topA <- mkTopCore(slowClock, slowReset);
 
-    FakeXdma fakeXdmaA <- mkFakeXdma(1, tagged Hex "test_host_memory.hex", clocked_by slowClock, reset_by slowReset);
+    FakeXdma fakeXdmaA <- mkFakeXdma(1, clocked_by slowClock, reset_by slowReset);
 
     mkConnection(fakeXdmaA.xdmaH2cSrv, topA.dmaReadClt);
     mkConnection(fakeXdmaA.xdmaC2hSrv, topA.dmaWriteClt);
@@ -79,10 +80,10 @@ module mkTestTop(Empty);
     // loop tx stream to rx stream
     // mkConnection(toGet(topA.rdmaDataStreamPipeOut), topA.rdmaDataStreamInput);
     rule displayAndForwardWireData;
-        let d = topA.rdmaDataStreamPipeOut.first;
-        topA.rdmaDataStreamPipeOut.deq;
-        topA.rdmaDataStreamInput.put(d);
-        $display("on wire data: ", fshow(d));
+        let d = topA.axiStreamOutUdp.first;
+        topA.axiStreamOutUdp.deq;
+        topA.axiStreamInUdp.put(d);
+        $display("udp send data: ", fshow(d));
     endrule
 
     rule forwardBarReadReq;

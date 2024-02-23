@@ -23,8 +23,8 @@ WORKDIR = -fdir $(abspath .)
 BSVSRCDIR = -p +:$(abspath ../src) \
 			-p +:$(abspath ../src/third_party) \
 			-p +:$(abspath ../src/third_party/blue-wrapper/src) \
-			-p +:$(abspath ../src/third_party/blue-ethernet/src) \
-			-p +:$(abspath ../src/third_party/blue-ethernet/src/includes) \
+			-p +:$(abspath ../src/third_party/blue-udp/src) \
+			-p +:$(abspath ../src/third_party/blue-udp/src/includes) \
 			-p +:$(abspath ../src/third_party/blue-crc/src)
 
 
@@ -34,3 +34,6 @@ BSV_C_EXT_FILES += \
 DIRFLAGS = $(BSVSRCDIR) $(OUTDIR) $(WORKDIR)
 MISCFLAGS = -print-flags -show-timestamps -show-version -steps 6000000 -D IS_SUPPORT_RDMA=True # -D macro
 RUNTIMEFLAGS = +RTS -K4095M -RTS
+
+BLUE_CRC_DIR ?= ../src/third_party/blue-crc
+BLUE_UDP_CRC_TABLE_GEN_INFO_DIR ?= ../src/third_party/blue-udp/scripts

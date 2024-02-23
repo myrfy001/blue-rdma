@@ -375,8 +375,17 @@ if __name__ == "__main__":
         psn=SEND_SIDE_PSN,
     )
 
-    send_queue.sync_pointers()
+    # prepare send data
+    for i in range(4):
+        mock_nic.main_memory.buf[REQ_SIDE_VA_ADDR+i] = 0xBB + i
+        mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR+i] = 0
 
+    print(
+        bytes(mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR:RESP_SIDE_VA_ADDR+4]))
+
+    send_queue.sync_pointers()
+    meta_report_queue.deq_blocking()
     meta_report_queue.deq_blocking()
 
-    print(bytes(mock_nic.main_memory.buf[0x90000:0x90004]))
+    print(
+        bytes(mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR:RESP_SIDE_VA_ADDR+4]))

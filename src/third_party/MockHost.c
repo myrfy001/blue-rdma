@@ -48,13 +48,6 @@ uint32_t isPowerOfTwo(int num) {
 }
 
 uint64_t c_createBRAM(uint32_t word_width, uint64_t memory_size) {
-
-  FILE *fp = NULL;
-  char buff[200];
-  char hex_str[20];
-  uint32_t word_idx = 0;
-  int i, j;
-
   if (word_width < 8 || !isPowerOfTwo(word_width)) {
     fprintf(stderr, "ERROR: word must be multi of 8 bits\n");
     exit(EXIT_FAILURE);
@@ -68,26 +61,6 @@ uint64_t c_createBRAM(uint32_t word_width, uint64_t memory_size) {
   }
 
   fprintf(stdout, "create controlled BRAM with %lldB\n", (long long)size);
-
-  fp = fopen("test_host_memory.hex", "rt");
-  if (fp == NULL) {
-    fprintf(stderr, "ERROR: fail to open test_host_memory.hex\n");
-    exit(EXIT_FAILURE);
-  }
-  // read in each line: 16 words, each word 8 chars
-  while (fgets(buff, 200, fp) != NULL) {
-    for (i = 15; i >= 0; i--) {
-      // copy string to another hex_str
-      for (j = 0; j < 8; j++) {
-        hex_str[j] = buff[i * 8 + j];
-      }
-      hex_str[8] = '\0';
-      // read from it
-      sscanf(hex_str, "%x", &(p[word_idx]));
-      word_idx++;
-    }
-  }
-  fclose(fp);
 
   rpc_socket_fd = connect_to_server("0.0.0.0", 9876);
   pthread_mutex_init(&mutex, NULL);
