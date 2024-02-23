@@ -79,8 +79,9 @@ void do_rpc(void *req_data, ssize_t req_len, void *resp_data,
   while (resp_len > 0) {
     read_cnt = read(rpc_socket_fd, dst_ptr, resp_len);
     if (read_cnt == 0) {
-      fprintf(stderr, "ERROR: bluesim connection to python broken\n");
-      exit(EXIT_FAILURE);
+      fprintf(stderr,
+              "Exit simulation since mockhost server closed connection.\n");
+      exit(EXIT_SUCCESS);
     }
     dst_ptr += read_cnt;
     resp_len -= read_cnt;

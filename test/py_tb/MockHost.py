@@ -73,14 +73,20 @@ class BluesimRpcServer:
         self.rpc_code_2_payload_size_map = {}
         self.listen_addr = lister_addr
         self.listen_port = listen_port
+        self.server_thread = None
+        self.stop_flag = False
 
     def register_opcode(self, opcode, handler, payload_size):
         self.rpc_code_2_handler_map[opcode] = handler
         self.rpc_code_2_payload_size_map[opcode] = payload_size
 
     def run(self):
-        server_thread = threading.Thread(target=self._run)
-        server_thread.start()
+        self.stop_flag = False
+        self.server_thread = threading.Thread(target=self._run)
+        self.server_thread.start()
+
+    def stop(self):
+        self.stop_flag = True
 
     def _run(self):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -92,11 +98,12 @@ class BluesimRpcServer:
 
         raw_req_buf = bytearray(4096)
 
-        while True:
+        while not self.stop_flag:
             client_socket, client_address = server_socket.accept()
+            client_socket.settimeout(0.1)
             print('Client connected:', client_address)
 
-            while True:
+            while not self.stop_flag:
                 recv_pointer = 0
                 recv_cnt = client_socket.recv_into(
                     raw_req_buf, sizeof(CStructRpcHeader))
@@ -250,53 +257,53 @@ class MockNicAndHost:
         return resp.payload.value
 
 
-if __name__ == "__main__":
+TOTAL_MEMORY_SIZE = 1024 * 1024 * 64
+PGT_ENTRY_OFFSET = 0x200
+PGT_ENTRY_CNT = 0x20
+PGT_ENTRY_SIZE = 0x08
+# PGT_MR0_BASE_VA = 0xFBABCDCEEEEE0001
+PGT_MR0_BASE_VA = 0x0000000000000000
 
-    TOTAL_MEMORY_SIZE = 1024 * 1024 * 64
-    PGT_ENTRY_OFFSET = 0x200
-    PGT_ENTRY_CNT = 0x20
-    PGT_ENTRY_SIZE = 0x08
-    # PGT_MR0_BASE_VA = 0xFBABCDCEEEEE0001
-    PGT_MR0_BASE_VA = 0x0000000000000000
+CMD_QUEUE_H2C_RINGBUF_START_PA = 0x00
+CMD_QUEUE_C2H_RINGBUF_START_PA = 0x1000
+SEND_QUEUE_RINGBUF_START_PA = 0x2000
+META_REPORT_QUEUE_RINGBUF_START_PA = 0x3000
 
-    CMD_QUEUE_H2C_RINGBUF_START_PA = 0x00
-    CMD_QUEUE_C2H_RINGBUF_START_PA = 0x1000
-    SEND_QUEUE_RINGBUF_START_PA = 0x2000
-    META_REPORT_QUEUE_RINGBUF_START_PA = 0x3000
+PGT_TABLE_START_PA_IN_HOST_MEM = 0x10000
 
-    PGT_TABLE_START_PA_IN_HOST_MEM = 0x10000
+HUGEPAGE_2M_ADDR_MASK = 0xFFFFFFFFFFE00000
+HUGEPAGE_2M_BYTE_CNT = 0x200000
 
-    HUGEPAGE_2M_ADDR_MASK = 0xFFFFFFFFFFE00000
-    HUGEPAGE_2M_BYTE_CNT = 0x200000
+# MR_0_PA_START = 0x100000
+MR_0_PA_START = 0x0
 
-    # MR_0_PA_START = 0x100000
-    MR_0_PA_START = 0x0
+MR_0_PTE_COUNT = 0x20
+MR_0_LENGTH = MR_0_PTE_COUNT * HUGEPAGE_2M_BYTE_CNT
+print("MR_0_LENGTH=", hex(MR_0_LENGTH))
 
-    MR_0_PTE_COUNT = 0x20
-    MR_0_LENGTH = MR_0_PTE_COUNT * HUGEPAGE_2M_BYTE_CNT
-    print("MR_0_LENGTH=", hex(MR_0_LENGTH))
+print("PGT_MR0_BASE_VA=", hex(PGT_MR0_BASE_VA))
+# REQ_SIDE_VA_ADDR = (PGT_MR0_BASE_VA & HUGEPAGE_2M_ADDR_MASK) + 0x1FFFFE
+REQ_SIDE_VA_ADDR = (PGT_MR0_BASE_VA & HUGEPAGE_2M_ADDR_MASK) + 0x200000
+print("REQ_SIDE_VA_ADDR=", hex(REQ_SIDE_VA_ADDR))
+RESP_SIDE_VA_ADDR = (PGT_MR0_BASE_VA & HUGEPAGE_2M_ADDR_MASK) + 0x90000
+print("RESP_SIDE_VA_ADDR=", hex(RESP_SIDE_VA_ADDR))
 
-    print("PGT_MR0_BASE_VA=", hex(PGT_MR0_BASE_VA))
-    # REQ_SIDE_VA_ADDR = (PGT_MR0_BASE_VA & HUGEPAGE_2M_ADDR_MASK) + 0x1FFFFE
-    REQ_SIDE_VA_ADDR = (PGT_MR0_BASE_VA & HUGEPAGE_2M_ADDR_MASK) + 0x200000
-    print("REQ_SIDE_VA_ADDR=", hex(REQ_SIDE_VA_ADDR))
-    RESP_SIDE_VA_ADDR = (PGT_MR0_BASE_VA & HUGEPAGE_2M_ADDR_MASK) + 0x90000
-    print("RESP_SIDE_VA_ADDR=", hex(RESP_SIDE_VA_ADDR))
+SEND_SIDE_KEY = 0x6622
+RECV_SIDE_KEY = 0x6622
+PKEY_INDEX = 0
 
-    SEND_SIDE_KEY = 0x6622
-    RECV_SIDE_KEY = 0x6622
-    PKEY_INDEX = 0
+SEND_SIDE_QPN = 0x6611
+SEND_SIDE_PD_HANDLER = 0x6611  # in practise, this should be returned by hardware
 
-    SEND_SIDE_QPN = 0x6611
-    SEND_SIDE_PD_HANDLER = 0x6611  # in practise, this should be returned by hardware
+PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_256
 
-    PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_256
+RECV_SIDE_IP = 0x11223344
+RECE_SIDE_MAC = 0xAABBCCDDEEFF
+RECV_SIDE_QPN = 0x6611
+SEND_SIDE_PSN = 0x22
 
-    RECV_SIDE_IP = 0x11223344
-    RECE_SIDE_MAC = 0xAABBCCDDEEFF
-    RECV_SIDE_QPN = 0x6611
-    SEND_SIDE_PSN = 0x22
 
+def test_case():
     host_mem = MockHostMem("/bluesim1", 1024*1024*64)
     mock_nic = MockNicAndHost(host_mem)
     mock_nic.bluesim_rpc_server.run()
@@ -348,25 +355,25 @@ if __name__ == "__main__":
     cmd_req_queue.sync_pointers()
 
     # read cmd resp queue head pointer to check if all cmd executed
-    for t in range(3):
+    for _ in range(3):
         cmd_resp_queue.deq_blocking()
 
     # move send queue head to send WQE
+    sgl = [
+        SendQueueReqDescFragSGE(
+            F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR),
+        SendQueueReqDescFragSGE(
+            F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR+1),
+        SendQueueReqDescFragSGE(
+            F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR+2),
+        SendQueueReqDescFragSGE(
+            F_LKEY=SEND_SIDE_KEY, F_LEN=256, F_LADDR=REQ_SIDE_VA_ADDR+3),
+    ]
     send_queue.put_work_request(
         opcode=WorkReqOpCode.IBV_WR_RDMA_WRITE,
         is_first=True,
         is_last=True,
-        sgl=[
-            SendQueueReqDescFragSGE(
-                F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR),
-            SendQueueReqDescFragSGE(
-                F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR+1),
-            SendQueueReqDescFragSGE(
-                F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR+2),
-            SendQueueReqDescFragSGE(
-                F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR+3),
-        ],
-        total_len=4,
+        sgl=sgl,
         r_va=RESP_SIDE_VA_ADDR,
         r_key=RECV_SIDE_KEY,
         r_ip=RECV_SIDE_IP,
@@ -376,16 +383,26 @@ if __name__ == "__main__":
     )
 
     # prepare send data
-    for i in range(4):
-        mock_nic.main_memory.buf[REQ_SIDE_VA_ADDR+i] = 0xBB + i
+    for i in range(3+2):
+        mock_nic.main_memory.buf[REQ_SIDE_VA_ADDR+i] = (0xBB + i) & 0xFF
         mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR+i] = 0
 
-    print(
-        bytes(mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR:RESP_SIDE_VA_ADDR+4]))
-
     send_queue.sync_pointers()
-    meta_report_queue.deq_blocking()
-    meta_report_queue.deq_blocking()
+    for _ in range(2):
+        meta_report_queue.deq_blocking()
 
-    print(
-        bytes(mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR:RESP_SIDE_VA_ADDR+4]))
+    src_mem = mock_nic.main_memory.buf[REQ_SIDE_VA_ADDR: REQ_SIDE_VA_ADDR+256]
+    dst_mem = mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR: RESP_SIDE_VA_ADDR+256]
+
+    if src_mem != dst_mem:
+        print("Error: DMA Target mem is not the same as source mem")
+    else:
+        print("PASS")
+
+    mock_nic.bluesim_rpc_server.stop()
+
+
+if __name__ == "__main__":
+    # must wrap test case in a function, so when the function returned, the memory view will be cleaned
+    # otherwise, there will be an warning at program exit.
+    test_case()
