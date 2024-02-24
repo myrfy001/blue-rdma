@@ -24,11 +24,11 @@ class Ringbuf:
 
     def sync_pointers(self):
         if (self.is_h2c):
-            self.mock_host.write_csr(self.head_csr_addr, self.head)
+            self.mock_host.write_csr_blocking(self.head_csr_addr, self.head)
             new_tail = self.mock_host.read_csr_blocking(self.tail_csr_addr)
             self.set_tail_pointer_with_guard_bit(new_tail)
         else:
-            self.mock_host.write_csr(self.tail_csr_addr, self.tail)
+            self.mock_host.write_csr_blocking(self.tail_csr_addr, self.tail)
             new_head = self.mock_host.read_csr_blocking(self.head_csr_addr)
             self.set_head_pointer_with_guard_bit(new_head)
 
@@ -91,9 +91,10 @@ class RingbufCommandReqQueue:
     def __init__(self, backend_mem, addr, mock_host) -> None:
         self.rb = Ringbuf(backend_mem=backend_mem.buf[addr:], mock_host=mock_host, is_h2c=True,
                           head_csr_addr=CSR_ADDR_CMD_REQ_QUEUE_HEAD, tail_csr_addr=CSR_ADDR_CMD_REQ_QUEUE_TAIL)
-        mock_host.write_csr(
+        mock_host.write_csr_blocking(
             CSR_ADDR_CMD_REQ_QUEUE_ADDR_LOW, addr & 0xFFFFFFFF)
-        mock_host.write_csr(CSR_ADDR_CMD_REQ_QUEUE_ADDR_HIGH, addr >> 32)
+        mock_host.write_csr_blocking(
+            CSR_ADDR_CMD_REQ_QUEUE_ADDR_HIGH, addr >> 32)
 
     def sync_pointers(self):
         self.rb.sync_pointers()
@@ -158,9 +159,10 @@ class RingbufCommandRespQueue:
     def __init__(self, backend_mem, addr, mock_host) -> None:
         self.rb = Ringbuf(backend_mem=backend_mem.buf[addr:], mock_host=mock_host, is_h2c=False,
                           head_csr_addr=CSR_ADDR_CMD_RESP_QUEUE_HEAD, tail_csr_addr=CSR_ADDR_CMD_RESP_QUEUE_TAIL)
-        mock_host.write_csr(
+        mock_host.write_csr_blocking(
             CSR_ADDR_CMD_RESP_QUEUE_ADDR_LOW, addr & 0xFFFFFFFF)
-        mock_host.write_csr(CSR_ADDR_CMD_RESP_QUEUE_ADDR_HIGH, addr >> 32)
+        mock_host.write_csr_blocking(
+            CSR_ADDR_CMD_RESP_QUEUE_ADDR_HIGH, addr >> 32)
 
     def sync_pointers(self):
         self.rb.sync_pointers()
@@ -176,9 +178,9 @@ class RingbufSendQueue:
     def __init__(self, backend_mem, addr, mock_host) -> None:
         self.rb = Ringbuf(backend_mem=backend_mem.buf[addr:], mock_host=mock_host, is_h2c=True,
                           head_csr_addr=CSR_ADDR_SEND_QUEUE_HEAD, tail_csr_addr=CSR_ADDR_SEND_QUEUE_TAIL)
-        mock_host.write_csr(
+        mock_host.write_csr_blocking(
             CSR_ADDR_SEND_QUEUE_ADDR_LOW, addr & 0xFFFFFFFF)
-        mock_host.write_csr(CSR_ADDR_SEND_QUEUE_ADDR_HIGH, addr >> 32)
+        mock_host.write_csr_blocking(CSR_ADDR_SEND_QUEUE_ADDR_HIGH, addr >> 32)
 
     def sync_pointers(self):
         self.rb.sync_pointers()
@@ -226,9 +228,10 @@ class RingbufMetaReportQueue:
     def __init__(self, backend_mem, addr, mock_host) -> None:
         self.rb = Ringbuf(backend_mem=backend_mem.buf[addr:], mock_host=mock_host, is_h2c=False,
                           head_csr_addr=CSR_ADDR_META_REPORT_QUEUE_HEAD, tail_csr_addr=CSR_ADDR_META_REPORT_QUEUE_TAIL)
-        mock_host.write_csr(
+        mock_host.write_csr_blocking(
             CSR_ADDR_META_REPORT_QUEUE_ADDR_LOW, addr & 0xFFFFFFFF)
-        mock_host.write_csr(CSR_ADDR_META_REPORT_QUEUE_ADDR_HIGH, addr >> 32)
+        mock_host.write_csr_blocking(
+            CSR_ADDR_META_REPORT_QUEUE_ADDR_HIGH, addr >> 32)
 
     def sync_pointers(self):
         self.rb.sync_pointers()

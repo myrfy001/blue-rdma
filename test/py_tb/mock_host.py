@@ -170,14 +170,22 @@ class MockNicAndHost:
             CEnumRpcOpcode.RpcOpcodePcieMemRead, self.rpc_handler_pcie_mem_read_req, sizeof(CStructMemIoInfo))
 
         self.pending_bar_write_req = []
-        self.pending_bar_write_resp = []
+        self.pending_bar_write_req_waiting_dict = {}
+        self.pending_bar_write_resp = {}
+
         self.pending_bar_read_req = []
         self.pending_bar_read_req_waiting_dict = {}
         self.pending_bar_read_resp = {}
 
         self.pcie_tlp_read_tag_counter = 0
 
-    def _get_next_pcie_tlp_read_tag(self):
+    def run(self):
+        self.bluesim_rpc_server.run()
+
+    def stop(self):
+        self.bluesim_rpc_server.stop()
+
+    def _get_next_pcie_tlp_tag(self):
         if self.pcie_tlp_read_tag_counter == 32:
             self.pcie_tlp_read_tag_counter = 0
         else:
@@ -213,8 +221,11 @@ class MockNicAndHost:
 
     def rpc_handler_pcie_bar_put_write_resp(self, client_socket, raw_req_buf):
         resp = CStructRpcPcieBarAccessMessage.from_buffer(raw_req_buf)
-        # comment out the following line since we don't care write respone now
-        # self.pending_bar_write_resp.append(resp)
+        if resp.payload.pci_tag in self.pending_bar_write_resp:
+            raise Exception(
+                "pcie write tag conflict, maybe too many outstanding requests")
+        self.pending_bar_write_resp[resp.payload.pci_tag] = resp
+        self.pending_bar_write_req_waiting_dict[resp.payload.pci_tag].set()
 
         # this Op doesn't send response
 
@@ -237,13 +248,23 @@ class MockNicAndHost:
         req.payload.data[0:byte_cnt_per_word] = self.main_memory.buf[host_mem_start_addr: host_mem_start_addr+byte_cnt_per_word]
         client_socket.send(bytes(req))
 
-    def write_csr(self, addr, value):
+    def write_csr_blocking(self, addr, value):
+        tag = self._get_next_pcie_tlp_tag()
         self.pending_bar_write_req.append(
-            CStructBarIoInfo(valid=1, addr=addr, value=value))
+            CStructBarIoInfo(valid=1, addr=addr, value=value, pci_tag=tag))
+        evt = threading.Event()
+        if tag in self.pending_bar_write_req_waiting_dict:
+            raise Exception(
+                "pcie write tag conflict, maybe too many outstanding requests")
+        self.pending_bar_write_req_waiting_dict[tag] = evt
+        evt.wait()
+        del self.pending_bar_write_req_waiting_dict[tag]
+        resp = self.pending_bar_write_resp.pop(tag)
+        return resp.payload.value
 
     # blocking version of read_csr, wait until we get response
     def read_csr_blocking(self, addr):
-        tag = self._get_next_pcie_tlp_read_tag()
+        tag = self._get_next_pcie_tlp_tag()
         self.pending_bar_read_req.append(
             CStructBarIoInfo(valid=1, addr=addr, value=0, pci_tag=tag))
         evt = threading.Event()
@@ -306,7 +327,7 @@ SEND_SIDE_PSN = 0x22
 def test_case():
     host_mem = MockHostMem("/bluesim1", 1024*1024*64)
     mock_nic = MockNicAndHost(host_mem)
-    mock_nic.bluesim_rpc_server.run()
+    mock_nic.run()
 
     cmd_req_queue = RingbufCommandReqQueue(
         host_mem, CMD_QUEUE_H2C_RINGBUF_START_PA, mock_host=mock_nic)
@@ -399,7 +420,7 @@ def test_case():
     else:
         print("PASS")
 
-    mock_nic.bluesim_rpc_server.stop()
+    mock_nic.stop()
 
 
 if __name__ == "__main__":

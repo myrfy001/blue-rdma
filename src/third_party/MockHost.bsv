@@ -96,7 +96,8 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 	// since the current CSR/BAR read logic is simple and will finish
 	// in one cycle, it can't be out of order, so we simply keep tag 
 	// in order in this queue.
-	FIFOF#(Bit#(64)) tagKeepOrderQ <- mkFIFOF;
+	FIFOF#(Bit#(64)) readTagKeepOrderQ <- mkFIFOF;
+	FIFOF#(Bit#(64)) writeTagKeepOrderQ <- mkFIFOF;
 
     rule doInit(!initDone);
 		let ptr <- c_createBRAM(fromInteger(valueOf(data_sz)), fromInteger(cfg.memorySize));
@@ -113,15 +114,15 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 		let rawReq <- c_getPcieBarReadReq(memHandle);
 		if (rawReq.valid != 0) begin
 			barReadReqQ.enq(unpack(truncate(pack(rawReq.addr))));
-			tagKeepOrderQ.enq(rawReq.pci_tag);
+			readTagKeepOrderQ.enq(rawReq.pci_tag);
 		end
 	endrule
 
 	rule forwardBarReadResp if (initDone);
 		barReadRespQ.deq;
-		tagKeepOrderQ.deq;
+		readTagKeepOrderQ.deq;
 		let resp = PcieBarAccessAction {
-			pci_tag: tagKeepOrderQ.first,
+			pci_tag: readTagKeepOrderQ.first,
 			valid: 1,
 			addr: 0,
 			value: unpack(zeroExtend(pack(barReadRespQ.first)))
@@ -138,13 +139,15 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 					unpack(truncate(pack(rawReq.value)))
 				)
 			);
+			writeTagKeepOrderQ.enq(rawReq.pci_tag);
 		end
 	endrule
 
 	rule forwardBarWriteResp if (initDone);
 		barWriteRespQ.deq;
+		writeTagKeepOrderQ.deq;
 		let resp = PcieBarAccessAction {
-			pci_tag: 0,
+			pci_tag: writeTagKeepOrderQ.first,
 			valid: barWriteRespQ.first ? 1 : 0,
 			addr: 0,
 			value: 0
