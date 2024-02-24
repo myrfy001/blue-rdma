@@ -190,7 +190,7 @@ typedef struct {
 
 typedef struct {
     PAD         padCnt;
-    RdmaHeader  rdmaHeader;
+    HeaderRDMA  rdmaHeader;
     PktFragNum  pktFragNum;
     PktLen      pktLen;
     PMTU        pmtu;
@@ -211,17 +211,17 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
     FIFOF#(RdmaPktMetaDataAndQPC)  reqPktMetaDataAndQpcOutQ <- mkFIFOF;
 
     // Pipeline buffers
-    FIFOF#(Tuple4#(RdmaHeader, Bool, Bool, Bool))                                             rdmaHeaderRecvQ <- mkFIFOF;
+    FIFOF#(Tuple4#(HeaderRDMA, Bool, Bool, Bool))                                             rdmaHeaderRecvQ <- mkFIFOF;
     FIFOF#(DataStream)                                                                           payloadRecvQ <- mkFIFOF;
-    FIFOF#(RdmaHeader)                                                                    rdmaHeaderPreCheckQ <- mkFIFOF;
+    FIFOF#(HeaderRDMA)                                                                    rdmaHeaderPreCheckQ <- mkFIFOF;
     FIFOF#(DataStream)                                                                       payloadPreCheckQ <- mkFIFOF;
-    FIFOF#(Tuple2#(RdmaHeader, HeaderValidateInfo))                                     rdmaHeaderValidationQ <- mkSizedFIFOF(valueOf(QPC_QUERY_RESP_MAX_DELAY));
+    FIFOF#(Tuple2#(HeaderRDMA, HeaderValidateInfo))                                     rdmaHeaderValidationQ <- mkSizedFIFOF(valueOf(QPC_QUERY_RESP_MAX_DELAY));
     FIFOF#(DataStream)                                                                     payloadValidationQ <- mkFIFOF;
-    FIFOF#(Tuple3#(RdmaHeader, Maybe#(EntryCommonQPC), ValidHeaderInfo))                    rdmaHeaderFilterQ <- mkFIFOF;
+    FIFOF#(Tuple3#(HeaderRDMA, Maybe#(EntryCommonQPC), ValidHeaderInfo))                    rdmaHeaderFilterQ <- mkFIFOF;
     FIFOF#(DataStream)                                                                         payloadFilterQ <- mkFIFOF;
-    FIFOF#(Tuple3#(RdmaHeader, EntryCommonQPC, ValidHeaderInfo))                       rdmaHeaderFragLenCalcQ <- mkFIFOF;
+    FIFOF#(Tuple3#(HeaderRDMA, EntryCommonQPC, ValidHeaderInfo))                       rdmaHeaderFragLenCalcQ <- mkFIFOF;
     FIFOF#(DataStream)                                                                    payloadFragLenCalcQ <- mkFIFOF;
-    FIFOF#(Tuple3#(RdmaHeader, EntryCommonQPC, ValidHeaderInfo))                        rdmaHeaderPktLenCalcQ <- mkFIFOF;
+    FIFOF#(Tuple3#(HeaderRDMA, EntryCommonQPC, ValidHeaderInfo))                        rdmaHeaderPktLenCalcQ <- mkFIFOF;
     FIFOF#(Tuple5#(DataStream, ByteEnBitNum, ByteEnBitNum, Bool, Bool))                    payloadPktLenCalcQ <- mkFIFOF;
     FIFOF#(Tuple2#(PktLenCheckInfo, EntryCommonQPC))                                rdmaHeaderPktLenPreCheckQ <- mkFIFOF;
     FIFOF#(DataStream)                                                                 payloadPktLenPreCheckQ <- mkFIFOF;

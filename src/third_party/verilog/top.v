@@ -1,4 +1,5 @@
 `timescale 1ps / 1ps
+`define ENABLE_CMAC_RS_FEC
 
 module top#(
    parameter PL_LINK_CAP_MAX_LINK_WIDTH          = 16,            // 1- X1; 2 - X2; 4 - X4; 8 - X8
@@ -210,6 +211,13 @@ module top#(
     wire [8:0]      gt_ctl_tx_pause_req;
     wire            gt_ctl_tx_resend_pause;
 
+
+    // CMAC RS-FEC Signals
+    wire            gt_ctl_rsfec_ieee_error_indication_mode;
+    wire            gt_ctl_tx_rsfec_enable;
+    wire            gt_ctl_rx_rsfec_enable;
+    wire            gt_ctl_rx_rsfec_enable_correction;
+    wire            gt_ctl_rx_rsfec_enable_indication;
 
   wire clk_wiz_user_clock_locked;
 
@@ -467,7 +475,13 @@ module top#(
       .rx_ctl_check_ucast_ppp (gt_ctl_rx_check_ucast_ppp),
       .rx_ctl_check_sa_ppp    (gt_ctl_rx_check_sa_ppp),
       .rx_ctl_check_etype_ppp (gt_ctl_rx_check_etype_ppp),
-      .rx_ctl_check_opcode_ppp(gt_ctl_rx_check_opcode_ppp)
+      .rx_ctl_check_opcode_ppp(gt_ctl_rx_check_opcode_ppp),
+
+      .tx_ctl_rsfec_enable    (gt_ctl_tx_rsfec_enable),
+      .rx_ctl_rsfec_enable    (gt_ctl_rx_rsfec_enable),
+      .rx_ctl_rsfec_enable_correction(gt_ctl_rx_rsfec_enable_correction),
+      .rx_ctl_rsfec_enable_indication(gt_ctl_rx_rsfec_enable_indication),
+      .ctl_rsfec_ieee_error_indication_mode(gt_ctl_rsfec_ieee_error_indication_mode)
   );
 
   wire [(CMAC_GT_LANE_WIDTH * 3)-1 :0]    gt_loopback_in;
@@ -483,7 +497,7 @@ module top#(
 
   assign udp_reset = clk_wiz_user_clock_locked;
   assign cmac_sys_reset = ~ clk_wiz_user_clock_locked;
-  assign gt_init_clk = user_clk_250;
+  // assign gt_init_clk = user_clk_250;
 
 
   cmac_usplus_0 cmac_inst(
@@ -498,7 +512,7 @@ module top#(
         .sys_reset                            (cmac_sys_reset),
         .gt_ref_clk_p                         (qsfp2_ref_clk_p),
         .gt_ref_clk_n                         (qsfp2_ref_clk_n),
-        .init_clk                             (gt_init_clk),
+        .init_clk                             (user_clk_250),
 
         .gt_txusrclk2                         (gt_txusrclk2),
         .usr_rx_reset                         (gt_usr_rx_reset),
@@ -584,6 +598,16 @@ module top#(
         .ctl_tx_pause_refresh_timer8          (16'd0),
         .ctl_tx_resend_pause                  (1'b0 ),
         .tx_preamblein                        (56'd0),
+
+        // RS-FEC
+`ifdef ENABLE_CMAC_RS_FEC
+        .ctl_rsfec_ieee_error_indication_mode (gt_ctl_rsfec_ieee_error_indication_mode),
+        .ctl_tx_rsfec_enable                  (gt_ctl_tx_rsfec_enable),
+        .ctl_rx_rsfec_enable                  (gt_ctl_rx_rsfec_enable),
+        .ctl_rx_rsfec_enable_correction       (gt_ctl_rx_rsfec_enable_correction),
+        .ctl_rx_rsfec_enable_indication       (gt_ctl_rx_rsfec_enable_indication),
+`endif    
+
         .core_rx_reset                        (1'b0 ),
         .core_tx_reset                        (1'b0 ),
         .rx_clk                               (gt_txusrclk2),

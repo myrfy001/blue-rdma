@@ -89,7 +89,7 @@ module mkBsvTop(
     let axiStreamRxIn <- mkPutToPipeIn(bsvTopCore.axiStreamInUdp);
     let axiStream512RxIn <- mkDoubleAxiStreamPipeIn(axiStreamRxIn);
 
-    let axiStream512Sync <- mkDuplexAxiStreamAsyncFifo(
+    let axiStream512SyncFifoForCMAC <- mkDuplexAxiStreamAsyncFifo(
         syncBramBufDepth,
         cdcSyncStages,
         udpClk,
@@ -108,8 +108,8 @@ module mkBsvTop(
         isEnableRsFec,
         isEnableFlowControl,
         isCmacTxWaitRxAligned,
-        axiStream512Sync.dstPipeOut,
-        axiStream512Sync.dstPipeIn,
+        axiStream512SyncFifoForCMAC.dstPipeOut,
+        axiStream512SyncFifoForCMAC.dstPipeIn,
         txFlowCtrlReqVec,
         rxFlowCtrlReqVec,
         cmacRxReset,
@@ -136,6 +136,11 @@ interface TopCoreRdma;
 endinterface
 
 
+(* synthesize *)
+module udpWrapper(UdpIpEthRxTx);
+    let t <- mkGenericUdpIpEthRxTx(`IS_SUPPORT_RDMA);
+    return t;
+endmodule
 
 (* synthesize *)
 // TODO: refactor ringbuf module to get rid of these compiler attributes.
@@ -257,9 +262,7 @@ module mkTopCore(
     mkConnection(sq.dmaReadClt, addrTranslatorForSQ.sqReqInputSrv);
     mkConnection(workQueueRingbufController.workReq, sq.sendQ.srvPort.request);
 
-
-
-    let udp <- mkGenericUdpIpEthRxTx(`IS_SUPPORT_RDMA);
+    let udp <- udpWrapper;
 
     Reg#(Bool)  udpParamNotSetReg <- mkReg(True);
 

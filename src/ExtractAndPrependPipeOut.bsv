@@ -18,12 +18,12 @@ endinterface
 // and no headerDataStream
 module mkHeader2DataStream#(
     Bool clearAll,
-    PipeOut#(RdmaHeader) headerPipeIn
+    PipeOut#(HeaderRDMA) headerPipeIn
 )(HeaderDataStreamAndMetaDataPipeOut);
     FIFOF#(DataStream)   headerDataStreamOutQ <- mkFIFOF;
     FIFOF#(HeaderMetaData) headerMetaDataOutQ <- mkFIFOF;
 
-    Reg#(RdmaHeader) rdmaHeaderReg <- mkRegU;
+    Reg#(HeaderRDMA) rdmaHeaderReg <- mkRegU;
     Reg#(Bool)      headerValidReg <- mkReg(False);
 
     (* no_implicit_conditions, fire_when_enabled *)
@@ -67,7 +67,7 @@ module mkHeader2DataStream#(
         else begin
             headerValidReg <= True;
 
-            rdmaHeaderReg <= RdmaHeader {
+            rdmaHeaderReg <= HeaderRDMA {
                 headerData    : leftShiftHeaderData,
                 headerByteEn  : leftShiftHeaderByteEn,
                 headerMetaData: HeaderMetaData {
@@ -112,9 +112,9 @@ endmodule
 // dataPipeIn must have multi-fragment data no more than HeaderByteNum
 module mkDataStream2Header#(
     DataStreamPipeOut dataPipeIn, PipeOut#(HeaderMetaData) headerMetaDataPipeIn
-)(PipeOut#(RdmaHeader));
-    FIFOF#(RdmaHeader)                   headerOutQ <- mkFIFOF;
-    Reg#(RdmaHeader)                  rdmaHeaderReg <- mkRegU;
+)(PipeOut#(HeaderRDMA));
+    FIFOF#(HeaderRDMA)                   headerOutQ <- mkFIFOF;
+    Reg#(HeaderRDMA)                  rdmaHeaderReg <- mkRegU;
     Reg#(HeaderMetaData)          headerMetaDataReg <- mkRegU;
     Reg#(HeaderByteNum) headerInvalidFragByteNumReg <- mkRegU;
     Reg#(HeaderBitNum)   headerInvalidFragBitNumReg <- mkRegU;
