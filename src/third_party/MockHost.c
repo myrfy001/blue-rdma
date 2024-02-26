@@ -95,7 +95,9 @@ typedef enum {
   RpcOpcodePcieBarGetWriteReq = 3,
   RpcOpcodePcieBarPutWriteResp = 4,
   RpcOpcodePcieMemWrite = 5,
-  RpcOpcodePcieMemRead = 6
+  RpcOpcodePcieMemRead = 6,
+  RpcOpcodeNetIfcPutTxData = 7,
+  RpcOpcodeNetIfcGetRxData = 8
 
 } RpcOpcode;
 
@@ -128,6 +130,42 @@ typedef struct {
   RpcHeader header;
   MemoryIoInfo payload;
 } RpcPcieMemoryAccessMessage;
+
+typedef struct {
+  uint8_t data[64];
+  uint8_t byte_en[8];
+
+  uint8_t reserved; // align to 32 bit
+  uint8_t is_fisrt;
+  uint8_t is_last;
+  uint8_t is_valid;
+} RpcNetIfcRxTxPayload;
+
+typedef struct {
+  RpcHeader header;
+  RpcNetIfcRxTxPayload payload;
+} RpcNetIfcRxTxMessage;
+
+void c_netIfcGetRxData(RpcNetIfcRxTxPayload *resultptr, uint64_t client_id,
+                       uint8_t is_read) {
+  RpcNetIfcRxTxMessage req;
+  RpcNetIfcRxTxMessage resp;
+
+  req.header.client_id = client_id;
+  req.header.opcode = RpcOpcodeNetIfcGetRxData;
+  do_rpc(&req, sizeof(req), &resp, sizeof(resp));
+
+  memcpy(resultptr, &resp.payload, sizeof(*resultptr));
+}
+
+void c_netIfcPutTxData(uint64_t client_id, RpcNetIfcRxTxPayload *data_stream) {
+  RpcNetIfcRxTxMessage req = {0};
+  req.header.client_id = client_id;
+  req.header.opcode = RpcOpcodeNetIfcPutTxData;
+
+  memcpy(&req.payload, data_stream, sizeof(*data_stream));
+  do_rpc(&req, sizeof(req), NULL, 0);
+}
 
 void do_pcie_bar_get_request(BarIoInfo *resultptr, uint64_t client_id,
                              uint8_t is_read) {

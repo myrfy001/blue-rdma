@@ -24,10 +24,13 @@ import MemRegionAndAddressTranslate :: *;
 import PayloadCon :: *;
 import RecvStreamMocker :: *;
 import Headers :: *;
+import Ports :: *;
+import StreamHandler :: *;
 
 import XdmaWrapper :: *;
 import UserLogicTypes :: *;
 import RegisterBlock :: *;
+
 
 import Top :: *;
 
@@ -77,28 +80,43 @@ module mkTestTop(Empty);
     SyncFIFOIfc#(Bool) csrWriteRespSyncFifo <- mkSyncFIFO(2, fastClock, fastReset, slowClock);
     mkConnection(toGet(csrWriteRespSyncFifo), fakeXdmaA.barWriteClt.response, clocked_by slowClock, reset_by slowReset); 
 
-    // loop tx stream to rx stream
-    // mkConnection(toGet(topA.rdmaDataStreamPipeOut), topA.rdmaDataStreamInput);
-    rule displayAndForwardWireData;
-        let d = topA.axiStreamOutUdp.first;
-        topA.axiStreamOutUdp.deq;
-        topA.axiStreamInUdp.put(d);
-        $display("udp send data: ", fshow(d));
-    endrule
+    // // loop tx stream to rx stream
+    // rule displayAndForwardWireData;
+    //     let d = topA.axiStreamOutUdp.first;
+    //     topA.axiStreamOutUdp.deq;
+    //     topA.axiStreamInUdp.put(d);
+    //     $display("udp send data: ", fshow(d));
+    // endrule
+
+
+    // connect rx and tx to MockHost
+
+    let axiStream512TxOut <- mkDoubleAxiStreamPipeOut(topA.axiStreamOutUdp);
+    let axiStreamRxIn <- mkPutToPipeIn(topA.axiStreamInUdp);
+    let axiStream512RxIn <- mkDoubleAxiStreamPipeIn(axiStreamRxIn);
+
+    SyncFIFOIfc#(AxiStream512) netIfcRxSyncFifo <- mkSyncFIFO(2, slowClock, slowReset, fastClock);
+    mkConnection(fakeXdmaA.axiStreamRxUdp, toPut(netIfcRxSyncFifo), clocked_by slowClock, reset_by slowReset);
+    mkConnection(convertSyncFifoToPipeOut(netIfcRxSyncFifo), axiStream512RxIn);
+
+    SyncFIFOIfc#(AxiStream512) netIfcTxSyncFifo <- mkSyncFIFO(2, fastClock, fastReset, slowClock);
+    mkConnection(toGet(axiStream512TxOut), toPut(netIfcTxSyncFifo));
+    mkConnection(convertSyncFifoToPipeOut(netIfcTxSyncFifo), fakeXdmaA.axiStreamTxUdp, clocked_by slowClock, reset_by slowReset); 
+
 
     rule forwardBarReadReq;
         csrReadReqSyncFifo.deq;
         let inReq = csrReadReqSyncFifo.first;
         let outReq = CsrReadRequest{addr: inReq};
         topA.csrReadSrv.request.put(outReq);
-        $display("csr read req =", fshow(outReq));
+        // $display("csr read req =", fshow(outReq));
     endrule
 
     rule forwardBarReadResp;
         let inResp <- topA.csrReadSrv.response.get;
         let outResp = inResp.data;
         csrReadRespSyncFifo.enq(outResp);
-        $display("csr read resp =", fshow(outResp));
+        // $display("csr read resp =", fshow(outResp));
     endrule
 
     rule forwardBarWriteReq;
@@ -106,7 +124,7 @@ module mkTestTop(Empty);
         let inReq = csrWriteReqSyncFifo.first;
         let outReq = CsrWriteRequest{addr: tpl_1(inReq), data: tpl_2(inReq)};
         topA.csrWriteSrv.request.put(outReq);
-        $display("csr write req = ", fshow(outReq));
+        // $display("csr write req = ", fshow(outReq));
     endrule
 
     rule forwardBarWriteResp;

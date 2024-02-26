@@ -23,28 +23,27 @@ class UserspaceDriverServer:
         self.stop_flag = True
 
     def _run(self):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server_socket.bind((self.listen_addr, self.listen_port))
-        server_socket.listen(1)
+        # server_socket.listen(1)
 
         while not self.stop_flag:
-            client_socket, client_address = server_socket.accept()
-            client_socket.settimeout(0.1)
-            print('User Space Driver Client connected:', client_address)
+            # client_socket, client_address = server_socket.accept()
+            # client_socket.settimeout(0.1)
+            # print('User Space Driver Client connected:', client_address)
 
             while not self.stop_flag:
 
-                recv_raw = client_socket.recv()
+                recv_raw = server_socket.recv()
                 recv_req = json.loads(recv_raw)
 
                 if recv_req["is_write"]:
                     self.mock_nic.write_csr_blocking(
                         recv_req["addr"], recv_req["value"])
-                    client_socket.send(json.dumps({"value": 0}))
                 else:
                     value = self.mock_nic.read_csr_blocking(recv_req["addr"])
-                    client_socket.send(json.dumps({"value": value}))
+                    server_socket.send(json.dumps({"value": value}))
 
 
 if __name__ == "__main__":

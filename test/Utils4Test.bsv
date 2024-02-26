@@ -75,7 +75,7 @@ function Tuple2#(HeaderByteNum, HeaderBitNum) calcHeaderInvalidByteAndBitNum(
     return tuple2(headerInvalidByteNum, headerInvalidBitNum);
 endfunction
 
-function Bool compareRdmaHeaderDataInSim(
+function Bool compareHeaderRDMADataInSim(
     HeaderData headerData, HeaderData refHeaderData, HeaderByteNum headerLen
 );
     let { headerInvalidByteNum, headerInvalidBitNum } =

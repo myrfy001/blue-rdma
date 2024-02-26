@@ -23,6 +23,7 @@ import Connectable :: * ;
 import StmtFSM::*;
 import Randomizable :: * ;
 import MockHost :: *;
+import Ports :: *;
 
 
 typedef Bit#(64) XdmaDescBypAddr;
@@ -675,6 +676,8 @@ endmodule
 
 
 interface FakeXdma;
+    interface AxiStream512PipeIn   axiStreamTxUdp;
+    interface Get#(AxiStream512)   axiStreamRxUdp;
     interface UserLogicDmaReadWideSrv xdmaH2cSrv;
     interface UserLogicDmaWriteWideSrv xdmaC2hSrv;
     interface Client#(CsrAddr, CsrData) barReadClt;
@@ -1026,6 +1029,8 @@ module mkFakeXdma(Integer id, FakeXdma ifc);
         end
     endrule
 
+    interface axiStreamTxUdp = mockHost.axiStreamTxUdp;
+    interface axiStreamRxUdp = mockHost.axiStreamRxUdp;
     interface xdmaH2cSrv = toGPServer(xdmaH2cReqQ, xdmaH2cRespQ);
     interface xdmaC2hSrv = toGPServer(xdmaC2hReqQ, xdmaC2hRespQ);
     interface barWriteClt = mockHost.barWriteClt;

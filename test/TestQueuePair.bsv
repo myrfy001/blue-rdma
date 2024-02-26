@@ -15,7 +15,7 @@ import QueuePair :: *;
 import Settings :: *;
 import SimDma :: *;
 import SimGenRdmaReqResp :: *;
-import SimExtractRdmaHeaderPayload :: *;
+import SimExtractHeaderRDMAPayload :: *;
 import RdmaUtils :: *;
 import Utils4Test :: *;
 

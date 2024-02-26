@@ -8,6 +8,12 @@ import FIFOF :: *;
 import DReg :: *;
 import GetPut :: *;
 import SpecialFIFOs :: *;
+import Ports :: *;
+import DataTypes :: *;
+import PrimUtils :: *;
+import SemiFifo :: *;
+import UserLogicTypes :: *;
+import AxiStreamTypes :: *;
 
 //  Export  section
 
@@ -32,6 +38,9 @@ import "BDPI" function Action c_putPcieBarReadResp(Bit#(64) memPtr, PcieBarAcces
 import "BDPI" function ActionValue#(PcieBarAccessAction) c_getPcieBarWriteReq(Bit#(64) memPtr);
 import "BDPI" function Action c_putPcieBarWriteResp(Bit#(64) memPtr, PcieBarAccessAction resp);
 
+import "BDPI" function ActionValue#(NetIfcAccessAction) c_netIfcGetRxData(Bit#(64) memPtr);
+import "BDPI" function Action c_netIfcPutTxData(Bit#(64) memPtr, NetIfcAccessAction resp);
+
 function ActionValue#(t_word) readBRAM(Bit#(64) memPtr, t_addr wordAddr) provisos (
 	Bits#(t_addr, sz_addr),
 	Bits#(t_word, sz_word),
@@ -53,6 +62,10 @@ interface MockHost#(type addr, type data, numeric type n, type bar_addr_t, type 
 	interface BRAM2PortBE #(addr, data, n) hostMem;
 	interface Client#(bar_addr_t, bar_data_t) barReadClt;
 	interface Client#(Tuple2#(bar_addr_t, bar_data_t), Bool) barWriteClt; 
+
+	interface AxiStream512PipeIn   axiStreamTxUdp;
+	interface Get#(AxiStream512)   axiStreamRxUdp;
+
 	method Bool ready;
 endinterface
 
@@ -62,6 +75,15 @@ typedef struct {
 	Bit#(64) addr;
 	Bit#(64) value;
 } PcieBarAccessAction deriving(Bits, FShow);
+
+typedef struct {
+	Bit#(8) isValid;
+	Bit#(8) isLast;
+	Bit#(8) isFirst;
+	Bit#(8) reserved1;
+	ByteEnWide byteEn;
+	DATA_WIDE data;
+} NetIfcAccessAction deriving(Bits, FShow); 
 
 
 // Exported module
@@ -89,6 +111,11 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 	FIFOF#(Bool) barWriteRespQ <- mkFIFOF;
 	FIFOF#(bar_addr_t) barReadReqQ <- mkFIFOF;
 	FIFOF#(bar_data_t) barReadRespQ <- mkFIFOF;
+
+	FIFOF#(AxiStream512) udpAxiTxQ <- mkFIFOF;
+	FIFOF#(AxiStream512) udpAxiRxQ <- mkFIFOF;
+
+
 
 	// Note, it assumes that the resp will keep order as the request.
 	// We do not support out of order now, to support OOO, the CSR
@@ -155,6 +182,38 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 		c_putPcieBarWriteResp(memHandle, resp);
 	endrule
 
+	rule forwardNetIfcTx if (initDone);
+
+		let originTxData = udpAxiTxQ.first;
+		udpAxiTxQ.deq;
+
+		let req = NetIfcAccessAction {
+			isValid: 1,
+			isLast: originTxData.tLast ? 1 : 0,
+			isFirst: ?,
+			reserved1: 0,
+			byteEn: originTxData.tKeep,
+			data: originTxData.tData
+		};
+		$display("send udp data=", fshow(req));
+		
+		c_netIfcPutTxData(memHandle, req);
+	endrule
+
+	rule forwardNetIfcRx if (initDone);
+		let rawReq <- c_netIfcGetRxData(memHandle);
+		if (rawReq.isValid != 0) begin
+			AxiStream512 req = AxiStream512{
+				tLast: rawReq.isLast != 0 ? True : False,
+				tKeep: rawReq.byteEn,
+				tData: rawReq.data,
+				tUser: 0
+			};
+			udpAxiRxQ.enq(req);
+			$display("recv udp data=", fshow(req));
+		end
+	endrule
+
 	method Bool ready = initDone;
 
 	interface BRAM2PortBE hostMem;
@@ -216,6 +275,9 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 
 	interface barWriteClt = toGPClient(barWriteReqQ, barWriteRespQ);
     interface barReadClt = toGPClient(barReadReqQ, barReadRespQ);
+
+	interface axiStreamRxUdp 	= toGet(udpAxiRxQ);
+	interface axiStreamTxUdp 	= convertFifoToPipeIn(udpAxiTxQ);
 
 endmodule
 

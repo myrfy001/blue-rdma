@@ -25,6 +25,8 @@ class CEnumRpcOpcode(CtypesEnum):
     RpcOpcodePcieBarPutWriteResp = 4
     RpcOpcodePcieMemWrite = 5
     RpcOpcodePcieMemRead = 6
+    RpcOpcodeNetIfcPutTxData = 7
+    RpcOpcodeNetIfcGetRxData = 8
 
 
 class CStructRpcHeader(Structure):
@@ -64,6 +66,24 @@ class CStructRpcPcieMemoryAccessMessage(Structure):
     _fields_ = [
         ("header", CStructRpcHeader),
         ("payload", CStructMemIoInfo),
+    ]
+
+
+class CStructRpcNetIfcRxTxPayload(Structure):
+    _fields_ = [
+        ("data", c_ubyte * 64),
+        ("byte_en", c_ubyte * 8),
+        ("reserved", c_ubyte),
+        ("is_fisrt", c_ubyte),
+        ("is_last", c_ubyte),
+        ("is_valid", c_ubyte),
+    ]
+
+
+class CStructRpcNetIfcRxTxMessage(Structure):
+    _fields_ = [
+        ("header", CStructRpcHeader),
+        ("payload", CStructRpcNetIfcRxTxPayload),
     ]
 
 
@@ -107,10 +127,12 @@ class BluesimRpcServer:
                 recv_pointer = 0
                 recv_cnt = client_socket.recv_into(
                     raw_req_buf, sizeof(CStructRpcHeader))
+
                 if recv_cnt != sizeof(CStructRpcHeader):
                     raise Exception("receive broken rpc header")
                 rpc_header = CStructRpcHeader.from_buffer(raw_req_buf)
-                remain_size = self.rpc_code_2_payload_size_map[rpc_header.opcode]
+                remain_size = self.rpc_code_2_payload_size_map[rpc_header.opcode] - sizeof(
+                    CStructRpcHeader)
                 recv_pointer = recv_cnt
 
                 while remain_size > 0:
@@ -157,17 +179,22 @@ class MockNicAndHost:
         self.main_memory = main_memory
         self.bluesim_rpc_server = BluesimRpcServer(HOST, PORT)
         self.bluesim_rpc_server.register_opcode(
-            CEnumRpcOpcode.RpcOpcodePcieBarGetReadReq, self.rpc_handler_pcie_bar_get_read_req, sizeof(CStructBarIoInfo))
+            CEnumRpcOpcode.RpcOpcodePcieBarGetReadReq, self.rpc_handler_pcie_bar_get_read_req, sizeof(CStructRpcPcieBarAccessMessage))
         self.bluesim_rpc_server.register_opcode(
-            CEnumRpcOpcode.RpcOpcodePcieBarPutReadResp, self.rpc_handler_pcie_bar_put_read_resp, sizeof(CStructBarIoInfo))
+            CEnumRpcOpcode.RpcOpcodePcieBarPutReadResp, self.rpc_handler_pcie_bar_put_read_resp, sizeof(CStructRpcPcieBarAccessMessage))
         self.bluesim_rpc_server.register_opcode(
-            CEnumRpcOpcode.RpcOpcodePcieBarGetWriteReq, self.rpc_handler_pcie_bar_get_write_req, sizeof(CStructBarIoInfo))
+            CEnumRpcOpcode.RpcOpcodePcieBarGetWriteReq, self.rpc_handler_pcie_bar_get_write_req, sizeof(CStructRpcPcieBarAccessMessage))
         self.bluesim_rpc_server.register_opcode(
-            CEnumRpcOpcode.RpcOpcodePcieBarPutWriteResp, self.rpc_handler_pcie_bar_put_write_resp, sizeof(CStructBarIoInfo))
+            CEnumRpcOpcode.RpcOpcodePcieBarPutWriteResp, self.rpc_handler_pcie_bar_put_write_resp, sizeof(CStructRpcPcieBarAccessMessage))
         self.bluesim_rpc_server.register_opcode(
-            CEnumRpcOpcode.RpcOpcodePcieMemWrite, self.rpc_handler_pcie_mem_write_req, sizeof(CStructMemIoInfo))
+            CEnumRpcOpcode.RpcOpcodePcieMemWrite, self.rpc_handler_pcie_mem_write_req, sizeof(CStructRpcPcieMemoryAccessMessage))
         self.bluesim_rpc_server.register_opcode(
-            CEnumRpcOpcode.RpcOpcodePcieMemRead, self.rpc_handler_pcie_mem_read_req, sizeof(CStructMemIoInfo))
+            CEnumRpcOpcode.RpcOpcodePcieMemRead, self.rpc_handler_pcie_mem_read_req, sizeof(CStructRpcPcieMemoryAccessMessage))
+
+        self.bluesim_rpc_server.register_opcode(
+            CEnumRpcOpcode.RpcOpcodeNetIfcGetRxData, self.rpc_handler_net_ifc_get_rx_req, sizeof(CStructRpcNetIfcRxTxMessage))
+        self.bluesim_rpc_server.register_opcode(
+            CEnumRpcOpcode.RpcOpcodeNetIfcPutTxData, self.rpc_handler_net_ifc_put_tx_req, sizeof(CStructRpcNetIfcRxTxMessage))
 
         self.pending_bar_write_req = []
         self.pending_bar_write_req_waiting_dict = {}
@@ -176,6 +203,9 @@ class MockNicAndHost:
         self.pending_bar_read_req = []
         self.pending_bar_read_req_waiting_dict = {}
         self.pending_bar_read_resp = {}
+
+        self.pending_network_packet_tx = []
+        self.pending_network_packet_rx = []
 
         self.pcie_tlp_read_tag_counter = 0
 
@@ -193,7 +223,7 @@ class MockNicAndHost:
         return self.pcie_tlp_read_tag_counter
 
     def rpc_handler_pcie_bar_get_read_req(self, client_socket, raw_req_buf):
-        req = CStructRpcPcieBarAccessMessage.from_buffer(raw_req_buf)
+        req = CStructRpcPcieBarAccessMessage.from_buffer_copy(raw_req_buf)
         if self.pending_bar_read_req:
             req_payload = self.pending_bar_read_req.pop(0)
             req.payload = req_payload
@@ -202,7 +232,7 @@ class MockNicAndHost:
         client_socket.send(bytes(req))
 
     def rpc_handler_pcie_bar_put_read_resp(self, client_socket, raw_req_buf):
-        resp = CStructRpcPcieBarAccessMessage.from_buffer(raw_req_buf)
+        resp = CStructRpcPcieBarAccessMessage.from_buffer_copy(raw_req_buf)
         if resp.payload.pci_tag in self.pending_bar_read_resp:
             raise Exception(
                 "pcie read tag conflict, maybe too many outstanding requests")
@@ -211,7 +241,7 @@ class MockNicAndHost:
         # this Op doesn't send response
 
     def rpc_handler_pcie_bar_get_write_req(self, client_socket, raw_req_buf):
-        req = CStructRpcPcieBarAccessMessage.from_buffer(raw_req_buf)
+        req = CStructRpcPcieBarAccessMessage.from_buffer_copy(raw_req_buf)
         if self.pending_bar_write_req:
             req_payload = self.pending_bar_write_req.pop(0)
             req.payload = req_payload
@@ -220,7 +250,7 @@ class MockNicAndHost:
         client_socket.send(bytes(req))
 
     def rpc_handler_pcie_bar_put_write_resp(self, client_socket, raw_req_buf):
-        resp = CStructRpcPcieBarAccessMessage.from_buffer(raw_req_buf)
+        resp = CStructRpcPcieBarAccessMessage.from_buffer_copy(raw_req_buf)
         if resp.payload.pci_tag in self.pending_bar_write_resp:
             raise Exception(
                 "pcie write tag conflict, maybe too many outstanding requests")
@@ -230,7 +260,7 @@ class MockNicAndHost:
         # this Op doesn't send response
 
     def rpc_handler_pcie_mem_write_req(self, client_socket, raw_req_buf):
-        req = CStructRpcPcieMemoryAccessMessage.from_buffer(raw_req_buf)
+        req = CStructRpcPcieMemoryAccessMessage.from_buffer_copy(raw_req_buf)
         byte_cnt_per_word = req.payload.word_width >> 3
         host_mem_start_addr = req.payload.word_addr * byte_cnt_per_word
         byte_en = int.from_bytes(req.payload.byte_en, byteorder="little")
@@ -242,11 +272,30 @@ class MockNicAndHost:
         # this Op doesn't send response
 
     def rpc_handler_pcie_mem_read_req(self, client_socket, raw_req_buf):
-        req = CStructRpcPcieMemoryAccessMessage.from_buffer(raw_req_buf)
+        req = CStructRpcPcieMemoryAccessMessage.from_buffer_copy(raw_req_buf)
         byte_cnt_per_word = req.payload.word_width >> 3
         host_mem_start_addr = req.payload.word_addr * byte_cnt_per_word
         req.payload.data[0:byte_cnt_per_word] = self.main_memory.buf[host_mem_start_addr: host_mem_start_addr+byte_cnt_per_word]
         client_socket.send(bytes(req))
+
+    def rpc_handler_net_ifc_get_rx_req(self, client_socket, raw_req_buf):
+        req = CStructRpcNetIfcRxTxMessage.from_buffer_copy(raw_req_buf)
+        if self.pending_network_packet_rx:
+            req_payload = self.pending_network_packet_rx.pop(0)
+            req.payload = req_payload
+        else:
+            req.payload.is_valid = 0
+        client_socket.send(bytes(req))
+
+    def rpc_handler_net_ifc_put_tx_req(self, client_socket, raw_req_buf):
+        req = CStructRpcNetIfcRxTxMessage.from_buffer_copy(raw_req_buf)
+        self.pending_network_packet_tx.append(req.payload)
+
+        # this is for test
+        print("TODO: remove this")
+        self.pending_network_packet_rx.append(req.payload)
+
+        # this Op doesn't send response
 
     def write_csr_blocking(self, addr, value):
         tag = self._get_next_pcie_tlp_tag()
@@ -276,6 +325,13 @@ class MockNicAndHost:
         del self.pending_bar_read_req_waiting_dict[tag]
         resp = self.pending_bar_read_resp.pop(tag)
         return resp.payload.value
+
+    def get_net_ifc_tx_data_from_nic(self):
+        if self.pending_network_packet_tx:
+            return self.pending_network_packet_tx.pop(0)
+
+    def put_net_ifc_rx_data_to_nic(self, frag):
+        return self.pending_network_packet_tx.append(frag)
 
 
 TOTAL_MEMORY_SIZE = 1024 * 1024 * 64
