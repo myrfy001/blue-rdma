@@ -19,9 +19,13 @@ set_property IOSTANDARD LVCMOS18 [get_ports sys_rst_n]
 create_clock -name sys_clk -period 10 [get_ports sys_clk_p]
 
 # SLR Partition
-set_property USER_SLR_ASSIGNMENT SLR1 [get_cells {mmcm_250_to_500}]
+# set_property USER_SLR_ASSIGNMENT SLR2 [get_cells -regexp -hierarchical mmcm_250_to_500.*]
 set_property USER_SLR_ASSIGNMENT SLR1 [get_cells {xdma_0_i}]
-set_property USER_SLR_ASSIGNMENT SLR1 [get_cells {refclk_ibuf}]
-set_property USER_SLR_ASSIGNMENT SLR1 [get_cells {sys_reset_n_ibuf}]
+set_property USER_SLR_ASSIGNMENT SLR2 [get_cells {refclk_ibuf}]
+set_property USER_SLR_ASSIGNMENT SLR2 [get_cells {sys_reset_n_ibuf}]
 set_property USER_SLR_ASSIGNMENT SLR2 [get_cells {cmac_inst} ]
-# set_property USER_SLR_ASSIGNMENT SLR3 [get_cells {udp_cmac_inst1 } ]
+set_property USER_SLR_ASSIGNMENT SLR2 [get_cells {bsv_userlogic_top_inst}]
+set_property USER_SLR_ASSIGNMENT SLR2 [get_cells -hierarchical "udp*"]
+
+# very trick one
+set_property USER_SLR_ASSIGNMENT SLR2 [get_cells xdma_0_i/inst/pcie4_ip_i/inst/user_reset_reg]

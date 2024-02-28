@@ -1,7 +1,7 @@
 set dir_gen $::env(DIR_IP_GENERATED)
 
 file mkdir $dir_gen
-create_ip -name clk_wiz -vendor xilinx.com -library ip -version 6.0 -module_name clk_wiz_xdma_250_to_500 -dir $dir_gen -force
+create_ip -name clk_wiz -vendor xilinx.com -library ip -version 6.0 -module_name clk_wiz_xdma_250_to_500 -dir $dir_ip_gen -force
 
 set_property -dict [list \
   CONFIG.CLKIN1_JITTER_PS {40.0} \

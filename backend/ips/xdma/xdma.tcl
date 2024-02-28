@@ -18,5 +18,5 @@ set properties [list \
 
 file mkdir $dir_gen
 
-create_ip -name xdma -vendor xilinx.com -library ip -module_name xdma_0 -dir $dir_gen -force
+create_ip -name xdma -vendor xilinx.com -library ip -module_name xdma_0 -dir $dir_ip_gen -force
 set_property -dict $properties [get_ips xdma_0]

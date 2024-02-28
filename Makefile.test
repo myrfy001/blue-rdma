@@ -3,7 +3,7 @@ LOGDIR ?= $(abspath ../tmp)
 
 TESTBENCHS = \
             SimDma.bsv \
-            SimExtractRdmaHeaderPayload.bsv \
+            SimExtractHeaderRDMAPayload.bsv \
             SimGenRdmaReqResp.bsv \
             TestArbitration.bsv \
             TestController.bsv \

@@ -35,7 +35,7 @@ class UserspaceDriverServer:
 
             while not self.stop_flag:
 
-                recv_raw = server_socket.recv()
+                recv_raw = server_socket.recv(1024)
                 recv_req = json.loads(recv_raw)
 
                 if recv_req["is_write"]:

@@ -10,14 +10,31 @@ set top_module $::env(VERILOG_TOPMODULE)
 set target_clks $::env(TARGET_CLOCKS)
 set max_net_path_num $::env(MAX_NET_PATH_NUM)
 
+set current_time [clock format [clock seconds] -format "%Y-%m-%d-%H-%M-%S"]
+
 set_param general.maxthreads 24
 set device [get_parts $part]; # xcvu13p-fhgb2104-2-i; #
 set_part $device
 
+
+set ooc_module_names { \
+    mkTLB \
+    mkMemRegionTable \
+    mkDmaReadReqAddrTranslator \
+    mkExtractHeaderFromRdmaPktPipeOut \
+    mkMrAndPgtManager \
+    mkQPContext \
+    mkRQ \
+    mkXdmaGearbox \
+    mkXdmaWrapper \
+}
+
 proc runGenerateIP {args} {
-    global dir_output part device dir_ips device
+    global dir_output part device dir_ips dir_xdc device dir_ip_gen
 
     file mkdir $dir_output
+
+    read_xdc [ glob $dir_xdc/*.xdc ]
 
     foreach file [ glob $dir_ips/**/*.tcl ] {
         source $file
@@ -42,17 +59,8 @@ proc runSynthIP {args} {
 
 proc runSynthOOC {args} {
     global dir_output part dir_bsv_gen dir_ooc_scripts dir_ooc_scripts max_net_path_num
+    global ooc_module_names
 
-    set ooc_module_names { \
-        mkTLB \
-        mkMemRegionTable \
-        mkDmaReadReqAddrTranslator \
-        mkExtractHeaderFromRdmaPktPipeOut \
-        mkMrAndPgtManager \
-        mkQPContext \
-        mkRQ \
-        mkXdmaGearbox \
-    }
 
     foreach ooc_top $ooc_module_names {
         source ooc_tcl_and_xdc/bsv_ooc_module_common.tcl
@@ -62,12 +70,16 @@ proc runSynthOOC {args} {
 
 proc addExtFiles {args} {
     global dir_output part device dir_rtl dir_xdc dir_ip_gen dir_bsv_gen
+    global ooc_module_names
+
     read_ip [glob $dir_ip_gen/**/*.xci]
     read_verilog [ glob $dir_rtl/*.v ]
     read_verilog [ glob $dir_bsv_gen/*.v ]
-    remove_files {mkTLB.v mkMemRegionTable.v}
-    read_checkpoint ${dir_output}/ooc/mkTLB/mkTLB.dcp
-    read_checkpoint ${dir_output}/ooc/mkMemRegionTable/mkMemRegionTable.dcp
+    # foreach ooc_top $ooc_module_names {
+    #     remove_files ${ooc_top}.v
+    # }
+    # read_checkpoint ${dir_output}/ooc/mkTLB/mkTLB.dcp
+    # read_checkpoint ${dir_output}/ooc/mkMemRegionTable/mkMemRegionTable.dcp
     read_xdc [ glob $dir_xdc/*.xdc ]
 }
 
@@ -134,22 +146,76 @@ proc runPostSynthReport {args} {
 
 
 proc runPlacement {args} {
-    global dir_output top_module
+    global dir_output top_module current_time max_net_path_num
 
     if {[dict get $args -open_checkpoint] == true} {
         open_checkpoint $dir_output/post_synth_design.dcp
     }
 
+    source ./pblock.tcl
+
     opt_design -remap -verbose
-    power_opt_design
-    place_design
-    # Optionally run optimization if there are timing violations after placement
-    if {[get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]] < 0} {
-        puts "Found setup timing violations => running physical optimization"
-        phys_opt_design
+
+    if {[dict exist $args -directive]} {
+        set directive [dict get $args -directive]
+        place_design -verbose  -directive ${directive}
+    } else {
+        set directive ""
+        place_design -verbose 
     }
-    write_checkpoint -force $dir_output/post_place.dcp
-    write_xdc -force -exclude_physical $dir_output/post_place.xdc
+
+
+    # power_opt_design
+
+    # a best  one for now
+    # place_design -directive ExtraNetDelay_high  
+
+    # Optionally run optimization if there are timing violations after placement
+    # if {[get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]] < 0} {
+    #     puts "Found setup timing violations => running physical optimization"
+    #     phys_opt_design
+    # }
+
+    file mkdir $dir_output/${current_time}_${directive}
+    write_checkpoint -force $dir_output/${current_time}_${directive}/post_place.dcp
+    write_xdc -force -exclude_physical $dir_output/${current_time}_${directive}/post_place.
+    
+    xilinx::designutils::report_failfast -by_slr -detailed_reports impl -file $dir_output/${current_time}_${directive}/post_place_failfast.rpt
+    set slr_nets [xilinx::designutils::get_inter_slr_nets]
+    set slr_nets_exclude_clock [filter $slr_nets "TYPE != GLOBAL_CLOCK"]
+    set slr_net_exclude_clock_num [llength $slr_nets_exclude_clock]
+    if {$slr_net_exclude_clock_num > 0} {
+        report_timing -through $slr_nets_exclude_clock -nworst 1 -max $slr_net_exclude_clock_num -unique_pins -file $dir_output/${current_time}_${directive}/post_place_slr_nets.rpt
+    }
+
+    report_timing_summary -report_unconstrained -warn_on_violation -file $dir_output/${current_time}_${directive}/post_place_timing_summary.rpt
+    ######report_timing -of_objects [get_timing_paths -hold -to [get_clocks $target_clks] -max_paths $max_net_path_num -filter { LOGIC_LEVELS >= 4 && LOGIC_LEVELS <= 40 }] -file $dir_output/${current_time}_${directive}/post_place_long_paths.rpt
+    report_methodology -file $dir_output/${current_time}_${directive}/post_place_methodology.rpt
+    report_timing -max $max_net_path_num -slack_less_than 0 -file $dir_output/${current_time}_${directive}/post_place_timing.rpt
+
+    report_route_status -file $dir_output/${current_time}_${directive}/post_place_status.rpt
+    report_drc -file $dir_output/${current_time}_${directive}/post_place_drc.rpt
+    report_drc -ruledeck methodology_checks -file $dir_output/${current_time}_${directive}/post_place_drc_methodology.rpt
+    report_drc -ruledeck timing_checks -file $dir_output/${current_time}_${directive}/post_place_drc_timing.rpt
+    # Check unique control sets < 7.5% of total slices, at most 15%
+    report_control_sets -verbose -file $dir_output/${current_time}_${directive}/post_place_control_sets.rpt
+}
+
+
+proc runPostPlacementReport {args} {
+    global dir_output target_clks max_net_path_num
+
+    if {[dict get $args -open_checkpoint] == true} {
+        open_checkpoint $dir_output/post_place.dcp
+    }
+
+    xilinx::designutils::report_failfast -by_slr -detailed_reports impl -file $dir_output/post_place_failfast.rpt
+    set slr_nets [xilinx::designutils::get_inter_slr_nets]
+    set slr_nets_exclude_clock [filter $slr_nets "TYPE != GLOBAL_CLOCK"]
+    set slr_net_exclude_clock_num [llength $slr_nets_exclude_clock]
+    if {$slr_net_exclude_clock_num > 0} {
+        report_timing -through $slr_nets_exclude_clock -nworst 1 -max $slr_net_exclude_clock_num -unique_pins -file $dir_output/post_place_slr_nets.rpt
+    }
 }
 
 
@@ -256,11 +322,17 @@ proc runProgramDevice {args} {
 # runGenerateIP -open_checkpoint false
 # runSynthIP -open_checkpoint false
 # runSynthOOC
-addExtFiles -open_checkpoint false
-runSynthDesign -open_checkpoint false
-runPostSynthReport -open_checkpoint false
-runPlacement -open_checkpoint false
-runRoute -open_checkpoint false
-runPostRouteReport -open_checkpoint false
+# addExtFiles -open_checkpoint false
+# runSynthDesign -open_checkpoint false
+# runPostSynthReport -open_checkpoint false
+# runPlacement -open_checkpoint true -directive ExtraNetDelay_high
+runPlacement -open_checkpoint true -directive WLDrivenBlockPlacement
+# runPlacement -open_checkpoint true -directive Explore
+# runPlacement -open_checkpoint true -directive Auto_1
+# runPlacement -open_checkpoint true -directive EarlyBlockPlacement
+# runPlacement -open_checkpoint true
+# runPostPlacementReport -open_checkpoint false
+# runRoute -open_checkpoint false
+# runPostRouteReport -open_checkpoint false
 # runWriteBitStream -open_checkpoint false
 # runProgramDevice -open_checkpoint false

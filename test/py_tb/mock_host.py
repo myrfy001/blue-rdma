@@ -8,6 +8,7 @@ import atexit
 import time
 from hw_consts import *
 from ringbufs import *
+import math
 
 
 # Define the types we need.
@@ -174,6 +175,60 @@ class MockHostMem:
         self.shared_mem_obj.unlink()
 
 
+class NetworkDataAgent:
+    def __init__(self, mock_host):
+        self.mock_host = mock_host
+        self.tx_data_buf = b""
+        self.full_tx_data_list = []
+
+    def put_tx_frag(self, frag):
+        ones = math.log2(frag.byte_en + 1)
+        self.tx_data_buf += frag.data[:ones]
+        if frag.is_last:
+            self.full_tx_data_list.append(self.tx_data_buf)
+            self.tx_data_buf = b""
+
+    def put_full_rx_data(self, data):
+        remain_size = len(data)
+        while remain_size > 0:
+            if remain_size > 64:
+                data_trunk = data[:64]
+                data = data[64:]
+                self.mock_host.put_net_ifc_rx_data_to_nic(
+                    CStructRpcNetIfcRxTxMessage(
+                        header=CStructRpcHeader(
+                            opcode=CEnumRpcOpcode.RpcOpcodeNetIfcGetRxData,
+                        ),
+                        payload=CStructRpcNetIfcRxTxPayload(
+                            data=data,
+                            byte_en=0xFFFFFFFFFFFFFFFF,
+                            is_last=0,
+                            is_valid=1
+                        )
+                    )
+                )
+            else:
+                self.mock_host.put_net_ifc_rx_data_to_nic(
+                    CStructRpcNetIfcRxTxMessage(
+                        header=CStructRpcHeader(
+                            opcode=CEnumRpcOpcode.RpcOpcodeNetIfcGetRxData,
+                        ),
+                        payload=CStructRpcNetIfcRxTxPayload(
+                            data=data,
+                            byte_en=(1 << remain_size) - 1,
+                            is_last=1,
+                            is_valid=1
+                        )
+                    )
+                )
+
+    def get_full_tx_packet(self):
+        if self.full_tx_data_list:
+            return self.full_tx_data_list.pop(0)
+        else:
+            return None
+
+
 class MockNicAndHost:
     def __init__(self, main_memory: MockHostMem) -> None:
         self.main_memory = main_memory
@@ -326,9 +381,10 @@ class MockNicAndHost:
         resp = self.pending_bar_read_resp.pop(tag)
         return resp.payload.value
 
-    def get_net_ifc_tx_data_from_nic(self):
-        if self.pending_network_packet_tx:
-            return self.pending_network_packet_tx.pop(0)
+    def get_net_ifc_tx_data_from_nic_blocking(self):
+        while len(self.pending_network_packet_tx) == 0:
+            pass
+        return self.pending_network_packet_tx.pop(0)
 
     def put_net_ifc_rx_data_to_nic(self, frag):
         return self.pending_network_packet_tx.append(frag)
@@ -381,7 +437,7 @@ SEND_SIDE_PSN = 0x22
 
 
 def test_case():
-    host_mem = MockHostMem("/bluesim1", 1024*1024*64)
+    host_mem = MockHostMem("/bluesim1", TOTAL_MEMORY_SIZE)
     mock_nic = MockNicAndHost(host_mem)
     mock_nic.run()
 
