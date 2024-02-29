@@ -66,7 +66,6 @@ module mkBsvTop(
 );
 
     
-
     XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper(clocked_by slowClock, reset_by slowReset);
     XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(slowClock, slowReset);
     TopCoreRdma bsvTopCore <- mkTopCore(slowClock, slowReset);
@@ -78,7 +77,7 @@ module mkBsvTop(
     let udpClk <- exposeCurrentClock;
     let udpReset <- exposeCurrentReset;
 
-
+    // FIXME
     Bool isCmacTxWaitRxAligned = True;
     Integer syncBramBufDepth = 32;
     Integer cdcSyncStages = 4;
@@ -137,7 +136,7 @@ endinterface
 
 
 (* synthesize *)
-module udpWrapper(UdpIpEthRxTx);
+module mkUdpWrapper(UdpIpEthRxTx);
     let t <- mkGenericUdpIpEthRxTx(`IS_SUPPORT_RDMA);
     return t;
 endmodule
@@ -262,7 +261,7 @@ module mkTopCore(
     mkConnection(sq.dmaReadClt, addrTranslatorForSQ.sqReqInputSrv);
     mkConnection(workQueueRingbufController.workReq, sq.sendQ.srvPort.request);
 
-    let udp <- udpWrapper;
+    let udp <- mkUdpWrapper;
 
     Reg#(Bool)  udpParamNotSetReg <- mkReg(True);
 
