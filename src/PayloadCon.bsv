@@ -334,5 +334,5 @@ module mkPayloadConsumer(PayloadConsumer);
 
     interface controlPortSrv = controlPortSrvInst.srv;
     interface dmaWriteClt = dmaWriteCltInst.clt;
-    interface payloadPipeIn = toPipeIn(payloadInBufQ);
+    interface payloadPipeIn = toPut(payloadInBufQ);
 endmodule

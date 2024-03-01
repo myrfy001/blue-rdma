@@ -3,6 +3,7 @@ import PAClib :: *;
 import PrimUtils :: *;
 import PipeIn :: *;
 import Vector :: *;
+import GetPut :: *;
 
 import Headers :: *;
 import Settings :: *;
@@ -137,7 +138,7 @@ typedef Bit#(TIMEOUT_CYCLE_CNT_WIDTH)  TimeOutCycleCnt;
 typedef Bit#(PD_HANDLE_WIDTH) HandlerPD;
 
 typedef PipeOut#(DataStream) DataStreamPipeOut;
-typedef PipeIn#(DataStream) DataStreamPipeIn;
+typedef Put#(DataStream) DataStreamPipeIn;
 
 typedef PipeOut#(RecvReq)                     RecvReqBuf;
 

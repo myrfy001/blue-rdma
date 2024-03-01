@@ -180,9 +180,9 @@ module mkTopCore(
 
     let inputRdmaPktBufAndHeaderValidation <- mkInputRdmaPktBufAndHeaderValidation;
 
-    mkConnection(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData, inputRdmaPktBufAndHeaderValidation.headerMetaDataPipeIn);
-    mkConnection(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream, inputRdmaPktBufAndHeaderValidation.headerDataStreamPipeIn);
-    mkConnection(headerAndMetaDataAndPayloadPipeOut.payload, inputRdmaPktBufAndHeaderValidation.payloadPipeIn);
+    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData), inputRdmaPktBufAndHeaderValidation.headerMetaDataPipeIn);
+    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream), inputRdmaPktBufAndHeaderValidation.headerDataStreamPipeIn);
+    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.payload), inputRdmaPktBufAndHeaderValidation.payloadPipeIn);
 
     mkConnection(inputRdmaPktBufAndHeaderValidation.qpcReadCommonClt, qpc.readCommonSrv);
     mkConnection(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.pktMetaData, rq.pktMetaDataPipeIn);
@@ -194,7 +194,7 @@ module mkTopCore(
 
     let payloadConsumer <- mkPayloadConsumer;
 
-    mkConnection(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.payload, payloadConsumer.payloadPipeIn);
+    mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.payload), payloadConsumer.payloadPipeIn);
     mkConnection(rq.payloadXonsumerControlPortClt, payloadConsumer.controlPortSrv);
 
     DmaReqAddrTranslator addrTranslatorForSQ <- mkDmaReadReqAddrTranslator;

@@ -2,6 +2,7 @@ import FIFOF :: *;
 import PAClib :: *;
 import Vector :: *;
 import ClientServer :: *;
+import GetPut :: *;
 
 import DataTypes :: *;
 import ExtractAndPrependPipeOut :: *;
@@ -153,14 +154,14 @@ module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateData
         interface headerMetaData = headerMetaDataPipeOut;
     endinterface;
     interface payload = headerAndPayloadPipeOut.payload;
-    interface rdmaPktPipeIn = toPipeIn(rdmaPktPipeInQ);
+    interface rdmaPktPipeIn = toPut(rdmaPktPipeInQ);
 endmodule
 
 interface InputRdmaPktBuf;
     interface RdmaPktMetaDataAndQpcAndPayloadPipeOut reqPktPipeOut;
     
     interface DataStreamPipeIn headerDataStreamPipeIn;
-    interface PipeIn#(HeaderMetaData) headerMetaDataPipeIn;
+    interface Put#(HeaderMetaData) headerMetaDataPipeIn;
     interface DataStreamPipeIn payloadPipeIn;
 
     interface Client#(ReadReqCommonQPC, Maybe#(EntryCommonQPC)) qpcReadCommonClt;
@@ -200,11 +201,23 @@ typedef struct {
     Bool        isMidPkt;
 } PktLenCheckInfo deriving(Bits);
 
+
+typedef 20 INPUT_HEADER_VALIDATION_PIPELINE_DEPTH;
+typedef Bit#(TLog#(INPUT_HEADER_VALIDATION_PIPELINE_DEPTH)) InputHeaderValidationPayloadBufIdx; 
+
+typedef struct {
+    ByteEn                              byteEn;
+    Bool                                isFirst;
+    Bool                                isLast;
+    InputHeaderValidationPayloadBufIdx  bufIdx;
+} DataStreamFragMetaData deriving(Bits, FShow);
+
 // This module will discard:
 // - invalid packet that header is without payload but packet has payload;
 // TODO: check write requests have non-zero RETH.dlen but without payload
 // TODO: check remote XRC domain and XRCETH valid?
 // TODO: reset mkInputRdmaPktBufAndHeaderValidation when error or retry?
+(* synthesize *)
 module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
     // Output FIFO for PipeOut
     FIFOF#(DataStream)           reqPayloadOutQ <- mkFIFOF;
@@ -212,23 +225,35 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
 
     // Pipeline buffers
     FIFOF#(Tuple4#(HeaderRDMA, Bool, Bool, Bool))                                             rdmaHeaderRecvQ <- mkFIFOF;
-    FIFOF#(DataStream)                                                                           payloadRecvQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData)                                                       payloadFragMetaRecvQ <- mkFIFOF;
+
     FIFOF#(HeaderRDMA)                                                                    rdmaHeaderPreCheckQ <- mkFIFOF;
-    FIFOF#(DataStream)                                                                       payloadPreCheckQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData)                                                   payloadFragMetaPreCheckQ <- mkFIFOF;
+
     FIFOF#(Tuple2#(HeaderRDMA, HeaderValidateInfo))                                     rdmaHeaderValidationQ <- mkSizedFIFOF(valueOf(QPC_QUERY_RESP_MAX_DELAY));
-    FIFOF#(DataStream)                                                                     payloadValidationQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData)                                                 payloadFragMetaValidationQ <- mkFIFOF;
+
     FIFOF#(Tuple3#(HeaderRDMA, Maybe#(EntryCommonQPC), ValidHeaderInfo))                    rdmaHeaderFilterQ <- mkFIFOF;
-    FIFOF#(DataStream)                                                                         payloadFilterQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData)                                                     payloadFragMetaFilterQ <- mkFIFOF;
+
     FIFOF#(Tuple3#(HeaderRDMA, EntryCommonQPC, ValidHeaderInfo))                       rdmaHeaderFragLenCalcQ <- mkFIFOF;
-    FIFOF#(DataStream)                                                                    payloadFragLenCalcQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData)                                                payloadFragMetaFragLenCalcQ <- mkFIFOF;
+
     FIFOF#(Tuple3#(HeaderRDMA, EntryCommonQPC, ValidHeaderInfo))                        rdmaHeaderPktLenCalcQ <- mkFIFOF;
-    FIFOF#(Tuple5#(DataStream, ByteEnBitNum, ByteEnBitNum, Bool, Bool))                    payloadPktLenCalcQ <- mkFIFOF;
+    FIFOF#(Tuple5#(DataStreamFragMetaData, ByteEnBitNum, ByteEnBitNum, Bool, Bool))        payloadPktLenCalcQ <- mkFIFOF;
+
     FIFOF#(Tuple2#(PktLenCheckInfo, EntryCommonQPC))                                rdmaHeaderPktLenPreCheckQ <- mkFIFOF;
-    FIFOF#(DataStream)                                                                 payloadPktLenPreCheckQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData)                                             payloadFragMetaPktLenPreCheckQ <- mkFIFOF;
+
     FIFOF#(Tuple5#(PktLenCheckInfo, EntryCommonQPC, Bool, Bool, Bool))                 rdmaHeaderPktLenCheckQ <- mkFIFOF;
-    FIFOF#(DataStream)                                                                    payloadPktLenCheckQ <- mkFIFOF;
-    FIFOF#(RdmaPktMetaDataAndQPC)                                                         rdmaHeaderOutputQ <- mkFIFOF;
-    FIFOF#(DataStream)                                                                         payloadOutputQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData)                                                payloadFragMetaPktLenCheckQ <- mkFIFOF;
+    
+    FIFOF#(RdmaPktMetaDataAndQPC)                                                           rdmaHeaderOutputQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData)                                                     payloadFragMetaOutputQ <- mkFIFOF;
+
+    // buffer for payloads in pipeline
+    Vector#(INPUT_HEADER_VALIDATION_PIPELINE_DEPTH, Reg#(DATA)) payloadBufVec <- replicateM(mkRegU);
+    Reg#(InputHeaderValidationPayloadBufIdx) payloadBufIdxGeneratorReg <- mkReg(0);
 
     Reg#(Bool)        isValidPktReg <- mkRegU;
     Reg#(PAD)          bthPadCntReg <- mkRegU;
@@ -306,7 +331,22 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             // );
         end
 
-        payloadRecvQ.enq(payloadFrag);
+        if (payloadBufIdxGeneratorReg == fromInteger(valueOf(INPUT_HEADER_VALIDATION_PIPELINE_DEPTH)-1)) begin
+            payloadBufIdxGeneratorReg <= 0;
+        end
+        else begin
+            payloadBufIdxGeneratorReg <= payloadBufIdxGeneratorReg + 1;
+        end
+
+        let streamFragMeta = DataStreamFragMetaData{
+            byteEn  :   payloadFrag.byteEn,
+            isFirst :   payloadFrag.isFirst,
+            isLast  :   payloadFrag.isLast,
+            bufIdx  :   payloadBufIdxGeneratorReg
+        };
+
+        payloadBufVec[payloadBufIdxGeneratorReg] <= payloadFrag.data;
+        payloadFragMetaRecvQ.enq(streamFragMeta);
         // $display(
         //     "time=%0t: 1st stage recvPktFrag", $time
         //     // ", bth=", fshow(bth), ", aeth=", fshow(aeth)
@@ -314,10 +354,10 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
     endrule
 
     rule preCheckHeader if (pktBufStateReg == RDMA_PKT_BUT_ST_PRE_CHECK_FRAG);
-        let payloadFrag = payloadRecvQ.first;
-        payloadRecvQ.deq;
+        let streamFragMeta = payloadFragMetaRecvQ.first;
+        payloadFragMetaRecvQ.deq;
 
-        if (payloadFrag.isFirst) begin
+        if (streamFragMeta.isFirst) begin
             let {
                 rdmaHeader, bthCheckResult, headerCheckResult, nonPayloadHeaderShouldHaveNoPayload
             } = rdmaHeaderRecvQ.first;
@@ -328,16 +368,16 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             if (bthCheckResult && headerCheckResult && nonPayloadHeaderShouldHaveNoPayload) begin
                 // Packet header is valid
                 rdmaHeaderPreCheckQ.enq(rdmaHeader);
-                payloadPreCheckQ.enq(payloadFrag);
+                payloadFragMetaPreCheckQ.enq(streamFragMeta);
 
                 // $display(
                 //     "time=%0t: bth=", $time, fshow(bth),
                 //     ", headerMetaData=", fshow(rdmaHeader.headerMetaData),
-                //     "\ntime=%0t: payloadFrag=", $time, fshow(payloadFrag)
+                //     "\ntime=%0t: streamFragMeta=", $time, fshow(streamFragMeta)
                 // );
             end
             else begin
-                if (!payloadFrag.isLast) begin
+                if (!streamFragMeta.isLast) begin
                     $warning(
                         "time=%0t: InputRdmaPktBuf preCheckHeader", $time,
                         ", discard invalid RDMA packet of multi-fragment payload"
@@ -353,8 +393,8 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             end
         end
         else begin
-            payloadPreCheckQ.enq(payloadFrag);
-            // $display("time=%0t: payloadFrag=", $time, fshow(payloadFrag));
+            payloadFragMetaPreCheckQ.enq(streamFragMeta);
+            // $display("time=%0t: streamFragMeta=", $time, fshow(streamFragMeta));
         end
         // $display(
         //     "time=%0t: 2nd-1 stage preCheckHeader", $time
@@ -367,19 +407,19 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
     endrule
 
     rule discardInvalidFrag if (pktBufStateReg == RDMA_PKT_BUF_ST_DISCARD_FRAG);
-        let payload = payloadRecvQ.first;
-        payloadRecvQ.deq;
-        if (payload.isLast) begin
+        let streamFragMeta = payloadFragMetaRecvQ.first;
+        payloadFragMetaRecvQ.deq;
+        if (streamFragMeta.isLast) begin
             pktBufStateReg <= RDMA_PKT_BUT_ST_PRE_CHECK_FRAG;
         end
         // $display("time=%0t: 2nd-2 stage discardInvalidFrag", $time);
     endrule
 
     rule prepareValidation;
-        let payloadFrag = payloadPreCheckQ.first;
-        payloadPreCheckQ.deq;
+        let streamFragMeta = payloadFragMetaPreCheckQ.first;
+        payloadFragMetaPreCheckQ.deq;
 
-        if (payloadFrag.isFirst) begin
+        if (streamFragMeta.isFirst) begin
             let rdmaHeader = rdmaHeaderPreCheckQ.first;
             rdmaHeaderPreCheckQ.deq;
 
@@ -404,15 +444,15 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         end
 
         // Notice: this fifo should be large enough to wait qpcReadCommonCltInst's response
-        payloadValidationQ.enq(payloadFrag);
+        payloadFragMetaValidationQ.enq(streamFragMeta);
         // $display("time=%0t: 3rd stage prepareValidation", $time);
     endrule
 
     rule checkMetaDataQP;
-        let payloadFrag = payloadValidationQ.first;
-        payloadValidationQ.deq;
+        let streamFragMeta = payloadFragMetaValidationQ.first;
+        payloadFragMetaValidationQ.deq;
 
-        if (payloadFrag.isFirst) begin
+        if (streamFragMeta.isFirst) begin
             let { rdmaHeader, headerValidateInfo } = rdmaHeaderValidationQ.first;
             rdmaHeaderValidationQ.deq;
 
@@ -455,17 +495,17 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             rdmaHeaderFilterQ.enq(tuple3(rdmaHeader, qpcCommonMaybe, validHeaderInfo));
         end
 
-        payloadFilterQ.enq(payloadFrag);
+        payloadFragMetaFilterQ.enq(streamFragMeta);
         // $display("time=%0t: 4th stage checkMetaDataQP", $time);
     endrule
 
     rule discardInvalidHeaderPkt;
-        let payloadFrag = payloadFilterQ.first;
-        payloadFilterQ.deq;
+        let streamFragMeta = payloadFragMetaFilterQ.first;
+        payloadFragMetaFilterQ.deq;
 
         let isValidPkt = isValidPktReg;
 
-        if (payloadFrag.isFirst) begin
+        if (streamFragMeta.isFirst) begin
             let { rdmaHeader, qpcCommonMaybe, validHeaderInfo } = rdmaHeaderFilterQ.first;
             rdmaHeaderFilterQ.deq;
 
@@ -503,7 +543,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         // );
 
         if (isValidPkt) begin
-            payloadFragLenCalcQ.enq(payloadFrag);
+            payloadFragMetaFragLenCalcQ.enq(streamFragMeta);
         end
         $display(
             "time=%0t: 5th stage discardInvalidHeaderPkt", $time,
@@ -512,11 +552,11 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
     endrule
 
     rule calcFraglen;
-        let payloadFrag = payloadFragLenCalcQ.first;
-        payloadFragLenCalcQ.deq;
+        let streamFragMeta = payloadFragMetaFragLenCalcQ.first;
+        payloadFragMetaFragLenCalcQ.deq;
 
         let bthPadCnt = bthPadCntReg;
-        if (payloadFrag.isFirst) begin
+        if (streamFragMeta.isFirst) begin
             let { rdmaHeader, qpcCommon, validHeaderInfo } = rdmaHeaderFragLenCalcQ.first;
             rdmaHeaderFragLenCalcQ.deq;
 
@@ -527,15 +567,14 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             rdmaHeaderPktLenCalcQ.enq(tuple3(rdmaHeader, qpcCommon, validHeaderInfo));
 
             // $display(
-            //     "time=%0t: payloadFrag.byteEn=%h, payloadFrag.isFirst=",
-            //     $time, payloadFrag.byteEn, fshow(payloadFrag.isFirst),
-            //     ", payloadFrag.isLast=", payloadFrag.isLast, ", bth.psn=%h", bth.psn,
-            //     ", bth.opcode=", fshow(bth.opcode), ", bth.padCnt=%h", bth.padCnt,
-            //     ", payloadFrag.data=%h", payloadFrag.data
+            //     "time=%0t: streamFragMeta.byteEn=%h, streamFragMeta.isFirst=",
+            //     $time, streamFragMeta.byteEn, fshow(streamFragMeta.isFirst),
+            //     ", streamFragMeta.isLast=", streamFragMeta.isLast, ", bth.psn=%h", bth.psn,
+            //     ", bth.opcode=", fshow(bth.opcode), ", bth.padCnt=%h", bth.padCnt
             // );
         end
         
-        let payloadFragLen = calcFragByteNumFromByteEn(payloadFrag.byteEn);
+        let payloadFragLen = calcFragByteNumFromByteEn(streamFragMeta.byteEn);
         immAssert(
             isValid(payloadFragLen),
             "isValid(payloadFragLen) assertion @ mkInputRdmaPktBufAndHeaderValidation",
@@ -544,19 +583,19 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             )
         );
         let fragLen         = unwrapMaybe(payloadFragLen);
-        let isByteEnNonZero = !isZeroByteEn(payloadFrag.byteEn);
-        let isByteEnAllOne  = isAllOnesR(payloadFrag.byteEn);
+        let isByteEnNonZero = !isZeroByteEn(streamFragMeta.byteEn);
+        let isByteEnAllOne  = isAllOnesR(streamFragMeta.byteEn);
         ByteEnBitNum fragLenWithOutPad = fragLen - zeroExtend(bthPadCnt);
 
         payloadPktLenCalcQ.enq(tuple5(
-            payloadFrag, fragLen, fragLenWithOutPad, isByteEnNonZero, isByteEnAllOne
+            streamFragMeta, fragLen, fragLenWithOutPad, isByteEnNonZero, isByteEnAllOne
         ));
         // $display("time=%0t: 6th stage calcFraglen", $time);
     endrule
 
     rule calcPktLen;
         let {
-            payloadFrag, fragLen, fragLenWithOutPad, isByteEnNonZero, isByteEnAllOne
+            streamFragMeta, fragLen, fragLenWithOutPad, isByteEnNonZero, isByteEnAllOne
         } = payloadPktLenCalcQ.first;
         payloadPktLenCalcQ.deq;
 
@@ -576,24 +615,24 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
 
         // PktLen fragLenExt = zeroExtend(fragLen);
         PktLen fragLenExtWithOutPad = zeroExtend(fragLenWithOutPad);
-        case ({ pack(payloadFrag.isFirst), pack(payloadFrag.isLast) })
-            2'b11: begin // payloadFrag.isFirst && payloadFrag.isLast
+        case ({ pack(streamFragMeta.isFirst), pack(streamFragMeta.isLast) })
+            2'b11: begin // streamFragMeta.isFirst && streamFragMeta.isLast
                 pktLen = fragLenExtWithOutPad;
                 pktFragNum = 1;
                 pktValid = (isFirstOrMidPkt ? False : (isLastPkt ? isByteEnNonZero : True));
             end
-            2'b10: begin // payloadFrag.isFirst && !payloadFrag.isLast
+            2'b10: begin // streamFragMeta.isFirst && !streamFragMeta.isLast
                 pktLen = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
                 pktFragNum = 1;
                 pktValid = isByteEnAllOne;
             end
-            2'b01: begin // !payloadFrag.isFirst && payloadFrag.islast
+            2'b01: begin // !streamFragMeta.isFirst && streamFragMeta.islast
                 pktLen = pktLenAddFragLen(pktLenReg, fragLenWithOutPad);
                 // pktLen = pktLenReg + fragLenExtWithOutPad;
                 pktFragNum = pktFragNumReg + 1;
                 pktValid = pktValidReg;
             end
-            2'b00: begin // !payloadFrag.isFirst && !payloadFrag.islast
+            2'b00: begin // !streamFragMeta.isFirst && !streamFragMeta.islast
                 pktLen = pktLenAddBusByteWidth(pktLenReg);
                 // pktLen = pktLenReg + fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
                 pktFragNum = pktFragNumReg + 1;
@@ -605,7 +644,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         pktValidReg   <= pktValid;
         pktFragNumReg <= pktFragNum;
 
-        if (payloadFrag.isLast) begin
+        if (streamFragMeta.isLast) begin
             rdmaHeaderPktLenCalcQ.deq;
 
             let pktLenCheckInfo = PktLenCheckInfo {
@@ -621,7 +660,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             };
             rdmaHeaderPktLenPreCheckQ.enq(tuple2(pktLenCheckInfo, qpcCommon));
         end
-        payloadPktLenPreCheckQ.enq(payloadFrag);
+        payloadFragMetaPktLenPreCheckQ.enq(streamFragMeta);
         // $display(
         //     "time=%0t: 7th stage calcPktLen", $time,
         //     ", pktLen=%0d, pktFragNum=%0d", pktLen, pktFragNum,
@@ -631,21 +670,20 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         //     // ", pktMetaDataOutQ.notFull=", fshow(pktMetaDataOutQ.notFull),
         //     ", DATA_STREAM_FRAG_BUF_SIZE=%0d", valueOf(DATA_STREAM_FRAG_BUF_SIZE),
         //     ", PKT_META_DATA_BUF_SIZE=%0d", valueOf(PKT_META_DATA_BUF_SIZE),
-        //     ", payloadFrag.byteEn=%h" , payloadFrag.byteEn,
-        //     ", payloadFrag.isFirst=", fshow(payloadFrag.isFirst),
-        //     ", payloadFrag.isLast=", fshow(payloadFrag.isLast),
+        //     ", streamFragMeta.byteEn=%h" , streamFragMeta.byteEn,
+        //     ", streamFragMeta.isFirst=", fshow(streamFragMeta.isFirst),
+        //     ", streamFragMeta.isLast=", fshow(streamFragMeta.isLast),
         //     ", bth.psn=%h", bth.psn,
         //     ", bth.opcode=", fshow(bth.opcode),
         //     ", bth.padCnt=%h", bth.padCnt
-        //     // ", payloadFrag.data=%h", payloadFrag.data
         // );
     endrule
 
     rule preCheckPktLen;
-        let payloadFrag = payloadPktLenPreCheckQ.first;
-        payloadPktLenPreCheckQ.deq;
+        let streamFragMeta = payloadFragMetaPktLenPreCheckQ.first;
+        payloadFragMetaPktLenPreCheckQ.deq;
 
-        if (payloadFrag.isLast) begin
+        if (streamFragMeta.isLast) begin
             let { pktLenCheckInfo, qpcCommon } = rdmaHeaderPktLenPreCheckQ.first;
             rdmaHeaderPktLenPreCheckQ.deq;
 
@@ -661,15 +699,15 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             ));
         end
 
-        payloadPktLenCheckQ.enq(payloadFrag);
+        payloadFragMetaPktLenCheckQ.enq(streamFragMeta);
         // $display("time=%0t: 8th stage preCheckPktLen", $time);
     endrule
 
     rule checkPktLen;
-        let payloadFrag = payloadPktLenCheckQ.first;
-        payloadPktLenCheckQ.deq;
+        let streamFragMeta = payloadFragMetaPktLenCheckQ.first;
+        payloadFragMetaPktLenCheckQ.deq;
 
-        if (payloadFrag.isLast) begin
+        if (streamFragMeta.isLast) begin
             let {
                 pktLenCheckInfo, qpcCommon, isZeroPayloadLen, isPktLenEqPMTU, isPktLenGtPMTU
             } = rdmaHeaderPktLenCheckQ.first;
@@ -685,11 +723,11 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             let isMidPkt        = pktLenCheckInfo.isMidPkt;
 
             // fix byteEN to prevent dma write access touch unrelated bytes.
-            payloadFrag.byteEn = payloadFrag.byteEn << pktLenCheckInfo.padCnt;
+            streamFragMeta.byteEn = streamFragMeta.byteEn << pktLenCheckInfo.padCnt;
 
             if (!isZeroPayloadLen) begin
-                payloadOutputQ.enq(payloadFrag);
-                // $display("time=%0t: payloadFrag=", $time, fshow(payloadFrag));
+                payloadFragMetaOutputQ.enq(streamFragMeta);
+                // $display("time=%0t: streamFragMeta=", $time, fshow(streamFragMeta));
             end
             else begin
                 // Discard zero length payload no matter packet has payload or not
@@ -744,16 +782,22 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             // );
         end
         else begin
-            payloadOutputQ.enq(payloadFrag);
-            // $display("time=%0t: payloadFrag=", $time, fshow(payloadFrag));
+            payloadFragMetaOutputQ.enq(streamFragMeta);
+            // $display("time=%0t: streamFragMeta=", $time, fshow(streamFragMeta));
         end
         // $display("time=%0t: 9th stage checkPktLen", $time);
     endrule
 
     rule outputPayload;
-        let payloadFrag = payloadOutputQ.first;
-        payloadOutputQ.deq;
-        reqPayloadOutQ.enq(payloadFrag);
+        let streamFragMeta = payloadFragMetaOutputQ.first;
+        payloadFragMetaOutputQ.deq;
+
+        reqPayloadOutQ.enq(DataStream{
+            data    :   payloadBufVec[streamFragMeta.bufIdx],
+            byteEn  :   streamFragMeta.byteEn,
+            isFirst :   streamFragMeta.isFirst,
+            isLast  :   streamFragMeta.isLast
+        });
 
         // $display(
         //     "time=%0t: 10th stage outputPayload", $time,
@@ -778,10 +822,10 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
 
 
         interface qpcReadCommonClt = qpcReadCommonCltInst.clt;
-        interface payloadPipeIn = toPipeIn(payloadPipeInQ);
+        interface payloadPipeIn = toPut(payloadPipeInQ);
         
-        interface headerDataStreamPipeIn = toPipeIn(headerDataStreamQ);
-        interface headerMetaDataPipeIn = toPipeIn(headerMetaDataQ);
+        interface headerDataStreamPipeIn = toPut(headerDataStreamQ);
+        interface headerMetaDataPipeIn = toPut(headerMetaDataQ);
         
     endinterface;
 
