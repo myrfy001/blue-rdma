@@ -6,8 +6,8 @@ import UserLogicSettings :: *;
 import UserLogicTypes :: *;
 
 
-function RingbufRawDescriptorOpcode getOpcodeFromRingbufDescriptor(RingbufRawDescriptor desc);
-    return pack(desc)[valueOf(RINGBUF_DESC_OPCODE_OFFSET) + valueOf(RINGBUF_DESC_OPCODE_LENGTH) - 1 :valueOf(RINGBUF_DESC_OPCODE_OFFSET)];
+function RingbufRawDescriptorOpcode getCmdQueueOpcodeFromRawRingbufDescriptor(RingbufRawDescriptor desc);
+    return pack(desc)[valueOf(CMD_QUEUE_RINGBUF_DESC_OPCODE_OFFSET) + valueOf(CMD_QUEUE_RINGBUF_DESC_OPCODE_LENGTH) - 1 :valueOf(CMD_QUEUE_RINGBUF_DESC_OPCODE_OFFSET)];
 endfunction
 
 module mkFakeClient(Client#(t_req, t_resp));

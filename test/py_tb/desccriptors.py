@@ -11,9 +11,9 @@ def memcpy(dst, start_addr, src):
 
 class CmdQueueReqDescCommonHeader(Structure):
     _fields_ = [("F_VALID", c_int, 1),
+                ("F_SIGNAL_CPLT", c_int, 1),
                 ("F_OP_CODE", c_int, 6),
                 ("F_SEGMENT_CNT", c_int, 4),
-                ("F_SIGNAL_CPLT", c_int, 1),
                 ("F_RESERVED_0", c_int, 20),
                 ("F_CMD_QUEUE_USER_DATA", c_int, 32),
                 ]
@@ -155,11 +155,11 @@ class CmdQueueDescOperators:
 
 class SendQueueDescCommonHeader(Structure):
     _fields_ = [("F_VALID", c_int, 1),
-                ("F_OP_CODE", c_int, 4),
-                ("F_IS_LAST", c_int, 1),
-                ("F_IS_FIRST", c_int, 1),
-                ("F_SEGMENT_CNT", c_int, 4),
                 ("F_SIGNAL_CPLT", c_int, 1),
+                ("F_IS_FIRST", c_int, 1),
+                ("F_IS_LAST", c_int, 1),
+                ("F_OP_CODE", c_int, 4),
+                ("F_SEGMENT_CNT", c_int, 4),
                 ("F_RESERVED_1", c_int, 20),
                 ("F_TOTAL_LEN", c_int, 32),
                 ]

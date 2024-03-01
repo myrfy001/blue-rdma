@@ -278,7 +278,7 @@ module mkMrAndPgtManager(MrAndPgtManager);
         let descRaw = reqQ.first;
         reqQ.deq;
         // $display("PGT get modify request", fshow(descRaw));
-        let opcode = getOpcodeFromRingbufDescriptor(descRaw);
+        let opcode = getCmdQueueOpcodeFromRawRingbufDescriptor(descRaw);
 
         case (unpack(truncate(opcode)))
             CmdQueueOpcodeUpdateMrTable: begin

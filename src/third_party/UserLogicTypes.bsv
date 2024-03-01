@@ -61,9 +61,9 @@ typedef TDiv#(PCIE_MRRS, USER_LOGIC_DESCRIPTOR_BYTE_WIDTH) RINGBUF_DESC_ENTRY_PE
 typedef Bit#(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)) RingbufReadBlockInnerOffset;
 typedef TLog#(PCIE_MRRS) RINGBUF_READ_BLOCK_BYTE_WIDTH;
 
-typedef 1 RINGBUF_DESC_OPCODE_OFFSET;
-typedef 6 RINGBUF_DESC_OPCODE_LENGTH;
-typedef Bit#(RINGBUF_DESC_OPCODE_LENGTH) RingbufRawDescriptorOpcode;
+typedef 2 CMD_QUEUE_RINGBUF_DESC_OPCODE_OFFSET;
+typedef 6 CMD_QUEUE_RINGBUF_DESC_OPCODE_LENGTH;
+typedef Bit#(CMD_QUEUE_RINGBUF_DESC_OPCODE_LENGTH) RingbufRawDescriptorOpcode;
 
 
 typedef Bit#(20) UserLogicDmaLen;
@@ -140,9 +140,9 @@ typedef Bit#(TLog#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT)) DescriptorSegmentIndex
 typedef struct {
     Bit#(32)                userData;
     ReservedZero#(20)       reserved1;
-    Bool                    isSuccessOrNeedSignalCplt;
     Bit#(4)                 extraSegmentCnt;
     Bit#(6)                 opCode;
+    Bool                    isSuccessOrNeedSignalCplt;
     Bool                    valid;
 } CmdQueueDescCommonHead deriving(Bits, FShow);
 
@@ -196,11 +196,11 @@ typedef CmdQueueReqDescQpManagementSeg0 CmdQueueRespDescQpManagementSeg0;
 typedef struct {
     Length                  totalLen;                       // 32 bits
     ReservedZero#(20)       reserved1;                      // 20 bits
-    Bool                    isSuccessOrNeedSignalCplt;      //  1 bits
     Bit#(4)                 extraSegmentCnt;                //  4 bits
-    Bool                    isFirst;                        //  1 bits
-    Bool                    isLast;                         //  1 bits
     WorkReqOpCode           opCode;                         //  4 bits
+    Bool                    isLast;                         //  1 bits
+    Bool                    isFirst;                        //  1 bits
+    Bool                    isSuccessOrNeedSignalCplt;      //  1 bits
     Bool                    valid;                          //  1 bit
 } SendQueueDescCommonHead deriving(Bits, FShow);
 

@@ -37,7 +37,7 @@ module mkCommandQueueController(CommandQueueController ifc);
     rule dispatchRingbufRequestDescriptors;
         let {reqSegBuf, headDescIdx} <- descReadProxy.getWideDesc;
         RingbufRawDescriptor rawDesc = reqSegBuf[headDescIdx];
-        let opcode = getOpcodeFromRingbufDescriptor(rawDesc);
+        let opcode = getCmdQueueOpcodeFromRawRingbufDescriptor(rawDesc);
         case (unpack(truncate(opcode)))
             CmdQueueOpcodeUpdateMrTable, CmdQueueOpcodeUpdatePGT: begin
                 mrAndPgtReqQ.enq(rawDesc);
