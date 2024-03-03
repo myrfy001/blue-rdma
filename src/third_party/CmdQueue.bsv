@@ -40,12 +40,12 @@ module mkCommandQueueController(CommandQueueController ifc);
         let opcode = getCmdQueueOpcodeFromRawRingbufDescriptor(rawDesc);
         case (unpack(truncate(opcode)))
             CmdQueueOpcodeUpdateMrTable, CmdQueueOpcodeUpdatePGT: begin
-                mrAndPgtReqQ.enq(rawDesc);
+                                mrAndPgtReqQ.enq(rawDesc);
                 mrAndPgtInflightReqQ.enq(rawDesc); // TODO, we can simplify this to only include 32-bit user_data field
             end
             CmdQueueOpcodeQpManagement: begin
                 CmdQueueReqDescQpManagementSeg0 desc0 = unpack(reqSegBuf[0]);
-
+                
                 let ent = EntryCommonQPC {
                     isError:        desc0.isError,
                     qpnKeyPart:     getKeyQP(desc0.qpn), 
@@ -78,6 +78,8 @@ module mkCommandQueueController(CommandQueueController ifc);
             // `isSuccessOrNeedSignalCplt` field, so we use CmdQueueRespDescUpdatePGT to handle both resp.
             CmdQueueRespDescUpdatePGT respDesc = unpack(mrAndPgtInflightReqQ.first);
             respDesc.commonHeader.isSuccessOrNeedSignalCplt = mrAndPgtRespQ.first;
+            respDesc.commonHeader.valid = True;
+            respDesc.commonHeader.extraSegmentCnt = 0;
             mrAndPgtInflightReqQ.deq;
             mrAndPgtRespQ.deq;
             respRawDescSeg[0] = pack(respDesc);
@@ -89,6 +91,8 @@ module mkCommandQueueController(CommandQueueController ifc);
            
             CmdQueueRespDescQpManagementSeg0 respDesc = unpack(qpcInflightReqQ.first);
             respDesc.commonHeader.isSuccessOrNeedSignalCplt = qpcRespQ.first;
+            respDesc.commonHeader.valid = True;
+            respDesc.commonHeader.extraSegmentCnt = 0;
             respRawDescSeg[0] = pack(respDesc);
             descWriteProxy.setWideDesc(respRawDescSeg, 0);
         end

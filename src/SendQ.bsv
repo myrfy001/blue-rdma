@@ -964,7 +964,7 @@ module mkSendQ#(
                     " is not valid, and current WQE=", fshow(wqe)
                 )
             );
-
+            
             maybePktHeaderInfo = maybeMiddleOrLastPktHeaderInfo;
         end
 
@@ -1067,7 +1067,8 @@ module mkSQ(SQ);
     FIFOF#(DmaReadReq)   dmaReadReqQ <- mkFIFOF;
     FIFOF#(DmaReadResp) dmaReadRespQ <- mkFIFOF;
 
-    Reg#(Bool) clearReg <- mkReg(False);
+    // force power-up reset
+    Reg#(Bool) clearReg <- mkReg(True);
 
     let dmaReadSrv = toGPServer(dmaReadReqQ, dmaReadRespQ);
     let dmaReadCntrl <- mkDmaReadCntrl(clearReg, dmaReadSrv);

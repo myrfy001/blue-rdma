@@ -262,7 +262,8 @@ typedef enum {
 } MeatReportQueueDescType deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(6)                reserved1;    // 6
+    ReservedZero#(4)                reserved1;    // 4
+    PAD                             padCnt;       // 2
     Bool                            ackReq;       // 1
     Bool                            solicited;    // 1
     PSN                             psn;          // 24

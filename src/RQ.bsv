@@ -108,6 +108,7 @@ module mkRQ(RQ ifc);
         let reqStatus        = RDMA_REQ_ST_NORMAL;
 
         let isAccCheckPass = False;
+        // $display("pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc));
         case ({ pack(isSendReq || isWriteReq), pack(isReadReq), pack(isAtomicReq) })
             3'b100: begin
                 isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_WRITE);
@@ -162,7 +163,7 @@ module mkRQ(RQ ifc);
 
         if (!isAccCheckPass) begin
             reqStatus = RDMA_REQ_ST_INV_ACC_FLAG;
-        end
+                    end
         else if (!isSupportedReqOpCode) begin
             reqStatus = RDMA_REQ_ST_INV_OPCODE;
         end
@@ -171,7 +172,7 @@ module mkRQ(RQ ifc);
         end
         else if (!isAccTypeMatch) begin
             reqStatus = RDMA_REQ_ST_INV_ACC_FLAG;
-        end
+                    end
         else if (!isAccessRangeCheckPass) begin
             reqStatus = RDMA_REQ_ST_INV_MR_REGION;
         end
@@ -245,6 +246,7 @@ module mkRQ(RQ ifc);
         rptEntry.solicited      = bth.solicited;
         rptEntry.dqpn           = bth.dqpn;
         rptEntry.psn            = bth.psn;
+        rptEntry.padCnt         = bth.padCnt;
 
         rptEntry.va             = reth.va;
         rptEntry.rkey           = reth.rkey;
@@ -292,7 +294,6 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
 
     rule outputDesc ;
         let reportEntry = pktReportEntryPipeInQ.first;
-        RingbufRawDescriptor ent;
 
         let bth = MeatReportQueueDescFragBTH {
             trans:      reportEntry.trans,
@@ -301,6 +302,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
             psn:        reportEntry.psn,
             solicited:  reportEntry.solicited,
             ackReq:     reportEntry.ackReq,
+            padCnt:     reportEntry.padCnt,
             reserved1:  unpack(0)
         };
 
@@ -334,15 +336,16 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                 fromInteger(valueOf(RC_SEND_LAST)),
                 fromInteger(valueOf(RC_SEND_ONLY)):
                 begin
-                    ent = pack(MeatReportQueueDescBth{
+                    let ent = MeatReportQueueDescBth{
                         reqStatus   :   reportEntry.reqStatus,
                         bth         :   bth,
                         descType    :   MeatReportQueueDescTypeRecvPacketMeta,
                         reserved1   :   unpack(0),
                         reserved2   :   unpack(0)
-                    });
+                    };
                     ringbufDescPipeOutQ.enq(pack(ent));
                     pktReportEntryPipeInQ.deq;
+                    // $display("send recv packet meta to host:",fshow(ent));
                 end
                 fromInteger(valueOf(RC_RDMA_WRITE_FIRST)),
                 fromInteger(valueOf(RC_RDMA_WRITE_MIDDLE)),
@@ -360,14 +363,14 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                 fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_LAST)),
                 fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_ONLY)):
                 begin
-                    ent = pack(MeatReportQueueDescBthRethImmDT{
+                    let ent = MeatReportQueueDescBthRethImmDT{
                         reqStatus   :   reportEntry.reqStatus,
                         bth         :   bth,
                         reth        :   reth,
                         immDt       :   immDt,
                         descType    :   MeatReportQueueDescTypeRecvPacketMeta,
                         reserved1   :   unpack(0)
-                    });
+                    };
                     if (opcode == fromInteger(valueOf(RC_RDMA_READ_REQUEST))) begin
                         state <= RQReportEntryToRingbufDescStatusOutputExtraInfo;
                     end
@@ -375,22 +378,24 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                         pktReportEntryPipeInQ.deq;
                     end
                     ringbufDescPipeOutQ.enq(pack(ent));
+                    // $display("send recv packet meta to host:",fshow(ent));
                 end
                 fromInteger(valueOf(RC_ACKNOWLEDGE)),
                 fromInteger(valueOf(RC_ATOMIC_ACKNOWLEDGE)),
                 fromInteger(valueOf(XRC_ACKNOWLEDGE)),
                 fromInteger(valueOf(XRC_ATOMIC_ACKNOWLEDGE)):
                 begin
-                    ent = pack(MeatReportQueueDescBthAeth{
+                    let ent = MeatReportQueueDescBthAeth{
                         reqStatus   :   reportEntry.reqStatus,
                         bth         :   bth,
                         aeth        :   aeth,
                         descType    :   MeatReportQueueDescTypeRecvPacketMeta,
                         reserved1   :   unpack(0),
                         reserved2   :   unpack(0)
-                    });
+                    };
                     pktReportEntryPipeInQ.deq;
                     ringbufDescPipeOutQ.enq(pack(ent));
+                    // $display("send recv packet meta to host:",fshow(ent));
                 end
 
                 default: begin
@@ -402,14 +407,15 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
         else if (state == RQReportEntryToRingbufDescStatusOutputExtraInfo) begin
             case (reportEntry.opcode)
                 RDMA_READ_REQUEST: begin
-                    ent = pack(MeatReportQueueDescSecondaryReth{
+                    let ent = MeatReportQueueDescSecondaryReth{
                         secReth     :   secReth,
                         reserved1   :   unpack(0)
-                    });
+                    };
                     
                     state <= RQReportEntryToRingbufDescStatusOutputBasicInfo;
                     ringbufDescPipeOutQ.enq(pack(ent));
                     pktReportEntryPipeInQ.deq;
+                    // $display("send recv packet meta to host:",fshow(ent));
                 end
                 default: begin
                     $display("Warn: Received Not Supported Packet, Will not report to software.");

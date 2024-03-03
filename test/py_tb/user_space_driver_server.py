@@ -35,7 +35,7 @@ class UserspaceDriverServer:
 
             while not self.stop_flag:
 
-                recv_raw = server_socket.recv(1024)
+                recv_raw, resp_addr = server_socket.recvfrom(1024)
                 recv_req = json.loads(recv_raw)
 
                 if recv_req["is_write"]:
@@ -43,7 +43,8 @@ class UserspaceDriverServer:
                         recv_req["addr"], recv_req["value"])
                 else:
                     value = self.mock_nic.read_csr_blocking(recv_req["addr"])
-                    server_socket.send(json.dumps({"value": value}))
+                    server_socket.sendto(json.dumps(
+                        {"value": value, "addr": recv_req["addr"], "is_write": False}).encode("utf-8"), resp_addr)
 
 
 if __name__ == "__main__":

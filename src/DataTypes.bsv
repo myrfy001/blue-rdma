@@ -830,7 +830,7 @@ typedef struct {
 typedef struct {
     RdmaPktMetaData                 metadata;
     EntryCommonQPC                  qpc;
-} RdmaPktMetaDataAndQPC deriving(Bits);
+} RdmaPktMetaDataAndQPC deriving(Bits, FShow);
 
 // typedef struct {
 //     QPN  qpn;
@@ -847,13 +847,14 @@ typedef struct {
 
 
 typedef struct {
-    // Fields from BTH  // total 58 bits
+    // Fields from BTH  // total 60 bits
     TransType trans;    // 3
     RdmaOpCode opcode;  // 5
     Bool solicited;     // 1
     QPN dqpn;           // 24
     Bool ackReq;        // 1
     PSN psn;            // 24
+    PAD padCnt;         // 2
 
     // Fields from RETH // total 128 bits
     ADDR va;            // 64

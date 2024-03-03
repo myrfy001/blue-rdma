@@ -354,15 +354,16 @@ module mkTopCore(
         ringbufPool.c2hRings[1].enq(t);
     endrule
 
+    // TODO: remove the commented code
     rule forwardSendQueueReportDescToRingbuf;
-        let sendResp <- sq.sendQ.srvPort.response.get;
-        let desc = MeatReportQueueDescSendQueueReport {
-            reserved1:      unpack(0),
-            hasDmaRespErr:  False,             
-            reserved2:      unpack(0),
-            descType:       MeatReportQueueDescTypeSendFinished
-        };
-        ringbufPool.c2hRings[1].enq(pack(desc));
+        let _ <- sq.sendQ.srvPort.response.get;
+        // let desc = MeatReportQueueDescSendQueueReport {
+        //     reserved1:      unpack(0),
+        //     hasDmaRespErr:  False,             
+        //     reserved2:      unpack(0),
+        //     descType:       MeatReportQueueDescTypeSendFinished
+        // };
+        // ringbufPool.c2hRings[1].enq(pack(desc));
     endrule
 
     interface axiStreamOutUdp = udp.axiStreamOut;
