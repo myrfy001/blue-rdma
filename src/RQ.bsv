@@ -32,7 +32,7 @@ module mkRQ(RQ ifc);
     BypassClient#(PayloadConReq, PayloadConResp) payloadConsumerControlClt           <- mkBypassClient;
 
     // Pipeline FIFOs
-    FIFOF#(RdmaPktMetaDataAndQPC)                                      getMRQueryRespPipeQ <- mkFIFOF;
+    FIFOF#(Tuple2#(RdmaPktMetaDataAndQPC, Bool))                       getMRQueryRespPipeQ <- mkFIFOF;
     FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool)) getPGTQueryRespPipeQ <- mkFIFOF;
     FIFOF#(Tuple3#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool))           waitDMARespPipeQ <- mkFIFOF;
 
@@ -64,22 +64,28 @@ module mkRQ(RQ ifc);
         let bth  = extractBTH(pktMetaDataAndQpc.metadata.pktHeader.headerData);
         let reth = extractPriRETH(pktMetaDataAndQpc.metadata.pktHeader.headerData, bth.trans);
 
-        let mrTableQueryReq = MrTableQueryReq{
-            idx: rkey2IndexMR(reth.rkey)
-        };
-        // $display("reth=", fshow(reth), "mrTableQueryReq=", fshow(mrTableQueryReq));
-        mrTableQueryCltInst.putReq(mrTableQueryReq);
+        let isRespNeedDMAWrite   = rdmaRespNeedDmaWrite(bth.opcode);
+        let isReqNeedDMAWrite    = rdmaReqNeedDmaWrite(bth.opcode);
 
-        getMRQueryRespPipeQ.enq(pktMetaDataAndQpc);
+        let rdmaOpCodeNeedDMA    = isRespNeedDMAWrite || isReqNeedDMAWrite;
+
+        // only need to query MRTable or PGT if we need DMA access, for packet like ACK/NACK, no need to check
+        if (rdmaOpCodeNeedDMA) begin 
+            let mrTableQueryReq = MrTableQueryReq{
+                idx: rkey2IndexMR(reth.rkey)
+            };
+            // $display("reth=", fshow(reth), "mrTableQueryReq=", fshow(mrTableQueryReq));
+            mrTableQueryCltInst.putReq(mrTableQueryReq);
+        end
+
+        getMRQueryRespPipeQ.enq(tuple2(pktMetaDataAndQpc, rdmaOpCodeNeedDMA));
         
     endrule
 
     rule getMRQueryRespAndCheckAddrRangeAndCheckAccessFlag;
-        let mrMaybe <- mrTableQueryCltInst.getResp;
 
-        $display("mrMaybe=", fshow(mrMaybe));
         
-        let pktMetaDataAndQpc = getMRQueryRespPipeQ.first;
+        let {pktMetaDataAndQpc, rdmaOpCodeNeedDMA} = getMRQueryRespPipeQ.first;
         getMRQueryRespPipeQ.deq;
 
         let pktMetaData = pktMetaDataAndQpc.metadata;
@@ -99,82 +105,85 @@ module mkRQ(RQ ifc);
         let isLastOrOnlyPkt      = isLastOrOnlyRdmaOpCode(bth.opcode);
         let isSupportedReqOpCode = isSupportedReqOpCodeRQ(qpc.qpType, bth.opcode); 
 
-        let isRespNeedDMAWrite   = rdmaRespNeedDmaWrite(bth.opcode);
-        let isReqNeedDMAWrite    = rdmaReqNeedDmaWrite(bth.opcode);
-
-        let rdmaOpCodeNeedDMA    = isRespNeedDMAWrite || isReqNeedDMAWrite;
-        
 
         let reqStatus        = RDMA_REQ_ST_NORMAL;
-
-        let isAccCheckPass = False;
-        // $display("pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc));
-        case ({ pack(isSendReq || isWriteReq), pack(isReadReq), pack(isAtomicReq) })
-            3'b100: begin
-                isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_WRITE);
-            end
-            3'b010: begin
-                isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_READ);
-            end
-            3'b001: begin
-                isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_ATOMIC);
-            end
-            default: begin
-                immFail(
-                    "unreachible case @ mkReqHandleRQ",
-                    $format(
-                        "isSendReq=", fshow(isSendReq),
-                        ", isWriteReq=", fshow(isWriteReq),
-                        ", isReadReq=", fshow(isReadReq),
-                        ", isAtomicReq=", fshow(isAtomicReq)
-                    )
-                );
-            end
-        endcase
-
-        let isMrKeyMatch           = False;
-        let isAccTypeMatch         = False;
-        let isAccessRangeCheckPass = False;
         let needWaitForPGTResponse = False;
-        if (mrMaybe matches tagged Valid .mr) begin
-            isMrKeyMatch    = (truncate(reth.rkey) == mr.keyPart);
-            let reqAccFlags = genAccessFlagFromReqType(isSendReq, isReadReq, isWriteReq, isAtomicReq);
-            isAccTypeMatch  = compareAccessTypeFlags(mr.accFlags, reqAccFlags);
+        
+        if (rdmaOpCodeNeedDMA) begin
+            let mrMaybe <- mrTableQueryCltInst.getResp;
+            $display("mrMaybe=", fshow(mrMaybe));
 
-            isAccessRangeCheckPass = checkAddrAndLenWithinRange(
-                reth.va,
-                zeroExtend(pktMetaData.pktPayloadLen),
-                mr.baseVA,
-                mr.len
-            );
+            let isAccCheckPass = False;
+            // $display("pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc));
+            case ({ pack(isSendReq || isWriteReq), pack(isReadReq), pack(isAtomicReq) })
+                3'b100: begin
+                    isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_WRITE);
+                end
+                3'b010: begin
+                    isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_READ);
+                end
+                3'b001: begin
+                    isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_ATOMIC);
+                end
+                default: begin
+                    immFail(
+                        "unreachible case @ mkReqHandleRQ",
+                        $format(
+                            "isSendReq=", fshow(isSendReq),
+                            ", isWriteReq=", fshow(isWriteReq),
+                            ", isReadReq=", fshow(isReadReq),
+                            ", isAtomicReq=", fshow(isAtomicReq)
+                        )
+                    );
+                end
+            endcase
 
-            $display(
-                "reth.va=", fshow(reth.va), 
-                "pktMetaData.pktPayloadLen=", fshow(pktMetaData.pktPayloadLen),
-                "mr.baseVA=", mr.baseVA,
-                "mr.len=", mr.len);
+            let isMrKeyMatch           = False;
+            let isAccTypeMatch         = False;
+            let isAccessRangeCheckPass = False;
             
-            pgtQueryCltInst.putReq(PgtAddrTranslateReq{
-                mrEntry: mr,
-                addrToTrans: reth.va
-            });
-            needWaitForPGTResponse = True;
-        end
 
-        if (!isAccCheckPass) begin
-            reqStatus = RDMA_REQ_ST_INV_ACC_FLAG;
-                    end
-        else if (!isSupportedReqOpCode) begin
-            reqStatus = RDMA_REQ_ST_INV_OPCODE;
-        end
-        else if (!isMrKeyMatch) begin
-            reqStatus = RDMA_REQ_ST_INV_MR_KEY;
-        end
-        else if (!isAccTypeMatch) begin
-            reqStatus = RDMA_REQ_ST_INV_ACC_FLAG;
-                    end
-        else if (!isAccessRangeCheckPass) begin
-            reqStatus = RDMA_REQ_ST_INV_MR_REGION;
+
+            if (mrMaybe matches tagged Valid .mr) begin
+                isMrKeyMatch    = (truncate(reth.rkey) == mr.keyPart);
+                let reqAccFlags = genAccessFlagFromReqType(isSendReq, isReadReq, isWriteReq, isAtomicReq);
+                isAccTypeMatch  = compareAccessTypeFlags(mr.accFlags, reqAccFlags);
+
+                isAccessRangeCheckPass = checkAddrAndLenWithinRange(
+                    reth.va,
+                    zeroExtend(pktMetaData.pktPayloadLen),
+                    mr.baseVA,
+                    mr.len
+                );
+
+                $display(
+                    "reth.va=", fshow(reth.va), 
+                    "pktMetaData.pktPayloadLen=", fshow(pktMetaData.pktPayloadLen),
+                    "mr.baseVA=", mr.baseVA,
+                    "mr.len=", mr.len);
+                
+                pgtQueryCltInst.putReq(PgtAddrTranslateReq{
+                    mrEntry: mr,
+                    addrToTrans: reth.va
+                });
+                needWaitForPGTResponse = True;
+            end
+
+            if (!isAccCheckPass) begin
+                reqStatus = RDMA_REQ_ST_INV_ACC_FLAG;
+                        end
+            else if (!isSupportedReqOpCode) begin
+                reqStatus = RDMA_REQ_ST_INV_OPCODE;
+            end
+            else if (!isMrKeyMatch) begin
+                reqStatus = RDMA_REQ_ST_INV_MR_KEY;
+            end
+            else if (!isAccTypeMatch) begin
+                reqStatus = RDMA_REQ_ST_INV_ACC_FLAG;
+                        end
+            else if (!isAccessRangeCheckPass) begin
+                reqStatus = RDMA_REQ_ST_INV_MR_REGION;
+            end
         end
         
         getPGTQueryRespPipeQ.enq(tuple4(pktMetaDataAndQpc, reqStatus, needWaitForPGTResponse, rdmaOpCodeNeedDMA));
@@ -210,8 +219,13 @@ module mkRQ(RQ ifc);
             });
         end 
         else begin
-            let req <- genDiscardPayloadReq(pktMetaData.pktFragNum, pktMetaData.pktPayloadLen);
-            payloadConsumerControlClt.putReq(req);
+            // the reason for discard packet should be that we have payload data, need to do dma, but some check failed, so
+            // we need to discard data. But for packet like ACK/NACK, we don't want an DMA not because we encounter an error,
+            // but because it really doesn't need DAM.
+            if (rdmaOpCodeNeedDMA) begin
+                let req <- genDiscardPayloadReq(pktMetaData.pktFragNum, pktMetaData.pktPayloadLen);
+                payloadConsumerControlClt.putReq(req);
+            end
         end
 
         waitDMARespPipeQ.enq(tuple3(pktMetaDataAndQpc, reqStatus, needIssueDMARequest));
