@@ -157,6 +157,8 @@ module mkTopCore(
     TopCoreRdma ifc
 );
 
+    ReceivedStreamFragStorage recvStreamFragStorage <- mkReceivedStreamFragStorage;
+
     // TODO try remove this proxy.
     BluerdmaDmaProxyForRQ bluerdmaDmaProxyForRQ <- mkBluerdmaDmaProxyForRQ;
 
@@ -176,13 +178,14 @@ module mkTopCore(
     FIFOF#(DataStream) inputDataStreamQ <- mkFIFOF;
 
     let headerAndMetaDataAndPayloadPipeOut <- mkExtractHeaderFromRdmaPktPipeOut;
-    mkConnection(toPut(headerAndMetaDataAndPayloadPipeOut.rdmaPktPipeIn), toGet(inputDataStreamQ));
+    mkConnection(headerAndMetaDataAndPayloadPipeOut.rdmaPktPipeIn, toGet(inputDataStreamQ));
 
     let inputRdmaPktBufAndHeaderValidation <- mkInputRdmaPktBufAndHeaderValidation;
 
     mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData), inputRdmaPktBufAndHeaderValidation.headerMetaDataPipeIn);
     mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream), inputRdmaPktBufAndHeaderValidation.headerDataStreamPipeIn);
-    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.payload), inputRdmaPktBufAndHeaderValidation.payloadPipeIn);
+    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragMetaPipeOut), inputRdmaPktBufAndHeaderValidation.payloadStreamFragMetaPipeIn);
+    mkConnection(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragStorageInsertClt, recvStreamFragStorage.insertFragSrv);
 
     mkConnection(inputRdmaPktBufAndHeaderValidation.qpcReadCommonClt, qpc.readCommonSrv);
     mkConnection(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.pktMetaData, rq.pktMetaDataPipeIn);
@@ -194,8 +197,9 @@ module mkTopCore(
 
     let payloadConsumer <- mkPayloadConsumer;
 
-    mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.payload), payloadConsumer.payloadPipeIn);
+    mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.payloadStreamFragMetaPipeOut), payloadConsumer.payloadStreamFragMetaPipeIn);
     mkConnection(rq.payloadXonsumerControlPortClt, payloadConsumer.controlPortSrv);
+    mkConnection(payloadConsumer.readFragClt, recvStreamFragStorage.readFragSrv);
 
     DmaReqAddrTranslator addrTranslatorForSQ <- mkDmaReadReqAddrTranslator;
 

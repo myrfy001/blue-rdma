@@ -201,7 +201,7 @@ typedef Client#(PermCheckReq, Bool) PermCheckClt;
 
 interface RdmaPktMetaDataAndQpcAndPayloadPipeOut;
     interface PipeOut#(RdmaPktMetaDataAndQPC) pktMetaData;
-    interface DataStreamPipeOut payload;
+    interface DataStreamFragMetaPipeOut payloadStreamFragMetaPipeOut;
 endinterface
 
 // RDMA related requests and responses
@@ -390,7 +390,7 @@ typedef union tagged {
         DmaWriteMetaDataNew atomicRespDmaWriteMetaData;
         Long atomicRespPayload;
     } AtomicRespInfoAndPayload;
-    DmaWriteMetaDataNew SendWriteReqReadRespInfo;
+    DmaWriteMetaDataNew WriteReqInfo;
 } PayloadConInfo deriving(Bits, FShow);
 
 typedef struct {
@@ -888,3 +888,22 @@ typedef enum {
     RDMA_REQ_ST_UNKNOWN             = 6,
     RDMA_REQ_ST_MAX_GUARD           = 255
 } RdmaReqStatus deriving(Bits, Eq, FShow);
+
+
+// Received payload stream related
+
+typedef 7 INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH;
+typedef Bit#(INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH) InputStreamFragBufferIdxWithoutGuard; 
+
+typedef TAdd#(1, INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH) INPUT_STREAM_FRAG_BUFFER_INDEX_WIDTH;
+typedef Bit#(INPUT_STREAM_FRAG_BUFFER_INDEX_WIDTH) InputStreamFragBufferIdx; 
+
+typedef struct {
+    ByteEn                      byteEn;
+    Bool                        isFirst;
+    Bool                        isLast;
+    InputStreamFragBufferIdx    bufIdx;
+} DataStreamFragMetaData deriving(Bits, FShow);
+
+typedef PipeOut#(DataStreamFragMetaData) DataStreamFragMetaPipeOut;
+typedef Put#(DataStreamFragMetaData) DataStreamFragMetaPipeIn;

@@ -2,6 +2,7 @@ import FIFOF :: *;
 import GetPut :: *;
 import PAClib :: *;
 import Vector :: *;
+import ClientServer :: *;
 
 import DataTypes :: *;
 import Headers :: *;
@@ -435,7 +436,8 @@ endmodule
 
 interface HeaderAndPayloadSeperateDataStreamPipeOut;
     interface DataStreamPipeOut header;
-    interface DataStreamPipeOut payload;
+    interface DataStreamFragMetaPipeOut payloadStreamFragMetaPipeOut;
+    interface Client#(DATA, InputStreamFragBufferIdx) payloadStreamFragStorageInsertClt;
 endinterface
 
 // Neither dataPipeIn nor headerMetaDataPipeIn can be empty, headerLen cannot be zero
@@ -443,8 +445,12 @@ endinterface
 module mkExtractHeaderFromDataStreamPipeOut#(
     DataStreamPipeOut dataPipeIn, PipeOut#(HeaderMetaData) headerMetaDataPipeIn
 )(HeaderAndPayloadSeperateDataStreamPipeOut);
-    FIFOF#(DataStream) headerDataStreamOutQ  <- mkFIFOF;
-    FIFOF#(DataStream) payloadDataStreamOutQ <- mkFIFOF;
+
+    BypassClient#(DATA, InputStreamFragBufferIdx) payloadStreamFragStorageInsertCltInst <- mkBypassClient;
+    
+    FIFOF#(DataStream) headerDataStreamOutQ                     <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData) payloadDataStreamFragPreOutQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData) payloadDataStreamFragOutQ    <- mkFIFOF;
 
     Reg#(DataStream)                  preDataStreamReg <- mkRegU;
     Reg#(DataStream)                  curDataStreamReg <- mkRegU;
@@ -461,12 +467,12 @@ module mkExtractHeaderFromDataStreamPipeOut#(
     Reg#(ExtractOrPrependHeaderStage) stageReg <- mkReg(HEADER_META_DATA_POP);
 /*
     rule debug if (!(
-        headerDataStreamOutQ.notFull && payloadDataStreamOutQ.notFull
+        headerDataStreamOutQ.notFull && payloadDataStreamFragPreOutQ.notFull
     ));
         $display(
             "time=%0t: mkExtractHeaderFromDataStreamPipeOut debug", $time,
             ", headerDataStreamOutQ.notFull=", fshow(headerDataStreamOutQ.notFull),
-            ", payloadDataStreamOutQ.notFull=", fshow(payloadDataStreamOutQ.notFull)
+            ", payloadDataStreamFragPreOutQ.notFull=", fshow(payloadDataStreamFragPreOutQ.notFull)
         );
     endrule
 */
@@ -543,16 +549,17 @@ module mkExtractHeaderFromDataStreamPipeOut#(
             ) : HEADER_META_DATA_POP;        // No payload data
 
             if (!hasDataFragAfterHeader) begin
-                // Put an empty DataStream into payloadDataStreamOutQ,
+                // Put an empty DataStream into payloadDataStreamFragPreOutQ,
                 // even if header has no payload or no enough data for header,
                 // this is to align header and data, for easy handling.
-                let emptyDataStream = DataStream {
-                    data: 0,
+                let emptyDataStream = DataStreamFragMetaData {
+                    bufIdx: ?,
                     byteEn: 0,
                     isFirst: True,
                     isLast: True
                 };
-                payloadDataStreamOutQ.enq(emptyDataStream);
+                payloadDataStreamFragPreOutQ.enq(emptyDataStream);
+                payloadStreamFragStorageInsertCltInst.putReq(0);
             end
         end
         else begin
@@ -602,8 +609,8 @@ module mkExtractHeaderFromDataStreamPipeOut#(
 
         let outData   = { preDataStreamReg.data, curDataStreamReg.data } >> headerLastFragInvalidBitNumReg;
         let outByteEn = { preDataStreamReg.byteEn, curDataStreamReg.byteEn } >> headerLastFragInvalidByteNumReg;
-        let outDataStream = DataStream {
-            data   : truncate(outData),
+        let outDataStream = DataStreamFragMetaData {
+            bufIdx : ?,
             byteEn : truncate(outByteEn),
             isFirst: isFirstDataFragReg,
             isLast : curDataStreamFrag.isLast && noExtraLastFrag
@@ -618,7 +625,9 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         //     ", outDataStream=", fshow(outDataStream),
         //     ", stageReg=", fshow(stageReg)
         // );
-        payloadDataStreamOutQ.enq(outDataStream);
+        
+        payloadDataStreamFragPreOutQ.enq(outDataStream);
+        payloadStreamFragStorageInsertCltInst.putReq(truncate(outData));
 
         if (curDataStreamFrag.isLast) begin
             if (noExtraLastFrag) begin
@@ -641,8 +650,8 @@ module mkExtractHeaderFromDataStreamPipeOut#(
     rule extraLastFrag if (stageReg == EXTRA_LAST_FRAG_OUTPUT);
         DATA leftShiftData      = truncate(preDataStreamReg.data << headerLastFragValidBitNumReg);
         ByteEn leftShiftByteEn  = truncate(preDataStreamReg.byteEn << headerLastFragValidByteNumReg);
-        let extraLastDataStream = DataStream {
-            data: leftShiftData,
+        let extraLastDataStream = DataStreamFragMetaData {
+            bufIdx : ?,
             byteEn: leftShiftByteEn,
             isFirst: isFirstDataFragReg,
             isLast: True
@@ -650,11 +659,25 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         isFirstDataFragReg <= False;
 
         // $display("time=%0t: extraLastDataStream=", $time, fshow(extraLastDataStream));
-        payloadDataStreamOutQ.enq(extraLastDataStream);
+        payloadDataStreamFragPreOutQ.enq(extraLastDataStream);
+        payloadStreamFragStorageInsertCltInst.putReq(leftShiftData);
+
         stageReg <= HEADER_META_DATA_POP;
     endrule
 
+    rule outputPayloadStreamFragMeta;
+        // the goal of this rule is assign bufIdx to fragMeta
+
+        let fragMeta = payloadDataStreamFragPreOutQ.first;
+        payloadDataStreamFragPreOutQ.deq;
+
+        let bufIdx <- payloadStreamFragStorageInsertCltInst.getResp;
+        fragMeta.bufIdx = bufIdx;
+        payloadDataStreamFragOutQ.enq(fragMeta);
+    endrule
+
     interface header = toPipeOut(headerDataStreamOutQ);
-    interface payload = toPipeOut(payloadDataStreamOutQ);
+    interface payloadStreamFragMetaPipeOut = toPipeOut(payloadDataStreamFragOutQ);
+    interface payloadStreamFragStorageInsertClt = payloadStreamFragStorageInsertCltInst.clt;
 endmodule
 

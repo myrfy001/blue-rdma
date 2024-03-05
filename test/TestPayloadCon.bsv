@@ -701,7 +701,7 @@ module mkTestPayloadConNormalCase(Empty);
 
         let payloadConReq = PayloadConReq {
             fragNum      : truncate(totalFragNum),
-            consumeInfo  : tagged SendWriteReqReadRespInfo DmaWriteMetaData {
+            consumeInfo  : tagged WriteReqInfo DmaWriteMetaData {
                 initiator: DMA_SRC_SQ_WR,
                 sqpn     : cntrlStatus.comm.getSQPN,
                 startAddr: dontCareValue,

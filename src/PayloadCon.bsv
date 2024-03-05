@@ -56,7 +56,8 @@ endfunction
 interface PayloadConsumer;
     interface Server#(PayloadConReq, PayloadConResp) controlPortSrv;
     interface DmaWriteClt dmaWriteClt;
-    interface DataStreamPipeIn payloadPipeIn;
+    interface DataStreamFragMetaPipeIn payloadStreamFragMetaPipeIn;
+    interface Client#(Tuple2#(InputStreamFragBufferIdx, Bool), DATA) readFragClt;
 endinterface
 
 // Flush DMA write responses when error
@@ -64,17 +65,18 @@ module mkPayloadConsumer(PayloadConsumer);
 
     BypassServer#(PayloadConReq, PayloadConResp) controlPortSrvInst <- mkBypassServer;
     BypassClient#(DmaWriteReqNew, DmaWriteRespNew) dmaWriteCltInst <- mkBypassClient;
-    FIFOF#(DataStream) payloadInBufQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData) payloadFragMetaInBufQ <- mkFIFOF;
+    BypassClient#(Tuple2#(InputStreamFragBufferIdx, Bool), DATA) readFragCltInst <- mkBypassClient;
 
     // Pipeline FIFO
-    FIFOF#(Tuple3#(PayloadConReq, Bool, Bool))        countReqFragQ <- mkFIFOF;
-    FIFOF#(Tuple4#(PayloadConReq, Bool, Bool, Bool)) pendingConReqQ <- mkFIFOF;
-    FIFOF#(PayloadConReq)                               genConRespQ <- mkFIFOF;
-    FIFOF#(Tuple2#(PayloadConReq, DataStream))       pendingDmaReqQ <- mkFIFOF;
+    FIFOF#(Tuple3#(PayloadConReq, Bool, Bool))                    countReqFragQ <- mkFIFOF;
+    FIFOF#(Tuple4#(PayloadConReq, Bool, Bool, Bool))             pendingConReqQ <- mkFIFOF;
+    FIFOF#(PayloadConReq)                                           genConRespQ <- mkFIFOF;
+    FIFOF#(Tuple2#(PayloadConReq, DataStreamFragMetaData))       pendingDmaReqQ <- mkFIFOF;
 
     // TODO: check payloadOutQ buffer size is enough for DMA write delay?
-    FIFOF#(DataStream) payloadBufQ <- mkSizedBRAMFIFOF(valueOf(DATA_STREAM_FRAG_BUF_SIZE));
-    let pipeOut2Bram <- mkConnectPipeOut2BramQ(toPipeOut(payloadInBufQ), payloadBufQ);
+    FIFOF#(DataStreamFragMetaData) payloadFragMetaBufQ <- mkSizedBRAMFIFOF(valueOf(DATA_STREAM_FRAG_BUF_SIZE));
+    let pipeOut2Bram <- mkConnectPipeOut2BramQ(toPipeOut(payloadFragMetaInBufQ), payloadFragMetaBufQ);
     let payloadBufPipeOut = pipeOut2Bram.pipeOut;
 
     Reg#(PktFragNum) remainingFragNumReg <- mkRegU;
@@ -83,15 +85,15 @@ module mkPayloadConsumer(PayloadConsumer);
 
 
     function Action checkIsOnlyPayloadFragment(
-        DataStream payload, PayloadConInfo consumeInfo
+        DataStreamFragMetaData payloadFragMeta, PayloadConInfo consumeInfo
     );
         action
             immAssert(
-                payload.isFirst && payload.isLast,
-                "only payload assertion @ mkPayloadConsumer",
+                payloadFragMeta.isFirst && payloadFragMeta.isLast,
+                "only payloadFragMeta assertion @ mkPayloadConsumer",
                 $format(
-                    "payload.isFirst=", fshow(payload.isFirst),
-                    "and payload.isLast=", fshow(payload.isLast),
+                    "payloadFragMeta.isFirst=", fshow(payloadFragMeta.isFirst),
+                    "and payloadFragMeta.isLast=", fshow(payloadFragMeta.isLast),
                     " should be true when consumeInfo=",
                     fshow(consumeInfo)
                 )
@@ -116,12 +118,12 @@ module mkPayloadConsumer(PayloadConsumer);
                     )
                 );
             end
-            tagged SendWriteReqReadRespInfo .sendWriteReqReadRespInfo    : begin
+            tagged WriteReqInfo .writeReqInfo    : begin
                 immAssert(
                     !isZero(consumeReq.fragNum),
                     "consumeReq.fragNum assertion @ mkPayloadConsumer",
                     $format(
-                        "consumeReq.fragNum=%h should not be zero when consumeInfo is SendWriteReqReadRespInfo",
+                        "consumeReq.fragNum=%h should not be zero when consumeInfo is WriteReqInfo",
                         consumeReq.fragNum
                     )
                 );
@@ -191,36 +193,37 @@ module mkPayloadConsumer(PayloadConsumer);
 
         case (consumeReq.consumeInfo) matches
             tagged DiscardPayloadInfo .discardInfo: begin
-                let payload = payloadBufPipeOut.first;
+                let payloadFragMeta = payloadBufPipeOut.first;
                 payloadBufPipeOut.deq;
-
-                shouldDeqConReq = payload.isLast;
+                shouldDeqConReq = payloadFragMeta.isLast;
+                let isOnlyUpadteFragBufLastConsumeIndex = True;
+                readFragCltInst.putReq(tuple2(payloadFragMeta.bufIdx, isOnlyUpadteFragBufLastConsumeIndex));
             end
-            tagged SendWriteReqReadRespInfo .sendWriteReqReadRespInfo: begin
-                let payload = payloadBufPipeOut.first;
+            tagged WriteReqInfo .writeReqInfo: begin
+                let payloadFragMeta = payloadBufPipeOut.first;
                 payloadBufPipeOut.deq;
                 if (isFragNumLessOrEqOne) begin
-                    checkIsOnlyPayloadFragment(payload, consumeReq.consumeInfo);
+                    checkIsOnlyPayloadFragment(payloadFragMeta, consumeReq.consumeInfo);
                     $display(
                         "time=%0t: single packet response consumeReq.fragNum=%0d",
                         $time, consumeReq.fragNum
                     );
                 end
                 $display(
-                    "time=%0t: SendWriteReqReadRespInfo", $time,
+                    "time=%0t: WriteReqInfo", $time,
                     ", consumeReq=", fshow(consumeReq),
                     ", isFirstOrOnlyFrag=", fshow(isFirstOrOnlyFrag),
                     ", isLastReqFrag=", fshow(isLastReqFrag),
-                    ", payload.isFirst=", fshow(payload.isFirst),
-                    ", payload.isLast=", fshow(payload.isLast)
+                    ", payloadFragMeta.isFirst=", fshow(payloadFragMeta.isFirst),
+                    ", payloadFragMeta.isLast=", fshow(payloadFragMeta.isLast)
                 );
 
                 if (isFirstOrOnlyFrag) begin
                     immAssert(
-                        payload.isFirst,
-                        "first payload assertion @ mkPayloadConsumer",
+                        payloadFragMeta.isFirst,
+                        "first payloadFragMeta assertion @ mkPayloadConsumer",
                         $format(
-                            "payload.isFirst=", fshow(payload.isFirst),
+                            "payloadFragMeta.isFirst=", fshow(payloadFragMeta.isFirst),
                             " should be true when isFirstOrOnlyFrag=", fshow(isFirstOrOnlyFrag),
                             " for consumeReq=", fshow(consumeReq)
                         )
@@ -228,10 +231,10 @@ module mkPayloadConsumer(PayloadConsumer);
                 end
                 else begin
                     immAssert(
-                        !payload.isFirst,
-                        "first payload assertion @ mkPayloadConsumer",
+                        !payloadFragMeta.isFirst,
+                        "first payloadFragMeta assertion @ mkPayloadConsumer",
                         $format(
-                            "payload.isFirst=", fshow(payload.isFirst),
+                            "payloadFragMeta.isFirst=", fshow(payloadFragMeta.isFirst),
                             " should be false when isFirstOrOnlyFrag=", fshow(isFirstOrOnlyFrag),
                             " for consumeReq=", fshow(consumeReq)
                         )
@@ -240,10 +243,10 @@ module mkPayloadConsumer(PayloadConsumer);
 
                 if (isLastReqFrag) begin
                     immAssert(
-                        payload.isLast,
-                        "last payload assertion @ mkPayloadConsumer",
+                        payloadFragMeta.isLast,
+                        "last payloadFragMeta assertion @ mkPayloadConsumer",
                         $format(
-                            "payload.isLast=", fshow(payload.isLast),
+                            "payloadFragMeta.isLast=", fshow(payloadFragMeta.isLast),
                             " should be true when isLastReqFrag=", fshow(isLastReqFrag),
                             " for consumeReq=", fshow(consumeReq)
                         )
@@ -253,17 +256,18 @@ module mkPayloadConsumer(PayloadConsumer);
                 end
                 else begin
                     immAssert(
-                        !payload.isLast,
-                        "last payload assertion @ mkPayloadConsumer",
+                        !payloadFragMeta.isLast,
+                        "last payloadFragMeta assertion @ mkPayloadConsumer",
                         $format(
-                            "payload.isLast=", fshow(payload.isLast),
+                            "payloadFragMeta.isLast=", fshow(payloadFragMeta.isLast),
                             " should be false when isLastReqFrag=", fshow(isLastReqFrag),
                             " for consumeReq=", fshow(consumeReq)
                         )
                     );
                 end
-
-                pendingDmaReqQ.enq(tuple2(consumeReq, payload));
+                let isOnlyUpadteFragBufLastConsumeIndex = False;
+                readFragCltInst.putReq(tuple2(payloadFragMeta.bufIdx, isOnlyUpadteFragBufLastConsumeIndex));
+                pendingDmaReqQ.enq(tuple2(consumeReq, payloadFragMeta));
             end
             default: begin
                 immFail(
@@ -279,14 +283,20 @@ module mkPayloadConsumer(PayloadConsumer);
     endrule
 
     rule issueDmaReq;
-        let { consumeReq, payload } = pendingDmaReqQ.first;
+        let { consumeReq, payloadFragMeta } = pendingDmaReqQ.first;
         pendingDmaReqQ.deq;
+        let payloadData <- readFragCltInst.getResp;
 
         case (consumeReq.consumeInfo) matches
-            tagged SendWriteReqReadRespInfo .sendWriteReqReadRespInfo: begin
+            tagged WriteReqInfo .writeReqInfo: begin
                 let dmaWriteReq = DmaWriteReqNew {
-                    metaData  : sendWriteReqReadRespInfo,
-                    dataStream: payload
+                    metaData  : writeReqInfo,
+                    dataStream: DataStream {
+                        isFirst: payloadFragMeta.isFirst,
+                        isLast: payloadFragMeta.isLast,
+                        byteEn: payloadFragMeta.byteEn,
+                        data: payloadData
+                    }
                 };
                 // $display("time=%0t: dmaWriteReq=", $time, fshow(dmaWriteReq));
                 dmaWriteCltInst.putReq(dmaWriteReq);
@@ -310,7 +320,7 @@ module mkPayloadConsumer(PayloadConsumer);
         genConRespQ.deq;
 
         case (consumeReq.consumeInfo) matches
-            tagged SendWriteReqReadRespInfo .sendWriteReqReadRespInfo: begin
+            tagged WriteReqInfo .writeReqInfo: begin
                 let consumeResp = PayloadConResp {
                     dmaWriteResp : DmaWriteRespNew {
                         isRespErr: dmaWriteResp.isRespErr
@@ -334,5 +344,6 @@ module mkPayloadConsumer(PayloadConsumer);
 
     interface controlPortSrv = controlPortSrvInst.srv;
     interface dmaWriteClt = dmaWriteCltInst.clt;
-    interface payloadPipeIn = toPut(payloadInBufQ);
+    interface payloadStreamFragMetaPipeIn = toPut(payloadFragMetaInBufQ);
+    interface readFragClt = readFragCltInst.clt;
 endmodule

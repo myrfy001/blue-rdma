@@ -109,14 +109,14 @@ module mkTestTop(Empty);
         let inReq = csrReadReqSyncFifo.first;
         let outReq = CsrReadRequest{addr: inReq};
         topA.csrReadSrv.request.put(outReq);
-        // $display("csr read req =", fshow(outReq));
+        $display("csr read req =", fshow(outReq));
     endrule
 
     rule forwardBarReadResp;
         let inResp <- topA.csrReadSrv.response.get;
         let outResp = inResp.data;
         csrReadRespSyncFifo.enq(outResp);
-        // $display("csr read resp =", fshow(outResp));
+        $display("csr read resp =", fshow(outResp));
     endrule
 
     rule forwardBarWriteReq;
@@ -124,7 +124,7 @@ module mkTestTop(Empty);
         let inReq = csrWriteReqSyncFifo.first;
         let outReq = CsrWriteRequest{addr: tpl_1(inReq), data: tpl_2(inReq)};
         topA.csrWriteSrv.request.put(outReq);
-        // $display("csr write req = ", fshow(outReq));
+        $display("csr write req = ", fshow(outReq));
     endrule
 
     rule forwardBarWriteResp;

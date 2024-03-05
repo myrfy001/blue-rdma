@@ -3,6 +3,7 @@ import PAClib :: *;
 import Vector :: *;
 import ClientServer :: *;
 import GetPut :: *;
+import BRAM :: *;
 
 import DataTypes :: *;
 import ExtractAndPrependPipeOut :: *;
@@ -87,8 +88,9 @@ endfunction
 
 interface HeaderAndMetaDataAndPayloadSeperateDataStreamPipeOut;
     interface HeaderDataStreamAndMetaDataPipeOut headerAndMetaData;
-    interface DataStreamPipeOut payload;
+    interface DataStreamFragMetaPipeOut payloadStreamFragMetaPipeOut;
     interface DataStreamPipeIn rdmaPktPipeIn;
+    interface Client#(DATA, InputStreamFragBufferIdx) payloadStreamFragStorageInsertClt;
 endinterface
 
 // After extract header from rdmaPktPipeIn,
@@ -153,8 +155,9 @@ module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateData
         interface headerDataStream = headerAndPayloadPipeOut.header;
         interface headerMetaData = headerMetaDataPipeOut;
     endinterface;
-    interface payload = headerAndPayloadPipeOut.payload;
+    interface payloadStreamFragMetaPipeOut = headerAndPayloadPipeOut.payloadStreamFragMetaPipeOut;
     interface rdmaPktPipeIn = toPut(rdmaPktPipeInQ);
+    interface payloadStreamFragStorageInsertClt = headerAndPayloadPipeOut.payloadStreamFragStorageInsertClt;
 endmodule
 
 interface InputRdmaPktBuf;
@@ -162,7 +165,7 @@ interface InputRdmaPktBuf;
     
     interface DataStreamPipeIn headerDataStreamPipeIn;
     interface Put#(HeaderMetaData) headerMetaDataPipeIn;
-    interface DataStreamPipeIn payloadPipeIn;
+    interface DataStreamFragMetaPipeIn payloadStreamFragMetaPipeIn;
 
     interface Client#(ReadReqCommonQPC, Maybe#(EntryCommonQPC)) qpcReadCommonClt;
 endinterface
@@ -202,15 +205,7 @@ typedef struct {
 } PktLenCheckInfo deriving(Bits);
 
 
-typedef 20 INPUT_HEADER_VALIDATION_PIPELINE_DEPTH;
-typedef Bit#(TLog#(INPUT_HEADER_VALIDATION_PIPELINE_DEPTH)) InputHeaderValidationPayloadBufIdx; 
 
-typedef struct {
-    ByteEn                              byteEn;
-    Bool                                isFirst;
-    Bool                                isLast;
-    InputHeaderValidationPayloadBufIdx  bufIdx;
-} DataStreamFragMetaData deriving(Bits, FShow);
 
 // This module will discard:
 // - invalid packet that header is without payload but packet has payload;
@@ -220,7 +215,7 @@ typedef struct {
 (* synthesize *)
 module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
     // Output FIFO for PipeOut
-    FIFOF#(DataStream)           reqPayloadOutQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData)   reqPayloadFragMetaOutQ <- mkFIFOF;
     FIFOF#(RdmaPktMetaDataAndQPC)  reqPktMetaDataAndQpcOutQ <- mkFIFOF;
 
     // Pipeline buffers
@@ -248,12 +243,9 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
     FIFOF#(Tuple5#(PktLenCheckInfo, EntryCommonQPC, Bool, Bool, Bool))                 rdmaHeaderPktLenCheckQ <- mkFIFOF;
     FIFOF#(DataStreamFragMetaData)                                                payloadFragMetaPktLenCheckQ <- mkFIFOF;
     
-    FIFOF#(RdmaPktMetaDataAndQPC)                                                           rdmaHeaderOutputQ <- mkFIFOF;
-    FIFOF#(DataStreamFragMetaData)                                                     payloadFragMetaOutputQ <- mkFIFOF;
+    // FIFOF#(RdmaPktMetaDataAndQPC)                                                           rdmaHeaderOutputQ <- mkFIFOF;
+    // FIFOF#(DataStreamFragMetaData)                                                     payloadFragMetaOutputQ <- mkFIFOF;
 
-    // buffer for payloads in pipeline
-    Vector#(INPUT_HEADER_VALIDATION_PIPELINE_DEPTH, Reg#(DATA)) payloadBufVec <- replicateM(mkRegU);
-    Reg#(InputHeaderValidationPayloadBufIdx) payloadBufIdxGeneratorReg <- mkReg(0);
 
     Reg#(Bool)        isValidPktReg <- mkRegU;
     Reg#(PAD)          bthPadCntReg <- mkRegU;
@@ -263,9 +255,9 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
 
     Reg#(RdmaPktBufState) pktBufStateReg <- mkReg(RDMA_PKT_BUT_ST_PRE_CHECK_FRAG);
 
-    FIFOF#(DataStream) payloadPipeInQ <- mkFIFOF;
-    FIFOF#(DataStream) headerDataStreamQ <- mkFIFOF;
-    let headerMetaDataQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData) payloadStreamFragMetaPipeInQ <- mkFIFOF;
+    FIFOF#(DataStream) headerDataStreamQ                        <- mkFIFOF;
+    let headerMetaDataQ                                         <- mkFIFOF;
 
     let rdmaHeaderPipeOut <- mkDataStream2Header(
         toPipeOut(headerDataStreamQ),
@@ -295,16 +287,14 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
                         calcFraglen, \
                         calcPktLen, \
                         preCheckPktLen, \
-                        checkPktLen, \
-                        outputPayload, \
-                        outputHeaderMetaData" *)
+                        checkPktLen" *)
     rule recvPktFrag;
-        let payloadFrag = payloadPipeInQ.first;
-        payloadPipeInQ.deq;
-        let payloadHasSingleFrag = payloadFrag.isFirst && payloadFrag.isLast;
-        let fragHasNoData = isZeroByteEn(payloadFrag.byteEn);
+        let payloadFragMeta = payloadStreamFragMetaPipeInQ.first;
+        payloadStreamFragMetaPipeInQ.deq;
+        let payloadHasSingleFrag = payloadFragMeta.isFirst && payloadFragMeta.isLast;
+        let fragHasNoData = isZeroByteEn(payloadFragMeta.byteEn);
 
-        if (payloadFrag.isFirst) begin
+        if (payloadFragMeta.isFirst) begin
             let rdmaHeader = rdmaHeaderPipeOut.first;
             let bth        = extractBTH(rdmaHeader.headerData);
             let aeth       = extractAETH(rdmaHeader.headerData);
@@ -331,22 +321,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             // );
         end
 
-        if (payloadBufIdxGeneratorReg == fromInteger(valueOf(INPUT_HEADER_VALIDATION_PIPELINE_DEPTH)-1)) begin
-            payloadBufIdxGeneratorReg <= 0;
-        end
-        else begin
-            payloadBufIdxGeneratorReg <= payloadBufIdxGeneratorReg + 1;
-        end
-
-        let streamFragMeta = DataStreamFragMetaData{
-            byteEn  :   payloadFrag.byteEn,
-            isFirst :   payloadFrag.isFirst,
-            isLast  :   payloadFrag.isLast,
-            bufIdx  :   payloadBufIdxGeneratorReg
-        };
-
-        payloadBufVec[payloadBufIdxGeneratorReg] <= payloadFrag.data;
-        payloadFragMetaRecvQ.enq(streamFragMeta);
+        payloadFragMetaRecvQ.enq(payloadFragMeta);
         // $display(
         //     "time=%0t: 1st stage recvPktFrag", $time
         //     // ", bth=", fshow(bth), ", aeth=", fshow(aeth)
@@ -726,7 +701,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             streamFragMeta.byteEn = streamFragMeta.byteEn << pktLenCheckInfo.padCnt;
 
             if (!isZeroPayloadLen) begin
-                payloadFragMetaOutputQ.enq(streamFragMeta);
+                reqPayloadFragMetaOutQ.enq(streamFragMeta);
                 // $display("time=%0t: streamFragMeta=", $time, fshow(streamFragMeta));
             end
             else begin
@@ -775,58 +750,96 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
                 qpc: qpcCommon
             };
 
-            rdmaHeaderOutputQ.enq(pktMetaDataAndQpc);
+            reqPktMetaDataAndQpcOutQ.enq(pktMetaDataAndQpc);
             // $display(
             //     "time=%0t:", $time, " pktMetaData=", fshow(pktMetaData)
             //     // "time=%0t: bth=", $time, fshow(bth), ", pktMetaData=", fshow(pktMetaData)
             // );
         end
         else begin
-            payloadFragMetaOutputQ.enq(streamFragMeta);
+            reqPayloadFragMetaOutQ.enq(streamFragMeta);
             // $display("time=%0t: streamFragMeta=", $time, fshow(streamFragMeta));
         end
         // $display("time=%0t: 9th stage checkPktLen", $time);
     endrule
 
-    rule outputPayload;
-        let streamFragMeta = payloadFragMetaOutputQ.first;
-        payloadFragMetaOutputQ.deq;
 
-        reqPayloadOutQ.enq(DataStream{
-            data    :   payloadBufVec[streamFragMeta.bufIdx],
-            byteEn  :   streamFragMeta.byteEn,
-            isFirst :   streamFragMeta.isFirst,
-            isLast  :   streamFragMeta.isLast
-        });
 
-        // $display(
-        //     "time=%0t: 10th stage outputPayload", $time,
-        //     ", qpIndex=%0d, isRespPkt=", qpIndex, fshow(isRespPkt)
-        // );
-    endrule
-
-    rule outputHeaderMetaData;
-        let pktMetaDataAndQpc = rdmaHeaderOutputQ.first;
-        rdmaHeaderOutputQ.deq;
-        reqPktMetaDataAndQpcOutQ.enq(pktMetaDataAndQpc);
-
-        // $display("time=%0t: final stage outputHeaderMetaData", $time);
-    endrule
 
 
     return interface InputRdmaPktBuf;
         interface reqPktPipeOut = interface RdmaPktMetaDataAndQpcAndPayloadPipeOut;
-            interface pktMetaData = toPipeOut(reqPktMetaDataAndQpcOutQ);
-            interface payload     = toPipeOut(reqPayloadOutQ);
+            interface pktMetaData                       = toPipeOut(reqPktMetaDataAndQpcOutQ);
+            interface payloadStreamFragMetaPipeOut      = toPipeOut(reqPayloadFragMetaOutQ);
         endinterface;
 
 
         interface qpcReadCommonClt = qpcReadCommonCltInst.clt;
-        interface payloadPipeIn = toPut(payloadPipeInQ);
+        interface payloadStreamFragMetaPipeIn = toPut(payloadStreamFragMetaPipeInQ);
         
         interface headerDataStreamPipeIn = toPut(headerDataStreamQ);
         interface headerMetaDataPipeIn = toPut(headerMetaDataQ);
         
     endinterface;
 
+endmodule
+
+
+interface ReceivedStreamFragStorage;
+    interface Server#(DATA, InputStreamFragBufferIdx) insertFragSrv;
+    interface Server#(Tuple2#(InputStreamFragBufferIdx, Bool), DATA) readFragSrv;
+endinterface
+
+module mkReceivedStreamFragStorage(ReceivedStreamFragStorage);
+    BypassServer#(DATA, InputStreamFragBufferIdx) insertFragSrvInst                 <- mkBypassServer;
+    BypassServer#(Tuple2#(InputStreamFragBufferIdx, Bool), DATA) readFragSrvInst    <- mkBypassServer;
+
+    BRAM_Configure cfg = defaultValue;
+    BRAM2Port#(InputStreamFragBufferIdxWithoutGuard, DATA) bramBuffer <- mkBRAM2Server (cfg);
+    Reg#(InputStreamFragBufferIdx) idxGenerator <- mkReg(0);
+    Reg#(InputStreamFragBufferIdx) lastConsumeIdx <- mkReg(0);
+
+
+    rule handleInsertReq;
+        let data <- insertFragSrvInst.getReq;
+        bramBuffer.portA.request.put(BRAMRequest{
+            write: True,
+            responseOnWrite:False,
+            address: truncate(idxGenerator),
+            datain: data
+        });
+
+        insertFragSrvInst.putResp(idxGenerator);
+        idxGenerator <= idxGenerator + 1;
+
+        // if the substruct result's highest bit is one, the overflow
+        immAssert(
+            ((idxGenerator - lastConsumeIdx) >> valueOf(INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH)) == 0,
+            "receive data fragment buf overfllow @ mkReceivedStreamFragStorage",
+            $format(
+                "idxGenerator=", fshow(idxGenerator), " lastConsumeIdx=", fshow(lastConsumeIdx)
+            )
+        );
+    endrule
+
+    rule handleReadReq;
+        let {addr, isOnlyUpadteFragBufLastConsumeIndex} <- readFragSrvInst.getReq;
+        lastConsumeIdx <= addr;
+        if (!isOnlyUpadteFragBufLastConsumeIndex) begin
+            bramBuffer.portB.request.put(BRAMRequest{
+                write: False,
+                responseOnWrite:False,
+                address: truncate(addr),
+                datain: ?
+            });
+        end
+    endrule
+
+    rule outputReadResp;
+        let resp <- bramBuffer.portB.response.get;
+        readFragSrvInst.putResp(resp);
+    endrule
+
+    interface insertFragSrv = insertFragSrvInst.srv;
+    interface readFragSrv = readFragSrvInst.srv;
 endmodule
