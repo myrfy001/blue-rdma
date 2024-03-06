@@ -63,7 +63,7 @@ interface MockHost#(type addr, type data, numeric type n, type bar_addr_t, type 
 	interface Client#(bar_addr_t, bar_data_t) barReadClt;
 	interface Client#(Tuple2#(bar_addr_t, bar_data_t), Bool) barWriteClt; 
 
-	interface AxiStream512PipeIn   axiStreamTxUdp;
+	interface AxiStream512FifoIn   axiStreamTxUdp;
 	interface Get#(AxiStream512)   axiStreamRxUdp;
 
 	method Bool ready;
@@ -277,7 +277,7 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
     interface barReadClt = toGPClient(barReadReqQ, barReadRespQ);
 
 	interface axiStreamRxUdp 	= toGet(udpAxiRxQ);
-	interface axiStreamTxUdp 	= convertFifoToPipeIn(udpAxiTxQ);
+	interface axiStreamTxUdp 	= convertFifoToFifoIn(udpAxiTxQ);
 
 endmodule
 

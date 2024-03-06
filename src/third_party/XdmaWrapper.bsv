@@ -75,10 +75,10 @@ endinterface
 module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH));
 
     FIFOF#(AxiStream#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)) xdmaH2cStFifo <- mkFIFOF();
-    let rawH2cSt <- mkPipeInToRawAxiStreamSlave(convertFifoToPipeIn(xdmaH2cStFifo));
+    let rawH2cSt <- mkFifoInToRawAxiStreamSlave(convertFifoToFifoIn(xdmaH2cStFifo));
 
     FIFOF#(AxiStream#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH)) xdmaC2hStFifo <- mkFIFOF();
-    let rawC2hSt <- mkPipeOutToRawAxiStreamMaster(convertFifoToPipeOut(xdmaC2hStFifo));
+    let rawC2hSt <- mkPipeOutToRawAxiStreamMaster(toPipeOut(xdmaC2hStFifo));
 
     let dmaReadReqQ     <- mkFIFOF;
     let dmaReadRespQ    <- mkFIFOF;
@@ -340,13 +340,13 @@ module mkXdmaAxiLiteBridgeWrapper(Clock slowClock, Reset slowReset, XdmaAxiLiteB
     FIFOF#(CsrReadRequest#(t_csr_addr)) readReqQ <- mkFIFOF;
     FIFOF#(CsrReadResponse#(t_csr_data)) readRespQ <- mkFIFOF;
 
-    let cntrlAxilSlave <- mkPipeToRawAxi4LiteSlave(
-        convertSyncFifoToPipeIn(cntrlWrAddrFifo),
-        convertSyncFifoToPipeIn(cntrlWrDataFifo),
-        convertSyncFifoToPipeOut(cntrlWrRespFifo),
+    let cntrlAxilSlave <- mkRawAxi4LiteSlave(
+        convertSyncFifoToFifoIn(cntrlWrAddrFifo),
+        convertSyncFifoToFifoIn(cntrlWrDataFifo),
+        convertSyncFifoToFifoOut(cntrlWrRespFifo),
 
-        convertSyncFifoToPipeIn(cntrlRdAddrFifo),
-        convertSyncFifoToPipeOut(cntrlRdDataFifo),
+        convertSyncFifoToFifoIn(cntrlRdAddrFifo),
+        convertSyncFifoToFifoOut(cntrlRdDataFifo),
         clocked_by slowClock,
         reset_by slowReset
     );
@@ -676,7 +676,7 @@ endmodule
 
 
 interface FakeXdma;
-    interface AxiStream512PipeIn   axiStreamTxUdp;
+    interface AxiStream512FifoIn   axiStreamTxUdp;
     interface Get#(AxiStream512)   axiStreamRxUdp;
     interface UserLogicDmaReadWideSrv xdmaH2cSrv;
     interface UserLogicDmaWriteWideSrv xdmaC2hSrv;

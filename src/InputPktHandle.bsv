@@ -12,7 +12,6 @@ import MetaData :: *;
 import PrimUtils :: *;
 import Settings :: *;
 import RdmaUtils :: *;
-import PipeIn :: *;
 
 function Bool checkZeroFields4BTH(BTH bth);
     let bthRsvdCheck =

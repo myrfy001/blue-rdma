@@ -1,7 +1,6 @@
 import ClientServer :: *;
 import PAClib :: *;
 import PrimUtils :: *;
-import PipeIn :: *;
 import Vector :: *;
 import GetPut :: *;
 

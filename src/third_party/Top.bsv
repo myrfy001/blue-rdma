@@ -16,7 +16,6 @@ import StreamHandler :: *;
 import XilinxAxiStreamAsyncFifo :: *;
 import UdpIpEthCmacRxTx :: *;
 
-import PipeIn :: *;
 import RQ :: *;
 import QPContext :: *;
 import MetaData :: *;
@@ -84,9 +83,9 @@ module mkBsvTop(
     let isEnableFlowControl = False;
     Bool isEnableRsFec = True;
 
-    let axiStream512TxOut <- mkDoubleAxiStreamPipeOut(bsvTopCore.axiStreamOutUdp);
-    let axiStreamRxIn <- mkPutToPipeIn(bsvTopCore.axiStreamInUdp);
-    let axiStream512RxIn <- mkDoubleAxiStreamPipeIn(axiStreamRxIn);
+    let axiStream512TxOut <- mkDoubleAxiStreamFifoOut(bsvTopCore.axiStreamTxOutUdp);
+    let axiStreamRxIn <- mkPutToFifoIn(bsvTopCore.axiStreamRxInUdp);
+    let axiStream512RxIn <- mkDoubleAxiStreamFifoIn(axiStreamRxIn);
 
     let axiStream512SyncFifoForCMAC <- mkDuplexAxiStreamAsyncFifo(
         syncBramBufDepth,
@@ -101,14 +100,14 @@ module mkBsvTop(
     );
 
 
-    SemiFifo::PipeOut#(FlowControlReqVec) txFlowCtrlReqVec <- mkDummyPipeOut;
-    SemiFifo::PipeIn#(FlowControlReqVec) rxFlowCtrlReqVec <- mkDummyPipeIn;
+    FifoOut#(FlowControlReqVec) txFlowCtrlReqVec <- mkDummyFifoOut;
+    FifoIn#(FlowControlReqVec) rxFlowCtrlReqVec <- mkDummyFifoIn;
     let xilinxCmacCtrl <- mkXilinxCmacController(
         isEnableRsFec,
         isEnableFlowControl,
         isCmacTxWaitRxAligned,
-        axiStream512SyncFifoForCMAC.dstPipeOut,
-        axiStream512SyncFifoForCMAC.dstPipeIn,
+        axiStream512SyncFifoForCMAC.dstFifoOut,
+        axiStream512SyncFifoForCMAC.dstFifoIn,
         txFlowCtrlReqVec,
         rxFlowCtrlReqVec,
         cmacRxReset,
@@ -123,8 +122,8 @@ endmodule
 
 
 interface TopCoreRdma;
-    interface AxiStream256PipeOut axiStreamOutUdp;
-    interface Put#(AxiStream256)   axiStreamInUdp;
+    interface AxiStream256FifoOut axiStreamTxOutUdp;
+    interface Put#(AxiStream256)   axiStreamRxInUdp;
     
     interface UserLogicDmaReadWideClt dmaReadClt;
     interface UserLogicDmaWriteWideClt dmaWriteClt;
@@ -175,7 +174,7 @@ module mkTopCore(
     QPContext qpc <- mkQPContext;
     RQ rq <- mkRQ;
 
-    FIFOF#(DataStream) inputDataStreamQ <- mkFIFOF;
+    FIFOF#(DataTypes::DataStream) inputDataStreamQ <- mkFIFOF;
 
     let headerAndMetaDataAndPayloadPipeOut <- mkExtractHeaderFromRdmaPktPipeOut;
     mkConnection(headerAndMetaDataAndPayloadPipeOut.rdmaPktPipeIn, toGet(inputDataStreamQ));
@@ -188,12 +187,12 @@ module mkTopCore(
     mkConnection(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragStorageInsertClt, recvStreamFragStorage.insertFragSrv);
 
     mkConnection(inputRdmaPktBufAndHeaderValidation.qpcReadCommonClt, qpc.readCommonSrv);
-    mkConnection(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.pktMetaData, rq.pktMetaDataPipeIn);
+    mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.pktMetaData), rq.pktMetaDataPipeIn);
 
 
     RQReportEntryToRingbufDesc reportDescConvertor <- mkRQReportEntryToRingbufDesc;
 
-    mkConnection(rq.pktReportEntryPipeOut, reportDescConvertor.pktReportEntryPipeIn);
+    mkConnection(toGet(rq.pktReportEntryPipeOut), reportDescConvertor.pktReportEntryPipeIn);
 
     let payloadConsumer <- mkPayloadConsumer;
 
@@ -283,7 +282,7 @@ module mkTopCore(
         sq.sendQ.rdmaDataStreamPipeOut.deq;
         let data = sq.sendQ.rdmaDataStreamPipeOut.first;
         $display("rdma_A_out_data = ", fshow(data));
-        udp.dataStreamIn.put(Ports::DataStream{
+        udp.dataStreamTxIn.put(Ports::DataStream{
             data: swapEndian(data.data),
             byteEn: swapEndianBit(data.byteEn),
             isFirst:    data.isFirst,
@@ -306,7 +305,7 @@ module mkTopCore(
             $finish;
         end
 
-        udp.udpIpMetaDataIn.put(UdpIpMetaData{
+        udp.udpIpMetaDataTxIn.put(UdpIpMetaData{
             dataLen: zeroExtend(meta.pktLen),
             ipAddr:  dstIP,
             ipDscp:  0,
@@ -314,7 +313,7 @@ module mkTopCore(
             dstPort: fromInteger(valueOf(TEST_UDP_PORT)),
             srcPort: fromInteger(valueOf(TEST_UDP_PORT))
         });
-        udp.macMetaDataIn.put(MacMetaData{
+        udp.macMetaDataTxIn.put(MacMetaData{
             macAddr: unpack(pack(meta.macAddr)),
             ethType: fromInteger(valueOf(ETH_TYPE_IP))
         });
@@ -323,21 +322,21 @@ module mkTopCore(
 
     rule forwardRxStream;
 
-        if (udp.udpIpMetaDataOut.notEmpty) begin
-            udp.udpIpMetaDataOut.deq;
-            $display("udp recv meta = ", fshow(udp.udpIpMetaDataOut.first));
+        if (udp.udpIpMetaDataRxOut.notEmpty) begin
+            udp.udpIpMetaDataRxOut.deq;
+            $display("udp recv meta = ", fshow(udp.udpIpMetaDataRxOut.first));
         end
 
-        if (udp.macMetaDataOut.notEmpty) begin
-            udp.macMetaDataOut.deq;
-            $display("udp recv mac meta = ", fshow(udp.macMetaDataOut.first));
+        if (udp.macMetaDataRxOut.notEmpty) begin
+            udp.macMetaDataRxOut.deq;
+            $display("udp recv mac meta = ", fshow(udp.macMetaDataRxOut.first));
         end
 
-        if (udp.dataStreamOut.notEmpty) begin
-            let data = udp.dataStreamOut.first;
-            udp.dataStreamOut.deq;
+        if (udp.dataStreamRxOut.notEmpty) begin
+            let data = udp.dataStreamRxOut.first;
+            udp.dataStreamRxOut.deq;
 
-            let outData = DataStream {
+            let outData = DataTypes::DataStream {
                 data: swapEndian(data.data),
                 byteEn: swapEndianBit(data.byteEn),
                 isLast: data.isLast,
@@ -370,8 +369,8 @@ module mkTopCore(
         // ringbufPool.c2hRings[1].enq(pack(desc));
     endrule
 
-    interface axiStreamOutUdp = udp.axiStreamOut;
-    interface axiStreamInUdp = udp.axiStreamIn;
+    interface axiStreamTxOutUdp = udp.axiStreamTxOut;
+    interface axiStreamRxInUdp = udp.axiStreamRxIn;
 
 
     interface dmaReadClt = xdmaGearbox.h2cStreamClt;
@@ -389,7 +388,7 @@ module mkFakeSQ(SQ);
     FIFOF#(SendResp)       sendRespQ <- mkFIFOF;
 
     FIFOF#(PktInfo4UDP)       udpQ <- mkFIFOF;
-    FIFOF#(DataStream)       dataStreamQ <- mkFIFOF;
+    FIFOF#(DataTypes::DataStream)       dataStreamQ <- mkFIFOF;
 
 
     Reg#(Bit#(1024)) tReg <- mkRegU;

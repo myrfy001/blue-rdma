@@ -6,7 +6,6 @@ import PAClib :: *;
 import Clocks :: *;
 import BRAM :: *;
 
-import PipeIn :: *;
 import RQ :: *;
 import QPContext :: *;
 import MetaData :: *;
@@ -82,26 +81,26 @@ module mkTestTop(Empty);
 
     // // loop tx stream to rx stream
     // rule displayAndForwardWireData;
-    //     let d = topA.axiStreamOutUdp.first;
-    //     topA.axiStreamOutUdp.deq;
-    //     topA.axiStreamInUdp.put(d);
+    //     let d = topA.axiStreamTxOutUdp.first;
+    //     topA.axiStreamTxOutUdp.deq;
+    //     topA.axiStreamRxInUdp.put(d);
     //     $display("udp send data: ", fshow(d));
     // endrule
 
 
     // connect rx and tx to MockHost
 
-    let axiStream512TxOut <- mkDoubleAxiStreamPipeOut(topA.axiStreamOutUdp);
-    let axiStreamRxIn <- mkPutToPipeIn(topA.axiStreamInUdp);
-    let axiStream512RxIn <- mkDoubleAxiStreamPipeIn(axiStreamRxIn);
+    let axiStream512TxOut <- mkDoubleAxiStreamFifoOut(topA.axiStreamTxOutUdp);
+    let axiStreamRxIn <- mkPutToFifoIn(topA.axiStreamRxInUdp);
+    let axiStream512RxIn <- mkDoubleAxiStreamFifoIn(axiStreamRxIn);
 
     SyncFIFOIfc#(AxiStream512) netIfcRxSyncFifo <- mkSyncFIFO(2, slowClock, slowReset, fastClock);
     mkConnection(fakeXdmaA.axiStreamRxUdp, toPut(netIfcRxSyncFifo), clocked_by slowClock, reset_by slowReset);
-    mkConnection(convertSyncFifoToPipeOut(netIfcRxSyncFifo), axiStream512RxIn);
+    mkConnection(convertSyncFifoToFifoOut(netIfcRxSyncFifo), axiStream512RxIn);
 
     SyncFIFOIfc#(AxiStream512) netIfcTxSyncFifo <- mkSyncFIFO(2, fastClock, fastReset, slowClock);
     mkConnection(toGet(axiStream512TxOut), toPut(netIfcTxSyncFifo));
-    mkConnection(convertSyncFifoToPipeOut(netIfcTxSyncFifo), fakeXdmaA.axiStreamTxUdp, clocked_by slowClock, reset_by slowReset); 
+    mkConnection(convertSyncFifoToFifoOut(netIfcTxSyncFifo), fakeXdmaA.axiStreamTxUdp, clocked_by slowClock, reset_by slowReset); 
 
 
     rule forwardBarReadReq;

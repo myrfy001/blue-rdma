@@ -7,16 +7,11 @@ import Headers :: *;
 import Vector :: *;
 
 import PAClib :: *;
-import PipeIn :: *;
 import PrimUtils :: *;
 import Settings :: *;
 
 function PipeOut#(anytype) toPipeOut(FIFOF#(anytype) queue);
     return f_FIFOF_to_PipeOut(queue);
-endfunction
-
-function PipeIn#(anytype) toPipeIn(FIFOF#(anytype) queue);
-    return f_FIFOF_to_PipeIn(queue);
 endfunction
 
 interface BypassClient#(type t_req, type t_resp);
