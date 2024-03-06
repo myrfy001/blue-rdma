@@ -59,7 +59,6 @@ module mkTestTop(Empty);
     Clock fastClock <- exposeCurrentClock;
     Reset fastReset <- exposeCurrentReset;
 
-    RecvStreamMocker rsMocker <- mkRecvStreamMocker;
     TopCoreRdma topA <- mkTopCore(slowClock, slowReset);
 
     FakeXdma fakeXdmaA <- mkFakeXdma(1, clocked_by slowClock, reset_by slowReset);

@@ -31,9 +31,9 @@ module mkRQ(RQ ifc);
     BypassClient#(PayloadConReq, PayloadConResp) payloadConsumerControlClt           <- mkBypassClient;
 
     // Pipeline FIFOs
-    FIFOF#(Tuple2#(RdmaPktMetaDataAndQPC, Bool))                       reqStatusCheckStep1PipeQ <- mkFIFOF;
+    FIFOF#(Tuple2#(RdmaPktMetaDataAndQPC, Bool))                       reqStatusCheckStep1PipeQ <- mkSizedFIFOF(5);
     FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, FlagsType#(MemAccessTypeFlag), RETH)) reqStatusCheckStep2PipeQ   <- mkFIFOF;
-    FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool)) getPGTQueryRespPipeQ <- mkFIFOF;
+    FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool)) getPGTQueryRespPipeQ <- mkSizedFIFOF(5);
     FIFOF#(Tuple3#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool))           waitDMARespPipeQ <- mkFIFOF;
 
 
@@ -111,28 +111,36 @@ module mkRQ(RQ ifc);
         
         let isAccCheckPass = False;
         // $display("pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc));
-        case ({ pack(isSendReq || isWriteReq), pack(isReadReq), pack(isAtomicReq) })
-            3'b100: begin
-                isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_WRITE);
-            end
-            3'b010: begin
-                isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_READ);
-            end
-            3'b001: begin
-                isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_ATOMIC);
-            end
-            default: begin
-                immFail(
-                    "unreachible case @ mkReqHandleRQ",
-                    $format(
-                        "isSendReq=", fshow(isSendReq),
-                        ", isWriteReq=", fshow(isWriteReq),
-                        ", isReadReq=", fshow(isReadReq),
-                        ", isAtomicReq=", fshow(isAtomicReq)
-                    )
-                );
-            end
-        endcase
+
+        // for ACK/NACK, no need to check
+        if (rdmaOpCodeNeedDMA) begin
+            case ({ pack(isSendReq || isWriteReq), pack(isReadReq), pack(isAtomicReq) })
+                3'b100: begin
+                    isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_WRITE);
+                end
+                3'b010: begin
+                    isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_READ);
+                end
+                3'b001: begin
+                    isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_ATOMIC);
+                end
+                default: begin
+                    immFail(
+                        "unreachible case @ mkReqHandleRQ",
+                        $format(
+                            "isSendReq=", fshow(isSendReq),
+                            ", isWriteReq=", fshow(isWriteReq),
+                            ", isReadReq=", fshow(isReadReq),
+                            ", isAtomicReq=", fshow(isAtomicReq)
+                        )
+                    );
+                end
+            endcase
+        
+        end
+        else begin
+            isAccCheckPass = True;
+        end
 
         let reqAccFlags = genAccessFlagFromReqType(isSendReq, isReadReq, isWriteReq, isAtomicReq);
 

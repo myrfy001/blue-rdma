@@ -518,7 +518,8 @@ module mkXdmaGearbox(Clock slowClock, Reset slowReset, XdmaGearbox ifc);
     FIFOF#(UserLogicDmaH2cResp) h2cRespQ <- mkFIFOF;
     FIFOF#(UserLogicDmaC2hReq) c2hReqQ <- mkFIFOF;
     
-    Reg#(Bool) isCurrentC2hReqAnEvenBeat <- mkReg(False);
+    Reg#(Bool) isCurrentC2hReqAnOddBeatReg <- mkReg(True);
+    Reg#(Bool) needExtraEmptyCh2ReqBeatReg <- mkReg(False);
 
     rule forwardH2cResp;
         // use this rule to filter out Invalid resp.
@@ -532,24 +533,21 @@ module mkXdmaGearbox(Clock slowClock, Reset slowReset, XdmaGearbox ifc);
     rule forwardC2hReq;
         // use this rule to insert a invalid tail if the tail 256 bits is not used.
         Vector#(XDMA_GEARBOX_NARROW_VECTOR_LEN, Maybe#(UserLogicDmaC2hReq)) out;
-        if (isCurrentC2hReqAnEvenBeat) begin
-            if ( (!c2hReqQ.notEmpty) || (c2hReqQ.notEmpty && c2hReqQ.first.dataStream.isFirst)) begin
-                out[0] = tagged Invalid;
-                c2hReqGearbox.enq(out);
-                isCurrentC2hReqAnEvenBeat <= !isCurrentC2hReqAnEvenBeat;
-            end 
-            else begin
-                out[0] = tagged Valid c2hReqQ.first;
-                c2hReqGearbox.enq(out);
-                c2hReqQ.deq;
-                isCurrentC2hReqAnEvenBeat <= !isCurrentC2hReqAnEvenBeat;
-            end
+        if (needExtraEmptyCh2ReqBeatReg) begin
+            out[0] = tagged Invalid;
+            c2hReqGearbox.enq(out);
+            isCurrentC2hReqAnOddBeatReg <= True;
+            needExtraEmptyCh2ReqBeatReg <= False;
         end 
         else begin
             out[0] = tagged Valid c2hReqQ.first;
             c2hReqGearbox.enq(out);
             c2hReqQ.deq;
-            isCurrentC2hReqAnEvenBeat <= !isCurrentC2hReqAnEvenBeat;
+            isCurrentC2hReqAnOddBeatReg <= !isCurrentC2hReqAnOddBeatReg;
+        
+            if (isCurrentC2hReqAnOddBeatReg && c2hReqQ.first.dataStream.isLast) begin
+                needExtraEmptyCh2ReqBeatReg <= True;
+            end
         end
     endrule
 
