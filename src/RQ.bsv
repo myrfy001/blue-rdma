@@ -1,20 +1,19 @@
 import FIFOF :: *;
+import GetPut :: *;
 
-import PipeIn :: *;
 import ClientServer :: *;
 import RdmaUtils :: *;
 import MetaData :: *;
 import DataTypes :: *;
 import Headers :: *;
 import PAClib :: *;
-import PipeIn :: *;
 import PrimUtils :: *;
 
 import UserLogicTypes :: *;
 
 
 interface RQ;
-    interface PipeIn#(RdmaPktMetaDataAndQPC) pktMetaDataPipeIn;
+    interface Put#(RdmaPktMetaDataAndQPC) pktMetaDataPipeIn;
     interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
     interface Client#(PgtAddrTranslateReq, ADDR) pgtQueryClt;
     interface Client#(PayloadConReq, PayloadConResp) payloadXonsumerControlPortClt;
@@ -32,7 +31,8 @@ module mkRQ(RQ ifc);
     BypassClient#(PayloadConReq, PayloadConResp) payloadConsumerControlClt           <- mkBypassClient;
 
     // Pipeline FIFOs
-    FIFOF#(Tuple2#(RdmaPktMetaDataAndQPC, Bool))                       getMRQueryRespPipeQ <- mkFIFOF;
+    FIFOF#(Tuple2#(RdmaPktMetaDataAndQPC, Bool))                       reqStatusCheckStep1PipeQ <- mkFIFOF;
+    FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, FlagsType#(MemAccessTypeFlag), RETH)) reqStatusCheckStep2PipeQ   <- mkFIFOF;
     FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool)) getPGTQueryRespPipeQ <- mkFIFOF;
     FIFOF#(Tuple3#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool))           waitDMARespPipeQ <- mkFIFOF;
 
@@ -78,15 +78,14 @@ module mkRQ(RQ ifc);
             mrTableQueryCltInst.putReq(mrTableQueryReq);
         end
 
-        getMRQueryRespPipeQ.enq(tuple2(pktMetaDataAndQpc, rdmaOpCodeNeedDMA));
+        reqStatusCheckStep1PipeQ.enq(tuple2(pktMetaDataAndQpc, rdmaOpCodeNeedDMA));
         
     endrule
 
-    rule getMRQueryRespAndCheckAddrRangeAndCheckAccessFlag;
+    rule reqStatusCheckStep1;
 
-        
-        let {pktMetaDataAndQpc, rdmaOpCodeNeedDMA} = getMRQueryRespPipeQ.first;
-        getMRQueryRespPipeQ.deq;
+        let {pktMetaDataAndQpc, rdmaOpCodeNeedDMA} = reqStatusCheckStep1PipeQ.first;
+        reqStatusCheckStep1PipeQ.deq;
 
         let pktMetaData = pktMetaDataAndQpc.metadata;
         let rdmaHeader  = pktMetaData.pktHeader;
@@ -107,46 +106,69 @@ module mkRQ(RQ ifc);
 
 
         let reqStatus        = RDMA_REQ_ST_NORMAL;
-        let needWaitForPGTResponse = False;
         
+        
+        
+        let isAccCheckPass = False;
+        // $display("pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc));
+        case ({ pack(isSendReq || isWriteReq), pack(isReadReq), pack(isAtomicReq) })
+            3'b100: begin
+                isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_WRITE);
+            end
+            3'b010: begin
+                isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_READ);
+            end
+            3'b001: begin
+                isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_ATOMIC);
+            end
+            default: begin
+                immFail(
+                    "unreachible case @ mkReqHandleRQ",
+                    $format(
+                        "isSendReq=", fshow(isSendReq),
+                        ", isWriteReq=", fshow(isWriteReq),
+                        ", isReadReq=", fshow(isReadReq),
+                        ", isAtomicReq=", fshow(isAtomicReq)
+                    )
+                );
+            end
+        endcase
+
+        let reqAccFlags = genAccessFlagFromReqType(isSendReq, isReadReq, isWriteReq, isAtomicReq);
+
+        if (!isAccCheckPass) begin
+            reqStatus = RDMA_REQ_ST_INV_ACC_FLAG;
+        end
+        else if (!isSupportedReqOpCode) begin
+            reqStatus = RDMA_REQ_ST_INV_OPCODE;
+        end
+
+        reqStatusCheckStep2PipeQ.enq(tuple5(pktMetaDataAndQpc, reqStatus, rdmaOpCodeNeedDMA, reqAccFlags, reth));
+    endrule
+
+
+    rule getMRQueryRespAndReqStatusCheckStep2;
+
+        let {pktMetaDataAndQpc, reqStatus, rdmaOpCodeNeedDMA, reqAccFlags, reth} = reqStatusCheckStep2PipeQ.first;
+        reqStatusCheckStep2PipeQ.deq;
+
+        let pktMetaData = pktMetaDataAndQpc.metadata;
+
+
+        let needWaitForPGTResponse = False;
         if (rdmaOpCodeNeedDMA) begin
-            let mrMaybe <- mrTableQueryCltInst.getResp;
-            $display("mrMaybe=", fshow(mrMaybe));
-
-            let isAccCheckPass = False;
-            // $display("pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc));
-            case ({ pack(isSendReq || isWriteReq), pack(isReadReq), pack(isAtomicReq) })
-                3'b100: begin
-                    isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_WRITE);
-                end
-                3'b010: begin
-                    isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_READ);
-                end
-                3'b001: begin
-                    isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_ATOMIC);
-                end
-                default: begin
-                    immFail(
-                        "unreachible case @ mkReqHandleRQ",
-                        $format(
-                            "isSendReq=", fshow(isSendReq),
-                            ", isWriteReq=", fshow(isWriteReq),
-                            ", isReadReq=", fshow(isReadReq),
-                            ", isAtomicReq=", fshow(isAtomicReq)
-                        )
-                    );
-                end
-            endcase
-
+        
             let isMrKeyMatch           = False;
             let isAccTypeMatch         = False;
             let isAccessRangeCheckPass = False;
             
-
+        
+            let mrMaybe <- mrTableQueryCltInst.getResp;
+            $display("mrMaybe=", fshow(mrMaybe));
 
             if (mrMaybe matches tagged Valid .mr) begin
                 isMrKeyMatch    = (truncate(reth.rkey) == mr.keyPart);
-                let reqAccFlags = genAccessFlagFromReqType(isSendReq, isReadReq, isWriteReq, isAtomicReq);
+                
                 isAccTypeMatch  = compareAccessTypeFlags(mr.accFlags, reqAccFlags);
 
                 isAccessRangeCheckPass = checkAddrAndLenWithinRange(
@@ -169,25 +191,19 @@ module mkRQ(RQ ifc);
                 needWaitForPGTResponse = True;
             end
 
-            if (!isAccCheckPass) begin
-                reqStatus = RDMA_REQ_ST_INV_ACC_FLAG;
-                        end
-            else if (!isSupportedReqOpCode) begin
-                reqStatus = RDMA_REQ_ST_INV_OPCODE;
-            end
-            else if (!isMrKeyMatch) begin
+           
+            if (!isMrKeyMatch) begin
                 reqStatus = RDMA_REQ_ST_INV_MR_KEY;
             end
             else if (!isAccTypeMatch) begin
                 reqStatus = RDMA_REQ_ST_INV_ACC_FLAG;
-                        end
+            end
             else if (!isAccessRangeCheckPass) begin
                 reqStatus = RDMA_REQ_ST_INV_MR_REGION;
             end
         end
         
         getPGTQueryRespPipeQ.enq(tuple4(pktMetaDataAndQpc, reqStatus, needWaitForPGTResponse, rdmaOpCodeNeedDMA));
-
 
 
     endrule
@@ -282,7 +298,7 @@ module mkRQ(RQ ifc);
 
 
 
-    interface pktMetaDataPipeIn             = toPipeIn(rdmaPktMetaDataInQ);
+    interface pktMetaDataPipeIn             = toPut(rdmaPktMetaDataInQ);
     interface mrTableQueryClt               = mrTableQueryCltInst.clt;
     interface pgtQueryClt                   = pgtQueryCltInst.clt;
     interface payloadXonsumerControlPortClt = payloadConsumerControlClt.clt;
@@ -291,7 +307,7 @@ endmodule
 
 
 interface RQReportEntryToRingbufDesc;
-    interface PipeIn#(C2hReportEntry) pktReportEntryPipeIn;
+    interface Put#(C2hReportEntry) pktReportEntryPipeIn;
     interface PipeOut#(RingbufRawDescriptor) ringbufDescPipeOut;
 endinterface
 
@@ -359,7 +375,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                     };
                     ringbufDescPipeOutQ.enq(pack(ent));
                     pktReportEntryPipeInQ.deq;
-                    // $display("send recv packet meta to host:",fshow(ent));
+                    $display("send recv packet meta to host:",fshow(ent));
                 end
                 fromInteger(valueOf(RC_RDMA_WRITE_FIRST)),
                 fromInteger(valueOf(RC_RDMA_WRITE_MIDDLE)),
@@ -392,7 +408,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                         pktReportEntryPipeInQ.deq;
                     end
                     ringbufDescPipeOutQ.enq(pack(ent));
-                    // $display("send recv packet meta to host:",fshow(ent));
+                    $display("send recv packet meta to host:",fshow(ent));
                 end
                 fromInteger(valueOf(RC_ACKNOWLEDGE)),
                 fromInteger(valueOf(RC_ATOMIC_ACKNOWLEDGE)),
@@ -409,7 +425,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                     };
                     pktReportEntryPipeInQ.deq;
                     ringbufDescPipeOutQ.enq(pack(ent));
-                    // $display("send recv packet meta to host:",fshow(ent));
+                    $display("send recv packet meta to host:",fshow(ent));
                 end
 
                 default: begin
@@ -429,7 +445,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                     state <= RQReportEntryToRingbufDescStatusOutputBasicInfo;
                     ringbufDescPipeOutQ.enq(pack(ent));
                     pktReportEntryPipeInQ.deq;
-                    // $display("send recv packet meta to host:",fshow(ent));
+                    $display("send recv packet meta to host:",fshow(ent));
                 end
                 default: begin
                     $display("Warn: Received Not Supported Packet, Will not report to software.");
@@ -445,7 +461,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
 
 
 
-    interface pktReportEntryPipeIn  = toPipeIn(pktReportEntryPipeInQ);
+    interface pktReportEntryPipeIn  = toPut(pktReportEntryPipeInQ);
     interface ringbufDescPipeOut    = toPipeOut(ringbufDescPipeOutQ);
 
 endmodule
