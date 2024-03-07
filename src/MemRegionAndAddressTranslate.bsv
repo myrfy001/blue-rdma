@@ -142,16 +142,19 @@ module mkMemRegionTable(MemRegionTable);
     rule handleQueryReq;
         let req <- querySrvInst.getReq;
         mrTableStorage.read.request.put(req.idx);
+        $display("get MrTable query req: ", fshow(req));
     endrule
 
     rule handleQueryResp;
         let resp <- mrTableStorage.read.response.get;
         querySrvInst.putResp(resp);
+        $display("send MrTable query resp: ", fshow(resp));
     endrule
 
     rule handleModifyReq;
         let req <- modifySrvInst.getReq;
         mrTableStorage.write.request.put(tuple2(req.idx, req.entry));
+        $display("get MrTable update req: ", fshow(req));
     endrule
 
     rule handleModifyResp;

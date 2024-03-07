@@ -96,7 +96,8 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 	Bits#(bar_addr_t, bar_addr_sz),
 	Bits#(bar_data_t, bar_data_sz),
 	Add#(b__, bar_addr_sz, 64),
-	Add#(c__, bar_data_sz, 64)
+	Add#(c__, bar_data_sz, 64),
+	FShow#(addr)
 );
 
 
@@ -220,6 +221,10 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 		interface BRAMServer portA;
 			interface Put request;
 				method Action put(BRAMRequestBE#(addr, data, n) req);
+					// $display(
+					// 	"time=%0t:", $time, "mock Host Mem Port A req.writeen=", fshow(req.writeen),
+					// 	" req.addr=", fshow(req.address)
+					// );
 					if (req.writeen == 0) begin
 						let resp <- readBRAM(memHandle, req.address);
 						portRespQueueA.enq(resp);
@@ -248,6 +253,10 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 		interface BRAMServer portB;
 			interface Put request;
 				method Action put(BRAMRequestBE#(addr, data, n) req);
+					// $display(
+					// 	"time=%0t:", $time, "mock Host Mem Port B req.writeen=", fshow(req.writeen),
+					// 	" req.addr=", fshow(req.address)
+					// );
 					if (req.writeen == 0) begin
 						let resp <- readBRAM(memHandle, req.address);
 						portRespQueueB.enq(resp);

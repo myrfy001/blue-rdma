@@ -153,7 +153,7 @@ class BluesimRpcServer:
 
 
 HOST = '127.0.0.1'
-PORT = 9876
+PORT = 9874
 
 
 class MockHostMem:
@@ -230,9 +230,9 @@ class NetworkDataAgent:
 
 
 class MockNicAndHost:
-    def __init__(self, main_memory: MockHostMem) -> None:
+    def __init__(self, main_memory: MockHostMem, host=HOST, port=PORT) -> None:
         self.main_memory = main_memory
-        self.bluesim_rpc_server = BluesimRpcServer(HOST, PORT)
+        self.bluesim_rpc_server = BluesimRpcServer(host, port)
         self.bluesim_rpc_server.register_opcode(
             CEnumRpcOpcode.RpcOpcodePcieBarGetReadReq, self.rpc_handler_pcie_bar_get_read_req, sizeof(CStructRpcPcieBarAccessMessage))
         self.bluesim_rpc_server.register_opcode(
@@ -260,6 +260,7 @@ class MockNicAndHost:
         self.pending_bar_read_resp = {}
 
         self.pending_network_packet_tx = []
+        self.pending_network_packet_tx_sema = threading.Semaphore(0)
         self.pending_network_packet_rx = []
 
         self.pcie_tlp_read_tag_counter = 0
@@ -345,11 +346,7 @@ class MockNicAndHost:
     def rpc_handler_net_ifc_put_tx_req(self, client_socket, raw_req_buf):
         req = CStructRpcNetIfcRxTxMessage.from_buffer_copy(raw_req_buf)
         self.pending_network_packet_tx.append(req.payload)
-
-        # this is for test
-        print("TODO: remove this")
-        self.pending_network_packet_rx.append(req.payload)
-
+        self.pending_network_packet_tx_sema.release()
         # this Op doesn't send response
 
     def write_csr_blocking(self, addr, value):
@@ -382,12 +379,36 @@ class MockNicAndHost:
         return resp.payload.value
 
     def get_net_ifc_tx_data_from_nic_blocking(self):
-        while len(self.pending_network_packet_tx) == 0:
-            pass
+        self.pending_network_packet_tx_sema.acquire()
         return self.pending_network_packet_tx.pop(0)
 
     def put_net_ifc_rx_data_to_nic(self, frag):
-        return self.pending_network_packet_tx.append(frag)
+        return self.pending_network_packet_rx.append(frag)
+
+    @staticmethod
+    def do_self_loopback(nic):
+        def _self_loopback_thread():
+            while True:
+                data = nic.get_net_ifc_tx_data_from_nic_blocking()
+                nic.put_net_ifc_rx_data_to_nic(data)
+        loopback_thread = threading.Thread(target=_self_loopback_thread)
+        loopback_thread.start()
+
+    @staticmethod
+    def connect_two_card(nic_a, nic_b):
+        def _forward_a():
+            while True:
+                data = nic_a.get_net_ifc_tx_data_from_nic_blocking()
+                nic_b.put_net_ifc_rx_data_to_nic(data)
+
+        def _forward_b():
+            while True:
+                data = nic_b.get_net_ifc_tx_data_from_nic_blocking()
+                nic_a.put_net_ifc_rx_data_to_nic(data)
+        forward_thread_a = threading.Thread(target=_forward_a)
+        forward_thread_b = threading.Thread(target=_forward_b)
+        forward_thread_a.start()
+        forward_thread_b.start()
 
 
 TOTAL_MEMORY_SIZE = 1024 * 1024 * 64
@@ -439,6 +460,7 @@ SEND_SIDE_PSN = 0x22
 def test_case():
     host_mem = MockHostMem("/bluesim1", TOTAL_MEMORY_SIZE)
     mock_nic = MockNicAndHost(host_mem)
+    MockNicAndHost.do_self_loopback(mock_nic)
     mock_nic.run()
 
     cmd_req_queue = RingbufCommandReqQueue(

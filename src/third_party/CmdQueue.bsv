@@ -84,6 +84,7 @@ module mkCommandQueueController(CommandQueueController ifc);
             mrAndPgtRespQ.deq;
             respRawDescSeg[0] = pack(respDesc);
             descWriteProxy.setWideDesc(respRawDescSeg, 0);
+            // $display("send cmdq resp mr=", fshow(respRawDescSeg));
         end 
         else if (qpcRespQ.notEmpty) begin 
             qpcRespQ.deq;
@@ -95,6 +96,7 @@ module mkCommandQueueController(CommandQueueController ifc);
             respDesc.commonHeader.extraSegmentCnt = 0;
             respRawDescSeg[0] = pack(respDesc);
             descWriteProxy.setWideDesc(respRawDescSeg, 0);
+            // $display("send cmdq resp qpc=", fshow(respRawDescSeg));
         end
     endrule
 

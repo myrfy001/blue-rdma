@@ -62,7 +62,21 @@ uint64_t c_createBRAM(uint32_t word_width, uint64_t memory_size) {
 
   fprintf(stdout, "create controlled BRAM with %lldB\n", (long long)size);
 
-  rpc_socket_fd = connect_to_server("0.0.0.0", 9876);
+  char *addr = getenv("MOCK_HOST_SERVER_ADDR");
+  char *port = getenv("MOCK_HOST_SERVER_PORT");
+
+  if (addr == NULL) {
+    addr = "0.0.0.0";
+  }
+
+  if (port == NULL) {
+    port = "9874";
+  }
+
+  fprintf(stdout, "Simulator will connect to Mock Host %s:%s\n", addr, port);
+
+  rpc_socket_fd = connect_to_server(addr, atoi(port));
+
   pthread_mutex_init(&mutex, NULL);
 
   return (uint64_t)p;
