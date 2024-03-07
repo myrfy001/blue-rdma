@@ -743,14 +743,13 @@ module mkFakeXdma(Integer id, FakeXdma ifc);
     let hostMem = mockHost.hostMem;
     
 
-    Reg#(Bool) currentIsH2cReg <- mkReg(True);
     Reg#(Bool) currentNotFinished <- mkReg(False);
-    FIFOF#(Tuple4#(Bool, ADDR, UserLogicDmaLen, DataStreamWide)) unionedReqQ <- mkFIFOF;
     FIFOF#(FakeXdmaMemReadBeatExtraInfo) respBeatInfoQ <- mkFIFOF;
     FIFOF#(FakeXdmaMemReadStreamExtraInfo) respStreamInfoQ <- mkFIFOF;
 
     Reg#(UserLogicDmaLen) bytesLeftReg <- mkRegU;
-    Reg#(ADDR) currentAddrReg <- mkRegU;
+    Reg#(ADDR) currentAddrH2cReg <- mkRegU;
+    Reg#(ADDR) currentAddrC2hReg <- mkRegU;
 
     Reg#(Tuple2#(DATA_WIDE, FakeXdmaMemReadBeatExtraInfo)) prevMemReadRespReg <- mkRegU;
 
@@ -763,164 +762,151 @@ module mkFakeXdma(Integer id, FakeXdma ifc);
 
     Reg#(Tuple2#(DATA_WIDE, FakeXdmaMemWriteBeatExtraInfo)) prevMemWriteReqReg <- mkRegU;
 
-    Reg#(Bool) writeReqNeedExtraBeat <- mkReg(False);
+    Reg#(Bool) writeReqNeedExtraBeatReg <- mkReg(False);
 
 
-    rule ruleArbitter;
-        if (currentIsH2cReg) begin
-            
-            if (xdmaH2cReqQ.notEmpty) begin
-                xdmaH2cReqQ.deq;
-                let req = xdmaH2cReqQ.first;
-                $display("dma %d arbiter receive H2C request: Addr=", id, fshow(req.addr), "Len=", fshow(req.len));
-                unionedReqQ.enq(tuple4(True, req.addr, req.len, ?));
-                if (xdmaC2hReqQ.notEmpty) begin
-                    currentIsH2cReg <= !currentIsH2cReg;
-                end
-            end 
-            else begin
-                currentIsH2cReg <= !currentIsH2cReg;
-            end
-        end 
-        else begin
-            if (xdmaC2hReqQ.notEmpty) begin
-                xdmaC2hReqQ.deq;
-                let req = xdmaC2hReqQ.first;
-                $display("dma %d arbiter receive C2H request: Addr=", id, fshow(req.addr), "Len=", fshow(req.len), "Data=", fshow(req.dataStream));
-                unionedReqQ.enq(tuple4(False, req.addr, req.len, req.dataStream));
-                if (req.dataStream.isLast && xdmaH2cReqQ.notEmpty) begin
-                    currentIsH2cReg <= !currentIsH2cReg;
-                end
-            end 
-            else begin
-                currentIsH2cReg <= !currentIsH2cReg;
-            end
-        end
-    endrule
 
+    rule handleH2cReq;
+        let req = xdmaH2cReqQ.first;
+        let len = req.len;
+        let addr = req.addr;
 
-    rule handleReq if (!writeReqNeedExtraBeat);
-        let {isH2c, addr, len, stream} = unionedReqQ.first;
+        // $display("mock dma %d receive H2C request: Addr=", id, fshow(req.addr), "Len=", fshow(req.len));
+
         immAssert(
             len != 0,
-            "DMA request len is 0 @ mkFakeXdma",
+            "DMA H2C request len is 0 @ mkFakeXdma",
             $format(
-                "request should not be 0 in length, request = ", fshow(unionedReqQ.first), "isH2c=", fshow(isH2c)
+                "request should not be 0 in length, request = ", fshow(xdmaH2cReqQ.first)
             )
         );
 
         FakeXdmaBeatByteNum addrAlignOffset = truncate(addr & fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_OFFFSET_MASK)));
         FakeXdmaBeatByteNum addrAlignRemainder = fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH)) - addrAlignOffset; 
-        if (isH2c) begin
+
             
-            if (currentNotFinished == False) begin
-                UserLogicDmaLen byteLeft = len;
+        if (currentNotFinished == False) begin
+            UserLogicDmaLen byteLeft = len;
 
-                let isLastBeat = byteLeft <= zeroExtend(addrAlignRemainder);
-                let curAddr = addr;
+            let isLastBeat = byteLeft <= zeroExtend(addrAlignRemainder);
+            let curAddr = addr;
 
-                hostMem.portA.request.put(BRAMRequestBE{
-                    writeen: 0,
-                    responseOnWrite: False,
-                    address: truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide))))),
-                    datain: ?
-                });
-                respBeatInfoQ.enq(FakeXdmaMemReadBeatExtraInfo{isFirst: True, isLast: isLastBeat, beatValidByteCnt: isLastBeat ? truncate(byteLeft) : addrAlignRemainder});
-                respStreamInfoQ.enq(FakeXdmaMemReadStreamExtraInfo{leftShiftByteCnt: addrAlignRemainder, rightShiftByteCnt: addrAlignOffset});
-                if (isLastBeat) begin
-                    currentNotFinished <= False;
-                    
-                    unionedReqQ.deq;
-                end 
-                else begin
-                    currentNotFinished <= True;
-                    
-                    bytesLeftReg <= byteLeft - zeroExtend(addrAlignRemainder);
-                    currentAddrReg <= curAddr + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
-                end
+            hostMem.portA.request.put(BRAMRequestBE{
+                writeen: 0,
+                responseOnWrite: False,
+                address: truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide))))),
+                datain: ?
+            });
+            respBeatInfoQ.enq(FakeXdmaMemReadBeatExtraInfo{isFirst: True, isLast: isLastBeat, beatValidByteCnt: isLastBeat ? truncate(byteLeft) : addrAlignRemainder});
+            respStreamInfoQ.enq(FakeXdmaMemReadStreamExtraInfo{leftShiftByteCnt: addrAlignRemainder, rightShiftByteCnt: addrAlignOffset});
+            if (isLastBeat) begin
+                currentNotFinished <= False;
+                xdmaH2cReqQ.deq;
             end 
             else begin
-                // For a big request, we have to split it into multi BRAM read requests
-                let isLastBeat = bytesLeftReg <= fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
-                FakeXdmaBeatByteNum beatValidByteCnt = isLastBeat ? truncate(bytesLeftReg) : fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
-                let curAddr = currentAddrReg;
-                hostMem.portA.request.put(BRAMRequestBE{
-                    writeen: 0,
-                    responseOnWrite: False,
-                    address: truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide))))),
-                    datain: ?
-                });
-                respBeatInfoQ.enq(FakeXdmaMemReadBeatExtraInfo{isFirst: False, isLast: isLastBeat, beatValidByteCnt: beatValidByteCnt});
-                if (isLastBeat) begin
-                    currentNotFinished <= False;
-                    
-                    unionedReqQ.deq;
-                end 
-                else begin
-                    currentNotFinished <= True;
-                    
-                    bytesLeftReg <= bytesLeftReg - zeroExtend(beatValidByteCnt);
-                    currentAddrReg <= currentAddrReg + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
-                end
+                currentNotFinished <= True;
+                bytesLeftReg <= byteLeft - zeroExtend(addrAlignRemainder);
+                currentAddrH2cReg <= curAddr + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
             end
         end 
         else begin
-            
-            unionedReqQ.deq;
-            FakeXdmaBeatByteNum curReqValidByteCnt = calcFragByteNumFromByteEnWide(stream.byteEn);
-            FakeXdmaBeatByteNum leftShiftByte = zeroExtend(addrAlignOffset);
-            FakeXdmaBeatByteNum rightShiftByte = zeroExtend(addrAlignRemainder);
-            FakeXdmaBeatBitNum leftShiftBit = zeroExtend(leftShiftByte) << 3;
-            FakeXdmaBeatBitNum rightShiftBit = zeroExtend(rightShiftByte) << 3;
-
-            if (stream.isFirst) begin
-                let outData = stream.data << leftShiftBit;
-                let byteEn = stream.byteEn << leftShiftByte;
-                let curAddr = addr;
-                hostMem.portA.request.put(BRAMRequestBE{
-                    writeen: byteEn,
-                    responseOnWrite: False,
-                    address: unpack(truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))))),
-                    datain: outData
-                });
-
-                currentAddrReg <= curAddr + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
-                prevMemWriteReqReg <= tuple2(stream.data, FakeXdmaMemWriteBeatExtraInfo{isFirst: stream.isFirst, isLast: stream.isLast, byteEn: stream.byteEn});
+            // For a big request, we have to split it into multi BRAM read requests
+            let isLastBeat = bytesLeftReg <= fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
+            FakeXdmaBeatByteNum beatValidByteCnt = isLastBeat ? truncate(bytesLeftReg) : fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
+            let curAddr = currentAddrH2cReg;
+            hostMem.portA.request.put(BRAMRequestBE{
+                writeen: 0,
+                responseOnWrite: False,
+                address: truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide))))),
+                datain: ?
+            });
+            respBeatInfoQ.enq(FakeXdmaMemReadBeatExtraInfo{isFirst: False, isLast: isLastBeat, beatValidByteCnt: beatValidByteCnt});
+            if (isLastBeat) begin
+                currentNotFinished <= False;
+                xdmaH2cReqQ.deq;
             end 
             else begin
-                let {prevReqData, prevReqBeatInfo} = prevMemWriteReqReg;
-                let outData = stream.data << leftShiftBit | prevReqData >> rightShiftBit;
-                let byteEn = stream.byteEn << leftShiftByte | prevReqBeatInfo.byteEn >> rightShiftByte;
-
-                let curAddr = currentAddrReg;
-                
-                hostMem.portA.request.put(BRAMRequestBE{
-                    writeen: byteEn,
-                    responseOnWrite: False,
-                    address: unpack(truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))))),
-                    datain: outData
-                });
-
-                currentAddrReg <= currentAddrReg + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
-                prevMemWriteReqReg <= tuple2(stream.data, FakeXdmaMemWriteBeatExtraInfo{isFirst: stream.isFirst, isLast: stream.isLast, byteEn: stream.byteEn});
-            end
-
-            
-            let hasMoreData = unpack(pack({1'b0, stream.byteEn})[rightShiftByte]);
-            if (stream.isLast) begin
-                if (hasMoreData) begin
-                    writeReqNeedExtraBeat <= True;
-                end 
-                else begin
-                    xdmaC2hRespQ.enq(UserLogicDmaC2hResp{});
-                end
+                currentNotFinished <= True;
+                bytesLeftReg <= bytesLeftReg - zeroExtend(beatValidByteCnt);
+                currentAddrH2cReg <= currentAddrH2cReg + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
             end
         end
     endrule
 
-    rule handleReqExtraBeat if (writeReqNeedExtraBeat);
-        writeReqNeedExtraBeat <= False;
-        let addr = currentAddrReg;
+    rule handleC2hReq if (!writeReqNeedExtraBeatReg);
+        let req = xdmaC2hReqQ.first;
+        let len = req.len;
+        let addr = req.addr;
+        let stream = req.dataStream;
+        $display("mock dma %d receive C2H request: Addr=", id, fshow(req.addr), "Len=", fshow(req.len), "Data=", fshow(req.dataStream));
+
+        immAssert(
+            req.len != 0,
+            "DMA C2H request len is 0 @ mkFakeXdma",
+            $format(
+                "request should not be 0 in length, request = ", fshow(xdmaC2hReqQ.first)
+            )
+        );
+
+        FakeXdmaBeatByteNum addrAlignOffset = truncate(addr & fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_OFFFSET_MASK)));
+        FakeXdmaBeatByteNum addrAlignRemainder = fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH)) - addrAlignOffset; 
+
+        xdmaC2hReqQ.deq;
+        FakeXdmaBeatByteNum curReqValidByteCnt = calcFragByteNumFromByteEnWide(stream.byteEn);
+        FakeXdmaBeatByteNum leftShiftByte = zeroExtend(addrAlignOffset);
+        FakeXdmaBeatByteNum rightShiftByte = zeroExtend(addrAlignRemainder);
+        FakeXdmaBeatBitNum leftShiftBit = zeroExtend(leftShiftByte) << 3;
+        FakeXdmaBeatBitNum rightShiftBit = zeroExtend(rightShiftByte) << 3;
+
+        if (stream.isFirst) begin
+            let outData = stream.data << leftShiftBit;
+            let byteEn = stream.byteEn << leftShiftByte;
+            let curAddr = addr;
+            hostMem.portB.request.put(BRAMRequestBE{
+                writeen: byteEn,
+                responseOnWrite: False,
+                address: unpack(truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))))),
+                datain: outData
+            });
+            // $display("MockBram write address:", fshow(curAddr));
+
+            currentAddrC2hReg <= curAddr + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
+            prevMemWriteReqReg <= tuple2(stream.data, FakeXdmaMemWriteBeatExtraInfo{isFirst: stream.isFirst, isLast: stream.isLast, byteEn: stream.byteEn});
+        end 
+        else begin
+            let {prevReqData, prevReqBeatInfo} = prevMemWriteReqReg;
+            let outData = stream.data << leftShiftBit | prevReqData >> rightShiftBit;
+            let byteEn = stream.byteEn << leftShiftByte | prevReqBeatInfo.byteEn >> rightShiftByte;
+
+            let curAddr = currentAddrC2hReg;
+            
+            hostMem.portB.request.put(BRAMRequestBE{
+                writeen: byteEn,
+                responseOnWrite: False,
+                address: unpack(truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))))),
+                datain: outData
+            });
+            // $display("MockBram write address:", fshow(curAddr));
+
+            currentAddrC2hReg <= currentAddrC2hReg + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
+            prevMemWriteReqReg <= tuple2(stream.data, FakeXdmaMemWriteBeatExtraInfo{isFirst: stream.isFirst, isLast: stream.isLast, byteEn: stream.byteEn});
+        end
+
+        
+        let hasMoreData = unpack(pack({1'b0, stream.byteEn})[rightShiftByte]);
+        if (stream.isLast) begin
+            if (hasMoreData) begin
+                writeReqNeedExtraBeatReg <= True;
+            end 
+            else begin
+                xdmaC2hRespQ.enq(UserLogicDmaC2hResp{});
+            end
+        end
+    endrule
+
+    rule handleReqExtraBeat if (writeReqNeedExtraBeatReg);
+        writeReqNeedExtraBeatReg <= False;
+        let addr = currentAddrC2hReg;
         
 
         let {prevReqData, prevReqBeatInfo} = prevMemWriteReqReg;
@@ -932,8 +918,8 @@ module mkFakeXdma(Integer id, FakeXdma ifc);
         
         let outData = prevReqData >> rightShiftBit;
         let byteEn = prevReqBeatInfo.byteEn >> rightShiftByte;
-        let curAddr = currentAddrReg;
-        hostMem.portA.request.put(BRAMRequestBE{
+        let curAddr = currentAddrC2hReg;
+        hostMem.portB.request.put(BRAMRequestBE{
             writeen: byteEn,
             responseOnWrite: False,
             address: unpack(truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))))),
@@ -967,8 +953,8 @@ module mkFakeXdma(Integer id, FakeXdma ifc);
             let outEn = (
                 prevBeatInfo.isFirst ? 
                 (1 << prevBeatInfo.beatValidByteCnt) -1 :
-                (1 << (prevBeatInfo.beatValidByteCnt - readStreamInfo.rightShiftByteCnt)
-            ) - 1);
+                (1 << (prevBeatInfo.beatValidByteCnt - readStreamInfo.rightShiftByteCnt)) - 1
+            );
 
             let resp = UserLogicDmaH2cWideResp{
                 dataStream: DataStreamWide{
@@ -1011,10 +997,7 @@ module mkFakeXdma(Integer id, FakeXdma ifc);
             };
             xdmaH2cRespQ.enq(resp);
 
-            if (hasMoreData) begin
-                // keep current state
-            end 
-            else begin
+            if (!hasMoreData) begin
                 readRespHandleStateReg <= fromInteger(readRespHandleStateHandleFirst);
                 respStreamInfoQ.deq;
             end
