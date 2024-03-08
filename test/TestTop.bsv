@@ -89,16 +89,12 @@ module mkTestTop(Empty);
 
     // connect rx and tx to MockHost
 
-    let axiStream512TxOut <- mkDoubleAxiStreamFifoOut(topA.axiStreamTxOutUdp);
-    let axiStreamRxIn <- mkPutToFifoIn(topA.axiStreamRxInUdp);
-    let axiStream512RxIn <- mkDoubleAxiStreamFifoIn(axiStreamRxIn);
-
     SyncFIFOIfc#(AxiStream512) netIfcRxSyncFifo <- mkSyncFIFO(2, slowClock, slowReset, fastClock);
     mkConnection(fakeXdmaA.axiStreamRxUdp, toPut(netIfcRxSyncFifo), clocked_by slowClock, reset_by slowReset);
-    mkConnection(convertSyncFifoToFifoOut(netIfcRxSyncFifo), axiStream512RxIn);
+    mkConnection(toGet(netIfcRxSyncFifo), topA.axiStreamRxInUdp);
 
     SyncFIFOIfc#(AxiStream512) netIfcTxSyncFifo <- mkSyncFIFO(2, fastClock, fastReset, slowClock);
-    mkConnection(toGet(axiStream512TxOut), toPut(netIfcTxSyncFifo));
+    mkConnection(toGet(topA.axiStreamTxOutUdp), toPut(netIfcTxSyncFifo));
     mkConnection(convertSyncFifoToFifoOut(netIfcTxSyncFifo), fakeXdmaA.axiStreamTxUdp, clocked_by slowClock, reset_by slowReset); 
 
 

@@ -42,6 +42,9 @@ import CmdQueue :: *;
 import WorkQueueRingbuf :: *;
 
 typedef 4791 TEST_UDP_PORT;
+typedef 32 CMAC_SYNC_BRAM_BUF_DEPTH;
+typedef 4 CMAC_CDC_SYNC_STAGE;
+
 
 interface BsvTop#(numeric type dataSz, numeric type userSz);
     interface XdmaChannel#(dataSz, userSz) xdmaChannel;
@@ -76,27 +79,23 @@ module mkBsvTop(
     let udpClk <- exposeCurrentClock;
     let udpReset <- exposeCurrentReset;
 
-    // FIXME
+
     Bool isCmacTxWaitRxAligned = True;
-    Integer syncBramBufDepth = 32;
-    Integer cdcSyncStages = 4;
-    let isEnableFlowControl = False;
+    Bool isEnableFlowControl = False;
     Bool isEnableRsFec = True;
 
-    let axiStream512TxOut <- mkDoubleAxiStreamFifoOut(rdmaAndUserlogic.axiStreamTxOutUdp);
-    let axiStreamRxIn <- mkPutToFifoIn(rdmaAndUserlogic.axiStreamRxInUdp);
-    let axiStream512RxIn <- mkDoubleAxiStreamFifoIn(axiStreamRxIn);
+    let axiStream512RxIn <- mkPutToFifoIn(rdmaAndUserlogic.axiStreamRxInUdp);
 
     let axiStream512SyncFifoForCMAC <- mkDuplexAxiStreamAsyncFifo(
-        syncBramBufDepth,
-        cdcSyncStages,
+        valueOf(CMAC_SYNC_BRAM_BUF_DEPTH),
+        valueOf(CMAC_CDC_SYNC_STAGE),
         udpClk,
         udpReset,
         cmacRxTxClk,
         cmacRxReset,
         cmacTxReset,
         axiStream512RxIn,
-        axiStream512TxOut
+        rdmaAndUserlogic.axiStreamTxOutUdp
     );
 
 
@@ -122,8 +121,8 @@ endmodule
 
 
 interface RdmaUserLogicWithoutXdmaAndCmacWrapper;
-    interface AxiStream256FifoOut axiStreamTxOutUdp;
-    interface Put#(AxiStream256)   axiStreamRxInUdp;
+    interface AxiStream512FifoOut axiStreamTxOutUdp;
+    interface Put#(AxiStream512)   axiStreamRxInUdp;
     
     interface UserLogicDmaReadWideClt dmaReadClt;
     interface UserLogicDmaWriteWideClt dmaWriteClt;
@@ -135,8 +134,8 @@ endinterface
 
 
 (* synthesize *)
-module mkUdpWrapper(UdpIpEthRxTx);
-    let t <- mkGenericUdpIpEthRxTx(`IS_SUPPORT_RDMA);
+module mkUdpWrapper(UdpIpEthBypassRxTx);
+    let t <- mkGenericUdpIpEthBypassRxTx(`IS_SUPPORT_RDMA);
     return t;
 endmodule
 
@@ -173,6 +172,13 @@ module mkRqWrapper(RqWrapper);
     mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream), inputRdmaPktBufAndHeaderValidation.headerDataStreamPipeIn);
     mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragMetaPipeOut), inputRdmaPktBufAndHeaderValidation.payloadStreamFragMetaPipeIn);
     mkConnection(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragStorageInsertClt, recvStreamFragStorage.insertFragSrv);
+
+    // rule dropData;
+    //     if headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData.notEmpty) begin
+    //         headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData.deq;
+    //     end
+    // endrule
+
     mkConnection(inputRdmaPktBufAndHeaderValidation.qpcReadCommonClt, qpc.readCommonSrv);
     mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.pktMetaData), rq.pktMetaDataPipeIn);
     mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.payloadStreamFragMetaPipeOut), payloadConsumer.payloadStreamFragMetaPipeIn);
@@ -301,7 +307,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     rule forawrdTxStream;
         sq.sendQ.rdmaDataStreamPipeOut.deq;
         let data = sq.sendQ.rdmaDataStreamPipeOut.first;
-        $display("rdma_A_out_data = ", fshow(data));
+        $display("time=%0t, ", $time,"rdma put data to udp = ", fshow(data));
         udp.dataStreamTxIn.put(Ports::DataStream{
             data: swapEndian(data.data),
             byteEn: swapEndianBit(data.byteEn),
@@ -313,7 +319,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     rule forwardTxMeta;
         sq.sendQ.udpInfoPipeOut.deq;
         let meta = sq.sendQ.udpInfoPipeOut.first;
-        $display("rdma_A_out_meta = ", fshow(meta));
+        $display("time=%0t, ", $time,"rdma_out_meta = ", fshow(meta));
 
         IpAddr dstIP = unpack(0);
 
@@ -333,9 +339,12 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             dstPort: fromInteger(valueOf(TEST_UDP_PORT)),
             srcPort: fromInteger(valueOf(TEST_UDP_PORT))
         });
-        udp.macMetaDataTxIn.put(MacMetaData{
-            macAddr: unpack(pack(meta.macAddr)),
-            ethType: fromInteger(valueOf(ETH_TYPE_IP))
+        udp.macMetaDataTxIn.put(MacMetaDataWithBypassTag{
+            macMetaData: MacMetaData{
+                macAddr: unpack(pack(meta.macAddr)),
+                ethType: fromInteger(valueOf(ETH_TYPE_IP))
+            },
+            isBypass: meta.isRawPkt
         });
 
     endrule
@@ -344,12 +353,12 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
         if (udp.udpIpMetaDataRxOut.notEmpty) begin
             udp.udpIpMetaDataRxOut.deq;
-            $display("udp recv meta = ", fshow(udp.udpIpMetaDataRxOut.first));
+            $display("time=%0t, ", $time,"udp recv meta = ", fshow(udp.udpIpMetaDataRxOut.first));
         end
 
         if (udp.macMetaDataRxOut.notEmpty) begin
             udp.macMetaDataRxOut.deq;
-            $display("udp recv mac meta = ", fshow(udp.macMetaDataRxOut.first));
+            $display("time=%0t, ", $time,"udp recv mac meta = ", fshow(udp.macMetaDataRxOut.first));
         end
 
         if (udp.dataStreamRxOut.notEmpty) begin
@@ -363,7 +372,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isFirst: data.isFirst
             };
             rq.inputDataStream.put(outData);
-            $display("udp recv = ", fshow(outData));
+            $display("time=%0t, ", $time,"udp put to sq = ", fshow(outData));
         end
     endrule
 
