@@ -379,8 +379,8 @@ interface DmaReqAddrTranslator;
     interface Server#(DmaReadReq, DmaReadResp) sqReqInputSrv;
     interface Client#(UserLogicDmaH2cReq, UserLogicDmaH2cResp) sqReqOutputClt;
 
-    interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableClt;
-    interface Client#(PgtAddrTranslateReq, ADDR) addrTransClt;    
+    interface MrTableQueryClt mrTableClt;
+    interface PgtQueryClt addrTransClt;    
 endinterface
 
 
@@ -392,8 +392,8 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
     FIFOF#(UserLogicDmaH2cResp) readRespInQ <- mkFIFOF;
     FIFOF#(DmaReadResp) readRespOutQ <- mkFIFOF;
 
-    FIFOF#(DmaReadReq) pendingReqQ <- mkSizedFIFOF(3);
-    FIFOF#(ADDR) vaPipelineQ <- mkFIFOF;
+    FIFOF#(DmaReadReq) pendingReqQ <- mkSizedFIFOF(2);
+    FIFOF#(ADDR) vaPipelineQ <- mkSizedFIFOF(2);
 
     BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkBypassClient;
     BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient;

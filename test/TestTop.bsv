@@ -59,7 +59,7 @@ module mkTestTop(Empty);
     Clock fastClock <- exposeCurrentClock;
     Reset fastReset <- exposeCurrentReset;
 
-    TopCoreRdma topA <- mkTopCore(slowClock, slowReset);
+    RdmaUserLogicWithoutXdmaAndCmacWrapper topA <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(slowClock, slowReset);
 
     FakeXdma fakeXdmaA <- mkFakeXdma(1, clocked_by slowClock, reset_by slowReset);
 
@@ -107,14 +107,14 @@ module mkTestTop(Empty);
         let inReq = csrReadReqSyncFifo.first;
         let outReq = CsrReadRequest{addr: inReq};
         topA.csrReadSrv.request.put(outReq);
-        $display("csr read req =", fshow(outReq));
+        // $display("csr read req =", fshow(outReq));
     endrule
 
     rule forwardBarReadResp;
         let inResp <- topA.csrReadSrv.response.get;
         let outResp = inResp.data;
         csrReadRespSyncFifo.enq(outResp);
-        $display("csr read resp =", fshow(outResp));
+        // $display("csr read resp =", fshow(outResp));
     endrule
 
     rule forwardBarWriteReq;

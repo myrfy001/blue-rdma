@@ -21,7 +21,7 @@ TEST_DIR=test
 pkill -ef $MOCK_HOST_PYTHON_SERVER || true
 pkill -ef $COMPILED_SIMULATOR_BIN || true
 
-if [[ " $@ " =~ " --flag " ]]; then
+if [[ " $@ " =~ " --kill " ]]; then
     exit
 fi
 

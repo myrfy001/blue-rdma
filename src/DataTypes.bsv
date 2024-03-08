@@ -184,7 +184,8 @@ typedef struct {
 } PgtAddrTranslateReq deriving(Bits, FShow);
 
 
-
+typedef Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) MrTableQueryClt;
+typedef Client#(PgtAddrTranslateReq, ADDR) PgtQueryClt;
 
 // Common types
 

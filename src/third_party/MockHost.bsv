@@ -185,20 +185,26 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 
 	rule forwardNetIfcTx if (initDone);
 
-		let originTxData = udpAxiTxQ.first;
-		udpAxiTxQ.deq;
+		if (udpAxiTxQ.notEmpty) begin
+			let originTxData = udpAxiTxQ.first;
+			udpAxiTxQ.deq;
 
-		let req = NetIfcAccessAction {
-			isValid: 1,
-			isLast: originTxData.tLast ? 1 : 0,
-			isFirst: ?,
-			reserved1: 0,
-			byteEn: originTxData.tKeep,
-			data: originTxData.tData
-		};
-		$display("send udp data=", fshow(req));
-		
-		c_netIfcPutTxData(memHandle, req);
+			let req = NetIfcAccessAction {
+				isValid: 1,
+				isLast: originTxData.tLast ? 1 : 0,
+				isFirst: ?,
+				reserved1: 0,
+				byteEn: originTxData.tKeep,
+				data: originTxData.tData
+			};
+			$display("time=%0t, ", $time, "send udp data=", fshow(req));
+			
+			c_netIfcPutTxData(memHandle, req);
+		end
+		else begin
+			// $display("time=%0t, ", $time, "send udp data=NO_DATA_TO_SEND");
+		end
+
 	endrule
 
 	rule forwardNetIfcRx if (initDone);
@@ -210,8 +216,13 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 				tData: rawReq.data,
 				tUser: 0
 			};
-			udpAxiRxQ.enq(req);
-			$display("recv udp data=", fshow(req));
+			if (udpAxiRxQ.notFull) begin
+				udpAxiRxQ.enq(req);
+				$display("time=%0t, ", $time, "recv udp data=", fshow(req));
+			end 
+			else begin
+				$display("time=%0t, ", $time, "recv udp data BUT DISCARD SINCE QUEUE FULL");
+			end
 		end
 	endrule
 

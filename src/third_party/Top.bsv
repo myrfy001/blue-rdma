@@ -67,11 +67,11 @@ module mkBsvTop(
     
     XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper(clocked_by slowClock, reset_by slowReset);
     XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(slowClock, slowReset);
-    TopCoreRdma bsvTopCore <- mkTopCore(slowClock, slowReset);
-    mkConnection(xdmaAxiLiteWrap.csrWriteClt, bsvTopCore.csrWriteSrv);
-    mkConnection(xdmaAxiLiteWrap.csrReadClt, bsvTopCore.csrReadSrv);
-    mkConnection(xdmaWrap.dmaReadSrv, bsvTopCore.dmaReadClt);
-    mkConnection(xdmaWrap.dmaWriteSrv, bsvTopCore.dmaWriteClt);
+    RdmaUserLogicWithoutXdmaAndCmacWrapper rdmaAndUserlogic <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(slowClock, slowReset);
+    mkConnection(xdmaAxiLiteWrap.csrWriteClt, rdmaAndUserlogic.csrWriteSrv);
+    mkConnection(xdmaAxiLiteWrap.csrReadClt, rdmaAndUserlogic.csrReadSrv);
+    mkConnection(xdmaWrap.dmaReadSrv, rdmaAndUserlogic.dmaReadClt);
+    mkConnection(xdmaWrap.dmaWriteSrv, rdmaAndUserlogic.dmaWriteClt);
 
     let udpClk <- exposeCurrentClock;
     let udpReset <- exposeCurrentReset;
@@ -83,8 +83,8 @@ module mkBsvTop(
     let isEnableFlowControl = False;
     Bool isEnableRsFec = True;
 
-    let axiStream512TxOut <- mkDoubleAxiStreamFifoOut(bsvTopCore.axiStreamTxOutUdp);
-    let axiStreamRxIn <- mkPutToFifoIn(bsvTopCore.axiStreamRxInUdp);
+    let axiStream512TxOut <- mkDoubleAxiStreamFifoOut(rdmaAndUserlogic.axiStreamTxOutUdp);
+    let axiStreamRxIn <- mkPutToFifoIn(rdmaAndUserlogic.axiStreamRxInUdp);
     let axiStream512RxIn <- mkDoubleAxiStreamFifoIn(axiStreamRxIn);
 
     let axiStream512SyncFifoForCMAC <- mkDuplexAxiStreamAsyncFifo(
@@ -121,7 +121,7 @@ module mkBsvTop(
 endmodule
 
 
-interface TopCoreRdma;
+interface RdmaUserLogicWithoutXdmaAndCmacWrapper;
     interface AxiStream256FifoOut axiStreamTxOutUdp;
     interface Put#(AxiStream256)   axiStreamRxInUdp;
     
@@ -140,29 +140,77 @@ module mkUdpWrapper(UdpIpEthRxTx);
     return t;
 endmodule
 
-(* synthesize *)
-// TODO: refactor ringbuf module to get rid of these compiler attributes.
-(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_0.recvDmaResp" *) 
-(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_0.recvDmaResp_1" *) 
-(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp" *) 
-(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp_1" *) 
-(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp" *)
-// (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp_1" *) 
-(* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp" *)
-// (* preempts = "regBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp_1" *) 
-module mkTopCore(
-    Clock slowClock, 
-    Reset slowReset, 
-    TopCoreRdma ifc
-);
+interface RqWrapper;
+    interface UserLogicDmaWriteClt dmaWriteClt;
+    interface MrTableQueryClt mrTableQueryClt;
+    interface PgtQueryClt pgtQueryClt;
+    interface Put#(DataTypes::DataStream) inputDataStream;
+    interface Server#(WriteReqCommonQPC, Bool) qpcWriteCommonSrv;
+    interface PipeOut#(RingbufRawDescriptor) packetMetaDescPipeOut;
+endinterface
 
-    ReceivedStreamFragStorage recvStreamFragStorage <- mkReceivedStreamFragStorage;
+
+(* synthesize *)
+module mkRqWrapper(RqWrapper);
 
     // TODO try remove this proxy.
     BluerdmaDmaProxyForRQ bluerdmaDmaProxyForRQ <- mkBluerdmaDmaProxyForRQ;
 
+    ReceivedStreamFragStorage recvStreamFragStorage <- mkReceivedStreamFragStorage;
+    RQ rq <- mkRQ;
+    let inputRdmaPktBufAndHeaderValidation <- mkInputRdmaPktBufAndHeaderValidation;
+    QPContext qpc <- mkQPContext;
+    let payloadConsumer <- mkPayloadConsumer;
+    RQReportEntryToRingbufDesc reportDescConvertor <- mkRQReportEntryToRingbufDesc;
+
+    FIFOF#(DataTypes::DataStream) inputDataStreamQ <- mkFIFOF;
+
+    let headerAndMetaDataAndPayloadPipeOut <- mkExtractHeaderFromRdmaPktPipeOut;
+
+    mkConnection(headerAndMetaDataAndPayloadPipeOut.rdmaPktPipeIn, toGet(inputDataStreamQ));
+
+    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData), inputRdmaPktBufAndHeaderValidation.headerMetaDataPipeIn);
+    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream), inputRdmaPktBufAndHeaderValidation.headerDataStreamPipeIn);
+    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragMetaPipeOut), inputRdmaPktBufAndHeaderValidation.payloadStreamFragMetaPipeIn);
+    mkConnection(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragStorageInsertClt, recvStreamFragStorage.insertFragSrv);
+    mkConnection(inputRdmaPktBufAndHeaderValidation.qpcReadCommonClt, qpc.readCommonSrv);
+    mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.pktMetaData), rq.pktMetaDataPipeIn);
+    mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.payloadStreamFragMetaPipeOut), payloadConsumer.payloadStreamFragMetaPipeIn);
+    
+    mkConnection(rq.payloadXonsumerControlPortClt, payloadConsumer.controlPortSrv);
+    mkConnection(payloadConsumer.readFragClt, recvStreamFragStorage.readFragSrv);
+    
+    mkConnection(toGet(rq.pktReportEntryPipeOut), reportDescConvertor.pktReportEntryPipeIn);
+
+    mkConnection(payloadConsumer.dmaWriteClt, bluerdmaDmaProxyForRQ.blueSideWriteSrv);
+
+
+    interface dmaWriteClt = bluerdmaDmaProxyForRQ.userlogicSideWriteClt;
+    interface mrTableQueryClt = rq.mrTableQueryClt;
+    interface pgtQueryClt = rq.pgtQueryClt;
+    interface inputDataStream = toPut(inputDataStreamQ);
+    interface qpcWriteCommonSrv = qpc.writeCommonSrv;
+    interface packetMetaDescPipeOut = reportDescConvertor.ringbufDescPipeOut;
+endmodule
+
+(* synthesize *)
+// TODO: refactor ringbuf module to get rid of these compiler attributes.
+(* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_0.recvDmaResp" *) 
+(* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_0.recvDmaResp_1" *) 
+(* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp" *) 
+(* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp_1" *) 
+(* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp" *)
+// (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp_1" *) 
+(* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp" *)
+// (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp_1" *) 
+module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
+    Clock slowClock, 
+    Reset slowReset, 
+    RdmaUserLogicWithoutXdmaAndCmacWrapper ifc
+);
+
     RingbufPool#(RINGBUF_H2C_TOTAL_COUNT, RINGBUF_C2H_TOTAL_COUNT, RingbufRawDescriptor) ringbufPool <- mkRingbufPool;
-    RegisterBlock#(CsrAddr, CsrData) regBlock <- mkRegisterBlock(ringbufPool.h2cMetas, ringbufPool.c2hMetas);
+    RegisterBlock#(CsrAddr, CsrData) csrBlock <- mkRegisterBlock(ringbufPool.h2cMetas, ringbufPool.c2hMetas);
     CommandQueueController cmdQController <- mkCommandQueueController;
 
     mkConnection(toGet(ringbufPool.h2cRings[0]), cmdQController.ringbufSrv.request);
@@ -171,49 +219,23 @@ module mkTopCore(
         ringbufPool.c2hRings[0].enq(t);
     endrule
 
-    QPContext qpc <- mkQPContext;
-    RQ rq <- mkRQ;
 
-    FIFOF#(DataTypes::DataStream) inputDataStreamQ <- mkFIFOF;
+    let rq <- mkRqWrapper;
 
-    let headerAndMetaDataAndPayloadPipeOut <- mkExtractHeaderFromRdmaPktPipeOut;
-    mkConnection(headerAndMetaDataAndPayloadPipeOut.rdmaPktPipeIn, toGet(inputDataStreamQ));
-
-    let inputRdmaPktBufAndHeaderValidation <- mkInputRdmaPktBufAndHeaderValidation;
-
-    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData), inputRdmaPktBufAndHeaderValidation.headerMetaDataPipeIn);
-    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream), inputRdmaPktBufAndHeaderValidation.headerDataStreamPipeIn);
-    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragMetaPipeOut), inputRdmaPktBufAndHeaderValidation.payloadStreamFragMetaPipeIn);
-    mkConnection(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragStorageInsertClt, recvStreamFragStorage.insertFragSrv);
-
-    mkConnection(inputRdmaPktBufAndHeaderValidation.qpcReadCommonClt, qpc.readCommonSrv);
-    mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.pktMetaData), rq.pktMetaDataPipeIn);
-
-
-    RQReportEntryToRingbufDesc reportDescConvertor <- mkRQReportEntryToRingbufDesc;
-
-    mkConnection(toGet(rq.pktReportEntryPipeOut), reportDescConvertor.pktReportEntryPipeIn);
-
-    let payloadConsumer <- mkPayloadConsumer;
-
-    mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.payloadStreamFragMetaPipeOut), payloadConsumer.payloadStreamFragMetaPipeIn);
-    mkConnection(rq.payloadXonsumerControlPortClt, payloadConsumer.controlPortSrv);
-    mkConnection(payloadConsumer.readFragClt, recvStreamFragStorage.readFragSrv);
 
     DmaReqAddrTranslator addrTranslatorForSQ <- mkDmaReadReqAddrTranslator;
-
     function Bool alwaysTrue(anytype t) = True;
 
     MemRegionTable mrTable <- mkMemRegionTable;
 
-    Vector#(2, Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)))  mrTableQueryCltVec = newVector;
+    Vector#(2, MrTableQueryClt)  mrTableQueryCltVec = newVector;
     mrTableQueryCltVec[0] = rq.mrTableQueryClt;
     mrTableQueryCltVec[1] = addrTranslatorForSQ.mrTableClt;
     let mrTableQueryArbitClt <- mkClientArbiter(mrTableQueryCltVec, alwaysTrue, alwaysTrue);
     mkConnection(mrTable.querySrv, mrTableQueryArbitClt);
 
     TLB tlb <- mkTLB;
-    Vector#(2, Client#(PgtAddrTranslateReq, ADDR))  tlbQueryCltVec = newVector;
+    Vector#(2, PgtQueryClt)  tlbQueryCltVec = newVector;
     tlbQueryCltVec[0] = rq.pgtQueryClt;
     tlbQueryCltVec[1] = addrTranslatorForSQ.addrTransClt;
     let tlbQueryArbitClt <- mkClientArbiter(tlbQueryCltVec, alwaysTrue, alwaysTrue);
@@ -223,12 +245,10 @@ module mkTopCore(
     mkConnection(mrAndPgtManager.mrModifyClt, mrTable.modifySrv);
     mkConnection(mrAndPgtManager.pgtModifyClt, tlb.modifySrv);
     mkConnection(cmdQController.mrAndPgtManagerClt, mrAndPgtManager.mrAndPgtModifyDescSrv);
-    mkConnection(cmdQController.qpcModifyClt, qpc.writeCommonSrv);
+    mkConnection(cmdQController.qpcModifyClt, rq.qpcWriteCommonSrv);
 
 
     WorkQueueRingbufController workQueueRingbufController <- mkWorkQueueRingbufController;
-
-
     mkConnection(workQueueRingbufController.sqRingBuf, toGet(ringbufPool.h2cRings[1]));
 
 
@@ -246,7 +266,7 @@ module mkTopCore(
     dmaAccessH2cCltVec[2] = mrAndPgtManager.pgtDmaReadClt;
     dmaAccessH2cCltVec[3] <- mkFakeClient;
 
-    dmaAccessC2hCltVec[0] = bluerdmaDmaProxyForRQ.userlogicSideWriteClt;
+    dmaAccessC2hCltVec[0] = rq.dmaWriteClt;
     dmaAccessC2hCltVec[1] = ringbufPool.dmaAccessC2hClt;
 
     UserLogicDmaReadClt xdmaReadClt <- mkClientArbiter(dmaAccessH2cCltVec, isH2cDmaReqFinished, isH2cDmaRespFinished);
@@ -257,7 +277,7 @@ module mkTopCore(
     mkConnection(xdmaReadClt, xdmaGearbox.h2cStreamSrv);
     mkConnection(xdmaWriteClt, xdmaGearbox.c2hStreamSrv);
 
-    mkConnection(payloadConsumer.dmaWriteClt, bluerdmaDmaProxyForRQ.blueSideWriteSrv);
+    
 
 
     let sq <- mkSQ();
@@ -342,31 +362,22 @@ module mkTopCore(
                 isLast: data.isLast,
                 isFirst: data.isFirst
             };
-            inputDataStreamQ.enq(outData);
+            rq.inputDataStream.put(outData);
             $display("udp recv = ", fshow(outData));
         end
     endrule
 
 
 
-    // use descending_urgency here since we need a simple fix-priority arbitter here.
-    (* descending_urgency = "forwardRecvQueuePktReportDescToRingbuf, forwardSendQueueReportDescToRingbuf" *)
+    
     rule forwardRecvQueuePktReportDescToRingbuf;
-        let t = reportDescConvertor.ringbufDescPipeOut.first;
-        reportDescConvertor.ringbufDescPipeOut.deq;
+        let t = rq.packetMetaDescPipeOut.first;
+        rq.packetMetaDescPipeOut.deq;
         ringbufPool.c2hRings[1].enq(t);
     endrule
 
-    // TODO: remove the commented code
     rule forwardSendQueueReportDescToRingbuf;
         let _ <- sq.sendQ.srvPort.response.get;
-        // let desc = MeatReportQueueDescSendQueueReport {
-        //     reserved1:      unpack(0),
-        //     hasDmaRespErr:  False,             
-        //     reserved2:      unpack(0),
-        //     descType:       MeatReportQueueDescTypeSendFinished
-        // };
-        // ringbufPool.c2hRings[1].enq(pack(desc));
     endrule
 
     interface axiStreamTxOutUdp = udp.axiStreamTxOut;
@@ -375,8 +386,8 @@ module mkTopCore(
 
     interface dmaReadClt = xdmaGearbox.h2cStreamClt;
     interface dmaWriteClt = xdmaGearbox.c2hStreamClt;
-    interface csrWriteSrv = regBlock.csrWriteSrv;
-    interface csrReadSrv = regBlock.csrReadSrv;
+    interface csrWriteSrv = csrBlock.csrWriteSrv;
+    interface csrReadSrv = csrBlock.csrReadSrv;
 endmodule
 
 // (* synthesize *)

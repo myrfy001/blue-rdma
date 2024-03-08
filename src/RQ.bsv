@@ -14,8 +14,8 @@ import UserLogicTypes :: *;
 
 interface RQ;
     interface Put#(RdmaPktMetaDataAndQPC) pktMetaDataPipeIn;
-    interface Client#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryClt;
-    interface Client#(PgtAddrTranslateReq, ADDR) pgtQueryClt;
+    interface MrTableQueryClt mrTableQueryClt;
+    interface PgtQueryClt pgtQueryClt;
     interface Client#(PayloadConReq, PayloadConResp) payloadXonsumerControlPortClt;
     interface PipeOut#(C2hReportEntry) pktReportEntryPipeOut;
 endinterface
@@ -31,9 +31,9 @@ module mkRQ(RQ ifc);
     BypassClient#(PayloadConReq, PayloadConResp) payloadConsumerControlClt           <- mkBypassClient;
 
     // Pipeline FIFOs
-    FIFOF#(Tuple2#(RdmaPktMetaDataAndQPC, Bool))                       reqStatusCheckStep1PipeQ <- mkSizedFIFOF(5);
+    FIFOF#(Tuple2#(RdmaPktMetaDataAndQPC, Bool))                        reqStatusCheckStep1PipeQ <- mkSizedFIFOF(2);
     FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, FlagsType#(MemAccessTypeFlag), RETH)) reqStatusCheckStep2PipeQ   <- mkFIFOF;
-    FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool)) getPGTQueryRespPipeQ <- mkSizedFIFOF(5);
+    FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool)) getPGTQueryRespPipeQ <- mkSizedFIFOF(2);
     FIFOF#(Tuple3#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool))           waitDMARespPipeQ <- mkFIFOF;
 
 
@@ -79,6 +79,8 @@ module mkRQ(RQ ifc);
         end
 
         reqStatusCheckStep1PipeQ.enq(tuple2(pktMetaDataAndQpc, rdmaOpCodeNeedDMA));
+
+        $display("time=%0t: ", $time, "queryMemoryRegionTable pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc));
         
     endrule
 
@@ -110,7 +112,7 @@ module mkRQ(RQ ifc);
         
         
         let isAccCheckPass = False;
-        // $display("pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc));
+        
 
         // for ACK/NACK, no need to check
         if (rdmaOpCodeNeedDMA) begin
@@ -152,6 +154,7 @@ module mkRQ(RQ ifc);
         end
 
         reqStatusCheckStep2PipeQ.enq(tuple5(pktMetaDataAndQpc, reqStatus, rdmaOpCodeNeedDMA, reqAccFlags, reth));
+        $display("time=%0t: ", $time, "reqStatusCheckStep1 pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc));
     endrule
 
 
@@ -213,6 +216,7 @@ module mkRQ(RQ ifc);
         
         getPGTQueryRespPipeQ.enq(tuple4(pktMetaDataAndQpc, reqStatus, needWaitForPGTResponse, rdmaOpCodeNeedDMA));
 
+        $display("time=%0t: ", $time, "getMRQueryRespAndReqStatusCheckStep2 pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc));
 
     endrule
 
@@ -253,6 +257,8 @@ module mkRQ(RQ ifc);
         end
 
         waitDMARespPipeQ.enq(tuple3(pktMetaDataAndQpc, reqStatus, needIssueDMARequest));
+
+        $display("time=%0t: ", $time, "recvAddrTransRespAndIssueDMA pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc));
     endrule
 
     rule waitDMAFinishAndWriteMetaToHost;
@@ -302,6 +308,7 @@ module mkRQ(RQ ifc);
 
 
         pktReportEntryQ.enq(rptEntry);
+        $display("time=%0t: ", $time, "waitDMAFinishAndWriteMetaToHost pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc));
     endrule
 
 
