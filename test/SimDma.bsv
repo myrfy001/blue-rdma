@@ -32,7 +32,7 @@ module mkDataStreamPipeOutFromDmaReadResp#(Get#(DmaReadResp) resp)(DataStreamPip
     DataStreamPipeOut ret <- mkFunc2Pipe(getDmaReadRespData, dmaReadRespPipeOut);
     // rule display;
     //     $display(
-    //         "Before segment: time=%0t, isFirst=%b, isLast=%b, byteEn=%h",
+    //         "Before segment: time=%0t: isFirst=%b, isLast=%b, byteEn=%h",
     //         $time, ret.first.isFirst, ret.first.isLast, ret.first.byteEn
     //     );
     // endrule

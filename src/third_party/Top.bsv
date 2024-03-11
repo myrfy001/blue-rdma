@@ -254,14 +254,14 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     Vector#(2, MrTableQueryClt)  mrTableQueryCltVec = newVector;
     mrTableQueryCltVec[0] = rq.mrTableQueryClt;
     mrTableQueryCltVec[1] = addrTranslatorForSQ.mrTableClt;
-    let mrTableQueryArbitClt <- mkClientArbiter("mrTableQueryArbitClt", mrTableQueryCltVec, alwaysTrue, alwaysTrue);
+    let mrTableQueryArbitClt <- mkClientArbiter("mrTableQueryArbitClt", 10, mrTableQueryCltVec, alwaysTrue, alwaysTrue);
     mkConnection(mrTable.querySrv, mrTableQueryArbitClt);
 
     TLB tlb <- mkTLB;
     Vector#(2, PgtQueryClt)  tlbQueryCltVec = newVector;
     tlbQueryCltVec[0] = rq.pgtQueryClt;
     tlbQueryCltVec[1] = addrTranslatorForSQ.addrTransClt;
-    let tlbQueryArbitClt <- mkClientArbiter("tlbQueryArbitClt", tlbQueryCltVec, alwaysTrue, alwaysTrue);
+    let tlbQueryArbitClt <- mkClientArbiter("tlbQueryArbitClt", 10, tlbQueryCltVec, alwaysTrue, alwaysTrue);
     mkConnection(tlb.translateSrv, tlbQueryArbitClt);
 
     MrAndPgtManager mrAndPgtManager <- mkMrAndPgtManager;
@@ -313,8 +313,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     dmaAccessC2hCltVec[0] = rq.dmaWriteClt;
     dmaAccessC2hCltVec[1] = ringbufPool.dmaAccessC2hClt;
 
-    UserLogicDmaReadClt xdmaReadClt <- mkClientArbiter("xdmaReadClt", dmaAccessH2cCltVec, isH2cDmaReqFinished, isH2cDmaRespFinished);
-    UserLogicDmaWriteClt xdmaWriteClt <- mkClientArbiter("xdmaWriteClt", dmaAccessC2hCltVec, isC2hDmaReqFinished, isC2hDmaRespFinished);
+    UserLogicDmaReadClt xdmaReadClt <- mkClientArbiter("xdmaReadClt", 10, dmaAccessH2cCltVec, isH2cDmaReqFinished, isH2cDmaRespFinished);
+    UserLogicDmaWriteClt xdmaWriteClt <- mkClientArbiter("xdmaWriteClt", 10, dmaAccessC2hCltVec, isC2hDmaReqFinished, isC2hDmaRespFinished);
 
     XdmaGearbox xdmaGearbox <- mkXdmaGearbox(slowClock, slowReset);
 
@@ -334,7 +334,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     rule debug;
         if (!sq.sendQ.rdmaDataStreamPipeOut.notEmpty) begin
-            $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: sq.sendQ.rdmaDataStreamPipeOut");
+            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: sq.sendQ.rdmaDataStreamPipeOut");
         end
         
     endrule
@@ -352,7 +352,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     rule forawrdTxStream;
         sq.sendQ.rdmaDataStreamPipeOut.deq;
         let data = sq.sendQ.rdmaDataStreamPipeOut.first;
-        $display("time=%0t, ", $time,"rdma put data to udp = ", fshow(data));
+        $display("time=%0t: ", $time,"rdma put data to udp = ", fshow(data));
         // udp.dataStreamTxIn.put(Ports::DataStream{
         //     data: swapEndian(data.data),
         //     byteEn: swapEndianBit(data.byteEn),
@@ -364,7 +364,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     rule forwardTxMeta;
         sq.sendQ.udpInfoPipeOut.deq;
         let meta = sq.sendQ.udpInfoPipeOut.first;
-        $display("time=%0t, ", $time,"rdma_out_meta = ", fshow(meta));
+        $display("time=%0t: ", $time,"rdma_out_meta = ", fshow(meta));
 
         // IpAddr dstIP = unpack(0);
 
@@ -398,12 +398,12 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
         if (udp.udpIpMetaDataRxOut.notEmpty) begin
             udp.udpIpMetaDataRxOut.deq;
-            $display("time=%0t, ", $time,"udp recv meta = ", fshow(udp.udpIpMetaDataRxOut.first));
+            $display("time=%0t: ", $time,"udp recv meta = ", fshow(udp.udpIpMetaDataRxOut.first));
         end
 
         if (udp.macMetaDataRxOut.notEmpty) begin
             udp.macMetaDataRxOut.deq;
-            $display("time=%0t, ", $time,"udp recv mac meta = ", fshow(udp.macMetaDataRxOut.first));
+            $display("time=%0t: ", $time,"udp recv mac meta = ", fshow(udp.macMetaDataRxOut.first));
         end
 
         if (udp.dataStreamRxOut.notEmpty) begin
@@ -417,7 +417,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isFirst: data.isFirst
             };
             rq.inputDataStream.put(outData);
-            $display("time=%0t, ", $time,"udp put to rq = ", fshow(outData));
+            $display("time=%0t: ", $time,"udp put to rq = ", fshow(outData));
         end
     endrule
 

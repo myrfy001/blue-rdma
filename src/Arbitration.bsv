@@ -15,6 +15,7 @@ import Arbiter :: * ;
 
 module mkClientArbiter#(
     String name,
+    Integer keepOrderQueueLen,
     Vector#(portSz, Client#(reqType, respType)) clientVec,
     function Bool isReqFinished(reqType request),
     function Bool isRespFinished(respType response)
@@ -35,7 +36,7 @@ module mkClientArbiter#(
     // queue too many granted requests ahead of time (mkArbiter will do arbit every clock cycle)
     FIFOF#(Bit#(TLog#(portSz))) grantReqKeepOrderQ <- mkFIFOF;
     // This Fifo can be larger since receive response may take some time and there can be many outstanding requests.
-    FIFOF#(Bit#(TLog#(portSz))) grantRespKeepOrderQ <- mkSizedFIFOF(10);
+    FIFOF#(Bit#(TLog#(portSz))) grantRespKeepOrderQ <- mkSizedFIFOF(keepOrderQueueLen);
 
     FIFOF#(reqType)   reqQ <- mkFIFOF;
     FIFOF#(respType) respQ <- mkFIFOF;
@@ -58,11 +59,11 @@ module mkClientArbiter#(
             grantReqKeepOrderQ.enq(idx);
             grantRespKeepOrderQ.enq(idx);
 
-            $display(
-                "time=%0t, ", $time,
-                fshow(name),
-                " grant new request, client idx=%0d", idx
-            );
+            // $display(
+            //     "time=%0t: ", $time,
+            //     fshow(name),
+            //     " grant new request, client idx=%0d", idx
+            // );
         end
 
     endrule
@@ -81,12 +82,12 @@ module mkClientArbiter#(
             grantReqKeepOrderQ.deq;
         end
 
-        $display(
-            "time=%0t, ", $time,
-            fshow(name),
-            " arbitrate request, reqIdx=%0d", idx,
-            ", reqFinished=", fshow(reqFinished)
-        );
+        // $display(
+        //     "time=%0t: ", $time,
+        //     fshow(name),
+        //     " arbitrate request, reqIdx=%0d", idx,
+        //     ", reqFinished=", fshow(reqFinished)
+        // );
     endrule
 
     for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin
@@ -107,42 +108,38 @@ module mkClientArbiter#(
                 grantRespKeepOrderQ.deq;
             end
 
-            $display(
-                "time=%0t, ", $time,
-                fshow(name),
-                " dispatch response, idx=%0d", idx,
-                ", respFinished=", fshow(respFinished)
-            );
+            // $display(
+            //     "time=%0t: ", $time,
+            //     fshow(name),
+            //     " dispatch response, idx=%0d", idx,
+            //     ", respFinished=", fshow(respFinished)
+            // );
         endrule
     end
 
-
-
-
-
     // rule debug;
     //     if (!reqQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
     //     end
     //     if (!respQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
     //     end
 
     //     if (!reqQ.notEmpty) begin
-    //         $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
     //     end
     //     if (!respQ.notEmpty) begin
-    //         $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
     //     end
 
     //     for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin
 
     //         if (!clientReqFifoVec[idx].notFull) begin
-    //             $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " clientReqFifoVec[%0d]", idx);
+    //             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " clientReqFifoVec[%0d]", idx);
     //         end
 
     //         if (!clientReqFifoVec[idx].notEmpty) begin
-    //             $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " clientReqFifoVec[%0d]", idx);
+    //             $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " clientReqFifoVec[%0d]", idx);
     //         end
             
     //     end
@@ -249,17 +246,17 @@ endmodule
 
 //     rule debug;
 //         if (!reqQ.notFull) begin
-//             $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
+//             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
 //         end
 //         if (!respQ.notFull) begin
-//             $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
+//             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
 //         end
 
 //         if (!reqQ.notEmpty) begin
-//             $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
+//             $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
 //         end
 //         if (!respQ.notEmpty) begin
-//             $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
+//             $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
 //         end
 //     endrule
 
@@ -285,7 +282,7 @@ endmodule
 //     for (Integer idx = 0; idx < valueOf(portSz); idx = idx + 1) begin
 //         rule debug1;
 //             if (!inputReqWithIdxVec[idx].notFull) begin
-//                 $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " inputReqWithIdxVec[%d]", idx);
+//                 $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " inputReqWithIdxVec[%d]", idx);
 //             end
 //         endrule
 //         rule extractReq;

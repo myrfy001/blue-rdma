@@ -34,10 +34,10 @@ module mkSizedBypassClient#(String name, Integer reqDepth, Integer respDepth)(By
 
     rule debug;
         if (!reqQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkBypassClient ", fshow(name) , " reqQ");
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkBypassClient ", fshow(name) , " reqQ");
         end
         if (!respQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkBypassClient ", fshow(name) , " respQ");
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkBypassClient ", fshow(name) , " respQ");
         end
     endrule
 
@@ -99,10 +99,10 @@ module mkSizedBypassServer#(String name, Integer reqDepth, Integer respDepth)(By
 
     rule debug;
         if (!reqQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkBypassServer ", fshow(name) , " reqQ");
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkBypassServer ", fshow(name) , " reqQ");
         end
         if (!respQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkBypassServer ", fshow(name) , " respQ");
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkBypassServer ", fshow(name) , " respQ");
         end
     endrule
 

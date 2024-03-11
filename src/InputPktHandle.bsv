@@ -279,49 +279,49 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
 
     // rule debug;
     //     if (!rdmaHeaderRecvQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderRecvQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderRecvQ");
     //     end
     //     if (!payloadFragMetaRecvQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaRecvQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaRecvQ");
     //     end
     //     if (!rdmaHeaderPreCheckQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPreCheckQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPreCheckQ");
     //     end
     //     if (!payloadFragMetaPreCheckQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPreCheckQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPreCheckQ");
     //     end
     //     if (!rdmaHeaderValidationQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderValidationQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderValidationQ");
     //     end
     //     if (!payloadFragMetaValidationQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaValidationQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaValidationQ");
     //     end
     //     if (!rdmaHeaderFilterQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderFilterQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderFilterQ");
     //     end
     //     if (!payloadFragMetaFilterQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaFilterQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaFilterQ");
     //     end
     //     if (!rdmaHeaderFragLenCalcQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderFragLenCalcQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderFragLenCalcQ");
     //     end
     //     if (!rdmaHeaderPktLenCalcQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenCalcQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenCalcQ");
     //     end
     //     if (!payloadPktLenCalcQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadPktLenCalcQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadPktLenCalcQ");
     //     end
     //     if (!rdmaHeaderPktLenPreCheckQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenPreCheckQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenPreCheckQ");
     //     end
     //     if (!payloadFragMetaPktLenPreCheckQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPktLenPreCheckQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPktLenPreCheckQ");
     //     end
     //     if (!rdmaHeaderPktLenCheckQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenCheckQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenCheckQ");
     //     end
     //     if (!payloadFragMetaPktLenCheckQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPktLenCheckQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPktLenCheckQ");
     //     end
     // endrule
 

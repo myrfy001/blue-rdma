@@ -607,35 +607,42 @@ module mkSendQ#(
     );
 
 
-    rule debug;
-        if (!reqQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ reqQ");
-        end
-        if (!respQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ respQ");
-        end
-        if (!udpPktInfoOutQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ udpPktInfoOutQ");
-        end
-        if (!totalMetaDataQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ totalMetaDataQ");
-        end
-        if (!psnUpdateQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ psnUpdateQ");
-        end
-        if (!headerPrepareQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ headerPrepareQ");
-        end
-        if (!pendingHeaderQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ pendingHeaderQ");
-        end
-        if (!pktHeaderQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ pktHeaderQ");
-        end
-    endrule
+    // rule debug;
+    //     if (!headerDataStreamAndMetaDataPipeOut.headerDataStream.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkSendQ headerDataStreamAndMetaDataPipeOut.headerDataStream");
+    //     end
+    //     if (!headerDataStreamAndMetaDataPipeOut.headerMetaData.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkSendQ headerDataStreamAndMetaDataPipeOut.headerMetaData");
+    //     end
+    //     if (!payloadGenerator.payloadDataStreamPipeOut.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkSendQ payloadGenerator.payloadDataStreamPipeOut");
+    //     end
 
-
-
+    //     if (!reqQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkSendQ reqQ");
+    //     end
+    //     if (!respQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkSendQ respQ");
+    //     end
+    //     if (!udpPktInfoOutQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkSendQ udpPktInfoOutQ");
+    //     end
+    //     if (!totalMetaDataQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkSendQ totalMetaDataQ");
+    //     end
+    //     if (!psnUpdateQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkSendQ psnUpdateQ");
+    //     end
+    //     if (!headerPrepareQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkSendQ headerPrepareQ");
+    //     end
+    //     if (!pendingHeaderQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkSendQ pendingHeaderQ");
+    //     end
+    //     if (!pktHeaderQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkSendQ pktHeaderQ");
+    //     end
+    // endrule
 
     rule resetAndClear if (clearAll);
         reqQ.clear;

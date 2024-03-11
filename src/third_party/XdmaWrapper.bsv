@@ -282,23 +282,23 @@ module mkStreamReqProxy(
     FIFOF#(t_out_resp) outRespQ <- mkFIFOF;
     FIFOF#(t_custom) customDataQ <- mkFIFOF;
 
-    rule debug;
-        if (!inReqQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy inReqQ");
-        end
-        if (!inRespQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy inRespQ");
-        end
-        if (!outReqQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy outReqQ");
-        end
-        if (!outRespQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy outRespQ");
-        end
-        if (!customDataQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy customDataQ");
-        end
-    endrule
+    // rule debug;
+    //     if (!inReqQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy inReqQ");
+    //     end
+    //     if (!inRespQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy inRespQ");
+    //     end
+    //     if (!outReqQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy outReqQ");
+    //     end
+    //     if (!outRespQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy outRespQ");
+    //     end
+    //     if (!customDataQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy customDataQ");
+    //     end
+    // endrule
 
     rule forwardReq;
         inReqQ.deq;
@@ -783,17 +783,30 @@ module mkFakeXdma(Integer id, Clock cmacRxTxClk, Reset cmacRxTxRst, FakeXdma ifc
     Reg#(Bool) writeReqNeedExtraBeatReg <- mkReg(False);
 
 
-    rule debug;
-        if (!xdmaH2cReqQ.notEmpty) begin
-            $display("time=%0t, ", $time, "EMTPY_QUEUE_DETECTED: mkFakeXdma xdmaH2cReqQ");
-        end
-        if (!respBeatInfoQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkFakeXdma respBeatInfoQ");
-        end
-        if (!respStreamInfoQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkFakeXdma respStreamInfoQ");
-        end
-    endrule
+    // rule debug;
+    //     if (!xdmaH2cReqQ.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMTPY_QUEUE_DETECTED: mkFakeXdma xdmaH2cReqQ");
+    //     end
+    //     if (!respBeatInfoQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkFakeXdma respBeatInfoQ");
+    //     end
+    //     if (!respStreamInfoQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkFakeXdma respStreamInfoQ");
+    //     end
+
+    //     if (!xdmaH2cReqQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkFakeXdma xdmaH2cReqQ");
+    //     end
+    //     if (!xdmaH2cRespQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkFakeXdma xdmaH2cRespQ");
+    //     end
+    //     if (!xdmaC2hReqQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkFakeXdma xdmaC2hReqQ");
+    //     end
+    //     if (!xdmaC2hRespQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkFakeXdma xdmaC2hRespQ");
+    //     end
+    // endrule
 
     rule handleH2cReq;
         let req = xdmaH2cReqQ.first;
@@ -826,7 +839,7 @@ module mkFakeXdma(Integer id, Clock cmacRxTxClk, Reset cmacRxTxRst, FakeXdma ifc
                 address: truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide))))),
                 datain: ?
             });
-            $display("time=%0t, ", $time, "MockBram read address 1:", fshow(curAddr));
+            $display("time=%0t: ", $time, "MockBram read address 1:", fshow(curAddr));
 
             respBeatInfoQ.enq(FakeXdmaMemReadBeatExtraInfo{isFirst: True, isLast: isLastBeat, beatValidByteCnt: isLastBeat ? truncate(byteLeft) : addrAlignRemainder});
             respStreamInfoQ.enq(FakeXdmaMemReadStreamExtraInfo{leftShiftByteCnt: addrAlignRemainder, rightShiftByteCnt: addrAlignOffset});
@@ -851,7 +864,7 @@ module mkFakeXdma(Integer id, Clock cmacRxTxClk, Reset cmacRxTxRst, FakeXdma ifc
                 address: truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide))))),
                 datain: ?
             });
-            $display("time=%0t, ", $time, "MockBram read address 2:", fshow(curAddr));
+            $display("time=%0t: ", $time, "MockBram read address 2:", fshow(curAddr));
             
             respBeatInfoQ.enq(FakeXdmaMemReadBeatExtraInfo{isFirst: False, isLast: isLastBeat, beatValidByteCnt: beatValidByteCnt});
             if (isLastBeat) begin
@@ -901,7 +914,7 @@ module mkFakeXdma(Integer id, Clock cmacRxTxClk, Reset cmacRxTxRst, FakeXdma ifc
                 address: unpack(truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))))),
                 datain: outData
             });
-            $display("time=%0t, ", $time, "MockBram write address 1:", fshow(curAddr));
+            $display("time=%0t: ", $time, "MockBram write address 1:", fshow(curAddr));
 
             currentAddrC2hReg <= curAddr + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
             prevMemWriteReqReg <= tuple2(stream.data, FakeXdmaMemWriteBeatExtraInfo{isFirst: stream.isFirst, isLast: stream.isLast, byteEn: stream.byteEn});
@@ -919,7 +932,7 @@ module mkFakeXdma(Integer id, Clock cmacRxTxClk, Reset cmacRxTxRst, FakeXdma ifc
                 address: unpack(truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))))),
                 datain: outData
             });
-            $display("time=%0t, ", $time, "MockBram write address 2:", fshow(curAddr));
+            $display("time=%0t: ", $time, "MockBram write address 2:", fshow(curAddr));
 
             currentAddrC2hReg <= currentAddrC2hReg + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
             prevMemWriteReqReg <= tuple2(stream.data, FakeXdmaMemWriteBeatExtraInfo{isFirst: stream.isFirst, isLast: stream.isLast, byteEn: stream.byteEn});
@@ -959,7 +972,7 @@ module mkFakeXdma(Integer id, Clock cmacRxTxClk, Reset cmacRxTxRst, FakeXdma ifc
             datain: outData
         });
         xdmaC2hRespQ.enq(UserLogicDmaC2hResp{});
-        $display("time=%0t, ", $time, "MockBram write address 3:", fshow(curAddr));
+        $display("time=%0t: ", $time, "MockBram write address 3:", fshow(curAddr));
     endrule
 
 

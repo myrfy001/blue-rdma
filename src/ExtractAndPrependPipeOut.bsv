@@ -30,10 +30,10 @@ module mkHeader2DataStream#(
 
     // rule debug;
     //     if (!headerDataStreamOutQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkHeader2DataStream headerDataStreamOutQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkHeader2DataStream headerDataStreamOutQ");
     //     end
     //     if (!headerMetaDataOutQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkHeader2DataStream headerMetaDataOutQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkHeader2DataStream headerMetaDataOutQ");
     //     end
     // endrule
 
@@ -265,11 +265,11 @@ module mkPrependHeader2PipeOut#(
 
     Reg#(ExtractOrPrependHeaderStage) stageReg <- mkReg(HEADER_META_DATA_POP);
 
-    rule debug;
-        if (!dataStreamOutQ.notFull) begin
-            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkPrependHeader2PipeOut dataStreamOutQ");
-        end
-    endrule
+    // rule debug;
+    //     if (!dataStreamOutQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkPrependHeader2PipeOut dataStreamOutQ");
+    //     end
+    // endrule
 
 
     // rule debug if (!dataStreamOutQ.notFull);

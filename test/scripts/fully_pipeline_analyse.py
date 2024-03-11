@@ -19,13 +19,13 @@ for line in sys.stdin:
     if not filter_re.search(line):
         continue
 
-    time_str = line.split(",", maxsplit=1)[0]
+    time_str = line.split(":", maxsplit=1)[0]
     if not time_str.startswith(TIME_PREFIX):
         continue
     time_str = time_str[len(TIME_PREFIX):]
     time_int = int(int(time_str) / 10)
     continous_cnt += 1
-    non_continous_cnt = time_int - last_time_int
+    non_continous_cnt = time_int - last_time_int - 1
     if last_time_int == -1:
         last_time_int = time_int
         continue

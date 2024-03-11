@@ -205,12 +205,12 @@ module mkMockHost #( BRAM_Configure cfg, Clock cmacRxTxClk, Reset cmacRxTxRst) (
 				byteEn: originTxData.tKeep,
 				data: originTxData.tData
 			};
-			$display("time=%0t, ", $time, "net ifc send data=", fshow(req));
+			$display("time=%0t: ", $time, "net ifc send data=", fshow(req));
 			
 			c_netIfcPutTxData(memHandleForCmac, req);
 		end
 		else begin
-			// $display("time=%0t, ", $time, "net ifc send data=NO_DATA_TO_SEND");
+			// $display("time=%0t: ", $time, "net ifc send data=NO_DATA_TO_SEND");
 		end
 
 	endrule
@@ -226,10 +226,10 @@ module mkMockHost #( BRAM_Configure cfg, Clock cmacRxTxClk, Reset cmacRxTxRst) (
 			};
 			if (udpAxiRxQ.notFull) begin
 				udpAxiRxQ.enq(req);
-				$display("time=%0t, ", $time, "net ifc recv data=", fshow(req));
+				$display("time=%0t: ", $time, "net ifc recv data=", fshow(req));
 			end 
 			else begin
-				$display("time=%0t, ", $time, "net ifc recv data BUT DISCARD SINCE QUEUE FULL");
+				$display("time=%0t: ", $time, "net ifc recv data BUT DISCARD SINCE QUEUE FULL");
 			end
 		end
 	endrule
@@ -241,7 +241,7 @@ module mkMockHost #( BRAM_Configure cfg, Clock cmacRxTxClk, Reset cmacRxTxRst) (
 			interface Put request;
 				method Action put(BRAMRequestBE#(addr, data, n) req);
 					$display(
-						"time=%0t,:", $time, "mock Host Mem Port A req.writeen=", fshow(req.writeen),
+						"time=%0t::", $time, "mock Host Mem Port A req.writeen=", fshow(req.writeen),
 						" req.addr=", fshow(req.address)
 					);
 					if (req.writeen == 0) begin
@@ -273,7 +273,7 @@ module mkMockHost #( BRAM_Configure cfg, Clock cmacRxTxClk, Reset cmacRxTxRst) (
 			interface Put request;
 				method Action put(BRAMRequestBE#(addr, data, n) req);
 					$display(
-						"time=%0t,:", $time, "mock Host Mem Port B req.writeen=", fshow(req.writeen),
+						"time=%0t::", $time, "mock Host Mem Port B req.writeen=", fshow(req.writeen),
 						" req.addr=", fshow(req.address)
 					);
 					if (req.writeen == 0) begin

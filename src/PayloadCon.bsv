@@ -104,16 +104,16 @@ module mkPayloadConsumer(PayloadConsumer);
 
     // rule debug;
     //     if (!countReqFragQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: countReqFragQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: countReqFragQ");
     //     end
     //     if (!pendingConReqQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: pendingConReqQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: pendingConReqQ");
     //     end
     //     if (!genConRespQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: genConRespQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: genConRespQ");
     //     end
     //     if (!pendingDmaReqQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: pendingDmaReqQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: pendingDmaReqQ");
     //     end
         
     // endrule

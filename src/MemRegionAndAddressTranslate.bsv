@@ -400,30 +400,30 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
 
     // rule debug;
     //     if (!readReqInQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readReqInQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readReqInQ");
     //     end
     //     if (!readReqOutQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readReqOutQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readReqOutQ");
     //     end
     //     if (!readRespInQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readRespInQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readRespInQ");
     //     end
     //     if (!readRespOutQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readRespOutQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readRespOutQ");
     //     end
 
     //     if (!pendingReqQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator pendingReqQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator pendingReqQ");
     //     end
     //     if (!vaPipelineQ.notFull) begin
-    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator vaPipelineQ");
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator vaPipelineQ");
     //     end
 
     //     if (!readReqOutQ.notEmpty) begin
-    //         $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readReqOutQ");
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readReqOutQ");
     //     end
     //     if (!readRespOutQ.notEmpty) begin
-    //         $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readRespOutQ");
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readRespOutQ");
     //     end
 
 
@@ -439,7 +439,7 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
         };
         mrTableQueryCltInst.putReq(mrTableQueryReq);
         vaPipelineQ.enq(req.startAddr);
-        $display("time=%0t, ", $time, "mkDmaReadReqAddrTranslator, handleInputReq, req=", fshow(req));
+        $display("time=%0t: ", $time, "mkDmaReadReqAddrTranslator, handleInputReq, req=", fshow(req));
     endrule
 
     rule handleMrRespAndSendPgtReq;
@@ -467,7 +467,7 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
             addr: pa,
             len:  zeroExtend(originDmaReq.len)
         });
-        $display("time=%0t, ", $time, "mkDmaReadReqAddrTranslator, handleRespPGTAndSendDmaReq, originDmaReq=", fshow(originDmaReq));
+        $display("time=%0t: ", $time, "mkDmaReadReqAddrTranslator, handleRespPGTAndSendDmaReq, originDmaReq=", fshow(originDmaReq));
     endrule
 
     rule forwardResponseDMA;
