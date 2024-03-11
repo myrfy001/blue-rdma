@@ -63,16 +63,17 @@ endinterface
 // Flush DMA write responses when error
 module mkPayloadConsumer(PayloadConsumer);
 
-    BypassServer#(PayloadConReq, PayloadConResp) controlPortSrvInst <- mkBypassServer;
-    BypassClient#(DmaWriteReqNew, DmaWriteRespNew) dmaWriteCltInst <- mkBypassClient;
+    BypassServer#(PayloadConReq, PayloadConResp) controlPortSrvInst <- mkBypassServer("controlPortSrvInst");
+    BypassClient#(DmaWriteReqNew, DmaWriteRespNew) dmaWriteCltInst <- mkBypassClient("dmaWriteCltInst");
     FIFOF#(DataStreamFragMetaData) payloadFragMetaInBufQ <- mkFIFOF;
-    BypassClient#(Tuple2#(InputStreamFragBufferIdx, Bool), DATA) readFragCltInst <- mkBypassClient;
+    BypassClient#(Tuple2#(InputStreamFragBufferIdx, Bool), DATA) readFragCltInst <- mkBypassClient("readFragCltInst");
 
     // Pipeline FIFO
     FIFOF#(Tuple3#(PayloadConReq, Bool, Bool))                    countReqFragQ <- mkFIFOF;
-    FIFOF#(Tuple4#(PayloadConReq, Bool, Bool, Bool))             pendingConReqQ <- mkFIFOF;
-    FIFOF#(PayloadConReq)                                           genConRespQ <- mkFIFOF;
-    FIFOF#(Tuple2#(PayloadConReq, DataStreamFragMetaData))       pendingDmaReqQ <- mkFIFOF;
+    FIFOF#(Tuple4#(PayloadConReq, Bool, Bool, Bool))             pendingConReqQ <- mkSizedFIFOF(15);
+    FIFOF#(PayloadConReq)                                           genConRespQ <- mkSizedFIFOF(15);
+    FIFOF#(Tuple2#(PayloadConReq, DataStreamFragMetaData))       pendingDmaReqQ <- mkSizedFIFOF(15);
+
 
     // TODO: check payloadOutQ buffer size is enough for DMA write delay?
     FIFOF#(DataStreamFragMetaData) payloadFragMetaBufQ <- mkSizedBRAMFIFOF(valueOf(DATA_STREAM_FRAG_BUF_SIZE));
@@ -100,6 +101,23 @@ module mkPayloadConsumer(PayloadConsumer);
             );
         endaction
     endfunction
+
+    // rule debug;
+    //     if (!countReqFragQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: countReqFragQ");
+    //     end
+    //     if (!pendingConReqQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: pendingConReqQ");
+    //     end
+    //     if (!genConRespQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: genConRespQ");
+    //     end
+    //     if (!pendingDmaReqQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: pendingDmaReqQ");
+    //     end
+        
+    // endrule
+
 
     rule recvReq;
         let consumeReq <- controlPortSrvInst.getReq;

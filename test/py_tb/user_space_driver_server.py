@@ -16,9 +16,9 @@ class UserspaceDriverServer:
 
         self.host_mem = mock_host.MockHostMem(share_mem_path, share_mem_size)
         self.mock_nic_a = mock_host.MockNicAndHost(
-            self.host_mem, host=self.listen_addr, port=self.simulator_listen_port_a)
+            self.host_mem, host=self.listen_addr, port=self.simulator_listen_port_a, rx_packet_wait_time=0)
         self.mock_nic_b = mock_host.MockNicAndHost(
-            self.host_mem, host=self.listen_addr, port=self.simulator_listen_port_b)
+            self.host_mem, host=self.listen_addr, port=self.simulator_listen_port_b, rx_packet_wait_time=0.001)
 
     def run(self):
         mock_host.MockNicAndHost.connect_two_card(

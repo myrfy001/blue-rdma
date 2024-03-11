@@ -23,14 +23,23 @@ interface BypassClient#(type t_req, type t_resp);
     method Bool hasResp;
 endinterface
 
-module mkBypassClient(BypassClient#(t_req, t_resp)) provisos (
+module mkSizedBypassClient#(String name, Integer reqDepth, Integer respDepth)(BypassClient#(t_req, t_resp)) provisos (
     Bits#(t_req, sz_req),
     Bits#(t_resp, sz_resp)
 );
-    FIFOF#(t_req) reqQ <- mkFIFOF;
+    FIFOF#(t_req) reqQ <- mkSizedFIFOF(reqDepth);
     // FIFOF#(t_req) reqQ <- mkBypassFIFOF;
-    FIFOF#(t_resp) respQ <- mkFIFOF;
+    FIFOF#(t_resp) respQ <- mkSizedFIFOF(respDepth);
     // FIFOF#(t_resp) respQ <- mkBypassFIFOF;
+
+    rule debug;
+        if (!reqQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkBypassClient ", fshow(name) , " reqQ");
+        end
+        if (!respQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkBypassClient ", fshow(name) , " respQ");
+        end
+    endrule
 
     interface Client clt;
         interface Get request;
@@ -60,6 +69,14 @@ module mkBypassClient(BypassClient#(t_req, t_resp)) provisos (
     method Bool hasResp = respQ.notEmpty;
 endmodule
 
+module mkBypassClient#(String name)(BypassClient#(t_req, t_resp)) provisos (
+    Bits#(t_req, sz_req),
+    Bits#(t_resp, sz_resp)
+);
+    let t <- mkSizedBypassClient(name, 2, 2);
+    return t;
+endmodule
+
 
 interface BypassServer#(type t_req, type t_resp);
     interface Server#(t_req, t_resp) srv;
@@ -71,14 +88,23 @@ interface BypassServer#(type t_req, type t_resp);
     method Bool canPutResp;
 endinterface
 
-module mkBypassServer(BypassServer#(t_req, t_resp)) provisos (
+module mkSizedBypassServer#(String name, Integer reqDepth, Integer respDepth)(BypassServer#(t_req, t_resp)) provisos (
     Bits#(t_req, sz_req),
     Bits#(t_resp, sz_resp)
 );
-    FIFOF#(t_req) reqQ <- mkFIFOF;
+    FIFOF#(t_req) reqQ <- mkSizedFIFOF(reqDepth);
     // FIFOF#(t_req) reqQ <- mkBypassFIFOF;
     // FIFOF#(t_resp) respQ <- mkBypassFIFOF;
-    FIFOF#(t_resp) respQ <- mkFIFOF;
+    FIFOF#(t_resp) respQ <- mkSizedFIFOF(respDepth);
+
+    rule debug;
+        if (!reqQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkBypassServer ", fshow(name) , " reqQ");
+        end
+        if (!respQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkBypassServer ", fshow(name) , " respQ");
+        end
+    endrule
 
     interface Server srv;
         interface Get response;
@@ -107,6 +133,16 @@ module mkBypassServer(BypassServer#(t_req, t_resp)) provisos (
 
     method Bool hasReq = reqQ.notEmpty;
 
+endmodule
+
+
+module mkBypassServer#(String name)(BypassServer#(t_req, t_resp)) provisos (
+    Bits#(t_req, sz_req),
+    Bits#(t_resp, sz_resp)
+);
+     
+    let t <- mkSizedBypassServer(name, 2, 2);
+    return t;
 endmodule
 
 

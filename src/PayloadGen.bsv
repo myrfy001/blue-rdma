@@ -436,7 +436,7 @@ typedef struct {
 
 module mkAddrChunkSrv#(Bool clearAll)(AddrChunkSrv);
     FIFOF#(AddrChunkReq)   reqQ <- mkSizedFIFOF(valueOf(MAX_SGE));
-    FIFOF#(AddrChunkResp) respQ <- mkFIFOF;
+    FIFOF#(AddrChunkResp) respQ <- mkSizedFIFOF(10);
     FIFOF#(PktMetaDataSGE) sgePktMetaDataOutQ <- mkFIFOF;
 
     // Pipeline FIFOF
@@ -449,6 +449,29 @@ module mkAddrChunkSrv#(Bool clearAll)(AddrChunkSrv);
     Reg#(PktNum) remainingPktNumReg <- mkRegU;
     Reg#(ADDR)     nextChunkAddrReg <- mkRegU;
     Reg#(Bool)      isFirstChunkReg <- mkReg(True);
+
+    // rule debug;
+    //     if (!reqQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkAddrChunkSrv reqQ");
+    //     end
+    //     if (!respQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkAddrChunkSrv respQ");
+    //     end
+    //     if (!sgePktMetaDataOutQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkAddrChunkSrv sgePktMetaDataOutQ");
+    //     end
+    //     if (!calcChunkMetaDataQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkAddrChunkSrv calcChunkMetaDataQ");
+    //     end
+    //     if (!calcPktMetaDataQ4SGE.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkAddrChunkSrv calcPktMetaDataQ4SGE");
+    //     end
+    //     if (!calcAddrChunkRespQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkAddrChunkSrv calcAddrChunkRespQ");
+    //     end
+        
+
+    // endrule
 
     rule resetAndClear if (clearAll);
         reqQ.clear;
@@ -697,9 +720,37 @@ module mkDmaReadCntrl#(
 
     // Pipeline FIFO
     FIFOF#(Tuple2#(ScatterGatherElem, PMTU)) pendingScatterGatherElemQ <- mkSizedFIFOF(valueOf(MAX_SGE));
-    FIFOF#(LKEY) pendingLKeyQ <- mkFIFOF;
-    FIFOF#(Tuple2#(QPN, WorkReqID)) pendingDmaCntrlReqQ <- mkFIFOF; // TODO: remove it
-    FIFOF#(Tuple2#(Bool, Bool))     pendingDmaReadReqQ <- mkFIFOF;
+    FIFOF#(LKEY) pendingLKeyQ <- mkSizedFIFOF(5);
+    FIFOF#(Tuple2#(QPN, WorkReqID)) pendingDmaCntrlReqQ <- mkSizedFIFOF(10); // TODO: remove it
+    FIFOF#(Tuple2#(Bool, Bool))     pendingDmaReadReqQ <-  mkSizedFIFOF(100);
+
+
+    rule debug;
+        if (!reqQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadCntrl reqQ");
+        end
+        if (!respQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadCntrl respQ");
+        end
+        if (!sgeMergedMetaDataOutQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadCntrl sgeMergedMetaDataOutQ");
+        end
+        if (!pendingScatterGatherElemQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadCntrl pendingScatterGatherElemQ");
+        end
+        if (!pendingLKeyQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadCntrl pendingLKeyQ");
+        end
+        if (!pendingDmaCntrlReqQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadCntrl pendingDmaCntrlReqQ");
+        end
+        if (!pendingDmaReadReqQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadCntrl pendingDmaReadReqQ");
+        end
+    endrule
+
+
+
 
     let addrChunkSrv <- mkAddrChunkSrv(clearAll);
 
@@ -900,13 +951,13 @@ module mkDmaReadCntrl#(
         if (isLastDmaReqChunk) begin
             pendingDmaCntrlReqQ.deq;
         end
-        // $display(
-        //     "time=%0t: mkDmaReadCntrl issueDmaReq", $time,
-        //     ", sqpn=%h", curSQPN,
-        //     ", pendingDmaReadCntrlReq=", fshow(pendingDmaCntrlReqQ.first),
-        //     ", addrChunkResp=", fshow(addrChunkResp),
-        //     ", dmaReadReq=", fshow(dmaReadReq)
-        // );
+        $display(
+            "time=%0t: mkDmaReadCntrl issueDmaReq", $time,
+            ", sqpn=%h", curSQPN,
+            ", pendingDmaReadCntrlReq=", fshow(pendingDmaCntrlReqQ.first),
+            ", addrChunkResp=", fshow(addrChunkResp),
+            ", dmaReadReq=", fshow(dmaReadReq)
+        );
     endrule
 
     rule recvDmaResp if (!clearAll);
@@ -993,6 +1044,21 @@ module mkMergePayloadEachSGE#(
     Reg#(PktNum) remainingPktNumReg <- mkRegU;
     Reg#(DataStream) prePayloadFragReg <- mkRegU;
     Reg#(MergePayloadStateEachSGE) stateReg <- mkReg(MERGE_SGE_PAYLOAD_INIT);
+
+
+    rule debug;
+        if (!pktPayloadOutQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkMergePayloadEachSGE pktPayloadOutQ");
+        end
+        if (!sgeCurPktMetaDataQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkMergePayloadEachSGE sgeCurPktMetaDataQ");
+        end
+        if (!payloadFragShiftQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkMergePayloadEachSGE payloadFragShiftQ");
+        end
+    endrule
+
+
 
     function ActionValue#(DataStream) prepareNextSGE();
         actionvalue
@@ -1280,6 +1346,19 @@ module mkMergePayloadAllSGE#(
     // Pipeline FIFO
     FIFOF#(TmpMergedMetaDataSGE) mergedMetaDataQ4EachSGE <- mkFIFOF;
     FIFOF#(Tuple4#(DataStream, DataStream, ByteEnBitNum, BusBitNum)) payloadFragShiftQ <- mkFIFOF;
+
+    rule debug;
+        if (!pktPayloadOutQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkMergePayloadAllSGE pktPayloadOutQ");
+        end
+        if (!mergedMetaDataQ4EachSGE.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkMergePayloadAllSGE mergedMetaDataQ4EachSGE");
+        end
+        if (!payloadFragShiftQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkMergePayloadAllSGE payloadFragShiftQ");
+        end
+    endrule
+
 
     Reg#(ByteEnBitNum) preInvalidByteNumReg <- mkRegU;
     Reg#(BusBitNum)     preInvalidBitNumReg <- mkRegU;
@@ -1652,6 +1731,20 @@ module mkAdjustPayloadSegment#(
     FIFOF#(Tuple6#(
         DataStream, DataStream, ByteEnBitNum, BusBitNum, Bool, ByteEn
     )) payloadFragShiftQ <- mkFIFOF;
+
+
+    rule debug;
+        if (!pktPayloadOutQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkAdjustPayloadSegment pktPayloadOutQ");
+        end
+        if (!sglAdjustedPktMetaDataQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkAdjustPayloadSegment sglAdjustedPktMetaDataQ");
+        end
+        if (!payloadFragShiftQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkAdjustPayloadSegment payloadFragShiftQ");
+        end
+    endrule
+
 
     Reg#(DataStream) prePayloadFragReg <- mkRegU;
     Reg#(ByteEn) firstPktLastFragByteEnReg <- mkRegU;
@@ -2113,8 +2206,13 @@ module mkPayloadGenerator#(
     FIFOF#(TmpAdjustFirstAndLastPktLen) adjustFirstAndLastPktLenQ <- mkFIFOF;
     FIFOF#(TmpAdjustTotalPayloadMetaData) adjustTotalPayloadMetaDataQ <- mkFIFOF;
     FIFOF#(TmpPayloadGenRespData) genPayloadRespQ <- mkFIFOF;
-    FIFOF#(Tuple2#(PayloadGenRespSG, TmpPaddingData)) addPaddingDataQ <- mkFIFOF;
+    FIFOF#(Tuple2#(PayloadGenRespSG, TmpPaddingData)) addPaddingDataQ <- mkSizedFIFOF(10);
     FIFOF#(AdjustedTotalPayloadMetaData) adjustedTotalPayloadMetaDataQ <- mkFIFOF;
+
+
+
+
+
 
     let sgeMergedPayloadPipeOut <- mkMergePayloadEachSGE(
         clearAll, dmaReadCntrl.sgePktMetaDataPipeOut, toPipeOut(sgePayloadOutQ)
@@ -2134,6 +2232,44 @@ module mkPayloadGenerator#(
     Reg#(ADDR)     pktRemoteAddrReg <- mkRegU;
     Reg#(Bool)        isFirstPktReg <- mkReg(True);
     Reg#(PktNum) remainingPktNumReg <- mkRegU;
+
+
+    rule debug;
+        if (!payloadGenReqQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator payloadGenReqQ");
+        end
+        if (!payloadGenRespQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator payloadGenRespQ");
+        end
+        if (!totalMetaDataOutQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator totalMetaDataOutQ");
+        end
+        if (!sgePayloadOutQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator sgePayloadOutQ");
+        end
+        if (!adjustReqPktLenQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator adjustReqPktLenQ");
+        end
+        if (!adjustFirstAndLastPktLenQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator adjustFirstAndLastPktLenQ");
+        end
+        if (!adjustTotalPayloadMetaDataQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator adjustTotalPayloadMetaDataQ");
+        end
+        if (!genPayloadRespQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator genPayloadRespQ");
+        end
+        if (!addPaddingDataQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator addPaddingDataQ");
+        end
+        if (!adjustedTotalPayloadMetaDataQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator adjustedTotalPayloadMetaDataQ");
+        end
+        if (!payloadBufQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator payloadBufQ");
+        end
+        
+    endrule
 
     rule resetAndClear if (clearAll);
         payloadGenReqQ.clear;

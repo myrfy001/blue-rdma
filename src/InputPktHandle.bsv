@@ -263,7 +263,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         toPipeOut(headerMetaDataQ)
     );
 
-    BypassClient#(ReadReqCommonQPC, Maybe#(EntryCommonQPC)) qpcReadCommonCltInst <- mkBypassClient;
+    BypassClient#(ReadReqCommonQPC, Maybe#(EntryCommonQPC)) qpcReadCommonCltInst <- mkBypassClient("qpcReadCommonCltInst");
 
     function Bool fifofNotEmpty(FIFOF#(anytype) fifof) = fifof.notEmpty;
     function Bool fifofNotFull(FIFOF#(anytype) fifof) = fifof.notFull;
@@ -275,6 +275,59 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         let result = fold(\&& , fifofMapVec);
         return result;
     endfunction
+
+
+    // rule debug;
+    //     if (!rdmaHeaderRecvQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderRecvQ");
+    //     end
+    //     if (!payloadFragMetaRecvQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaRecvQ");
+    //     end
+    //     if (!rdmaHeaderPreCheckQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPreCheckQ");
+    //     end
+    //     if (!payloadFragMetaPreCheckQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPreCheckQ");
+    //     end
+    //     if (!rdmaHeaderValidationQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderValidationQ");
+    //     end
+    //     if (!payloadFragMetaValidationQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaValidationQ");
+    //     end
+    //     if (!rdmaHeaderFilterQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderFilterQ");
+    //     end
+    //     if (!payloadFragMetaFilterQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaFilterQ");
+    //     end
+    //     if (!rdmaHeaderFragLenCalcQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderFragLenCalcQ");
+    //     end
+    //     if (!rdmaHeaderPktLenCalcQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenCalcQ");
+    //     end
+    //     if (!payloadPktLenCalcQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadPktLenCalcQ");
+    //     end
+    //     if (!rdmaHeaderPktLenPreCheckQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenPreCheckQ");
+    //     end
+    //     if (!payloadFragMetaPktLenPreCheckQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPktLenPreCheckQ");
+    //     end
+    //     if (!rdmaHeaderPktLenCheckQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenCheckQ");
+    //     end
+    //     if (!payloadFragMetaPktLenCheckQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPktLenCheckQ");
+    //     end
+    // endrule
+
+
+
+
 
 
     (* conflict_free = "recvPktFrag, \
@@ -790,8 +843,8 @@ interface ReceivedStreamFragStorage;
 endinterface
 
 module mkReceivedStreamFragStorage(ReceivedStreamFragStorage);
-    BypassServer#(DATA, InputStreamFragBufferIdx) insertFragSrvInst                 <- mkBypassServer;
-    BypassServer#(Tuple2#(InputStreamFragBufferIdx, Bool), DATA) readFragSrvInst    <- mkBypassServer;
+    BypassServer#(DATA, InputStreamFragBufferIdx) insertFragSrvInst                 <- mkBypassServer("insertFragSrvInst");
+    BypassServer#(Tuple2#(InputStreamFragBufferIdx, Bool), DATA) readFragSrvInst    <- mkBypassServer("readFragSrvInst");
 
     BRAM_Configure cfg = defaultValue;
     BRAM2Port#(InputStreamFragBufferIdxWithoutGuard, DATA) bramBuffer <- mkBRAM2Server (cfg);
@@ -819,6 +872,11 @@ module mkReceivedStreamFragStorage(ReceivedStreamFragStorage);
                 "idxGenerator=", fshow(idxGenerator), " lastConsumeIdx=", fshow(lastConsumeIdx)
             )
         );
+
+        $display(
+            "time=%0t:", $time, "rx frag buffer new input packet, idxGenerator=", fshow(idxGenerator),
+            " lastConsumeIdx=", fshow(lastConsumeIdx) 
+        );
     endrule
 
     rule handleReadReq;
@@ -832,6 +890,12 @@ module mkReceivedStreamFragStorage(ReceivedStreamFragStorage);
                 datain: ?
             });
         end
+
+        $display(
+            "time=%0t:", $time, "rx frag buffer new output packet,  lastConsumeIdx=", 
+            fshow(lastConsumeIdx) , " isOnlyUpadteFragBufLastConsumeIndex=", fshow(isOnlyUpadteFragBufLastConsumeIndex)
+        );
+
     endrule
 
     rule outputReadResp;

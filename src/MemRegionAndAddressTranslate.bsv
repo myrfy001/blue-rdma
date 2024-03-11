@@ -136,8 +136,8 @@ endinterface
 (* synthesize *)
 module mkMemRegionTable(MemRegionTable);
     BramCache#(IndexMR, Maybe#(MemRegionTableEntry), 0) mrTableStorage <- mkBramCache;
-    BypassServer#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) querySrvInst <- mkBypassServer;
-    BypassServer#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkBypassServer;
+    BypassServer#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) querySrvInst <- mkBypassServer("querySrvInst");
+    BypassServer#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkBypassServer("modifySrvInst");
 
     rule handleQueryReq;
         let req <- querySrvInst.getReq;
@@ -189,8 +189,8 @@ module mkTLB(TLB);
     
     BramCache#(PTEIndex, PageTableEntry, 2) pageTableStorage <- mkBramCache;
 
-    BypassServer#(PgtAddrTranslateReq, ADDR) translateSrvInst <- mkBypassServer;
-    BypassServer#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkBypassServer;
+    BypassServer#(PgtAddrTranslateReq, ADDR) translateSrvInst <- mkBypassServer("translateSrvInst");
+    BypassServer#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkBypassServer("modifySrvInst");
 
     FIFOF#(Bit#(PAGE_OFFSET_WIDTH)) offsetInputQ <- mkFIFOF;
 
@@ -263,8 +263,8 @@ module mkMrAndPgtManager(MrAndPgtManager);
     FIFOF#(UserLogicDmaH2cReq) dmaReadReqQ <- mkFIFOF;
     FIFOF#(UserLogicDmaH2cResp) dmaReadRespQ <- mkFIFOF;
 
-    BypassClient#(MrTableModifyReq, MrTableModifyResp) mrModifyCltInst <- mkBypassClient;
-    BypassClient#(PgtModifyReq, PgtModifyResp) pgtModifyCltInst <- mkBypassClient;
+    BypassClient#(MrTableModifyReq, MrTableModifyResp) mrModifyCltInst <- mkBypassClient("mrModifyCltInst");
+    BypassClient#(PgtModifyReq, PgtModifyResp) pgtModifyCltInst <- mkBypassClient("pgtModifyCltInst");
     
 
     Reg#(MrAndPgtManagerFsmState) state <- mkReg(MrAndPgtManagerFsmStateIdle);
@@ -387,16 +387,48 @@ endinterface
 
 (* synthesize *)
 module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
-    FIFOF#(DmaReadReq) readReqInQ <- mkFIFOF;
-    FIFOF#(UserLogicDmaH2cReq) readReqOutQ <- mkFIFOF;
+    FIFOF#(DmaReadReq) readReqInQ <- mkSizedFIFOF(20);
+    FIFOF#(UserLogicDmaH2cReq) readReqOutQ <- mkSizedFIFOF(20);
     FIFOF#(UserLogicDmaH2cResp) readRespInQ <- mkFIFOF;
     FIFOF#(DmaReadResp) readRespOutQ <- mkFIFOF;
 
-    FIFOF#(DmaReadReq) pendingReqQ <- mkSizedFIFOF(2);
-    FIFOF#(ADDR) vaPipelineQ <- mkSizedFIFOF(2);
+    FIFOF#(DmaReadReq) pendingReqQ <- mkSizedFIFOF(20);
+    FIFOF#(ADDR) vaPipelineQ <- mkSizedFIFOF(20);
 
-    BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkBypassClient;
-    BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient;
+    BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkSizedBypassClient("mrTableQueryCltInst", 5, 2);
+    BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient("pgtQueryCltInst");
+
+    // rule debug;
+    //     if (!readReqInQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readReqInQ");
+    //     end
+    //     if (!readReqOutQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readReqOutQ");
+    //     end
+    //     if (!readRespInQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readRespInQ");
+    //     end
+    //     if (!readRespOutQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readRespOutQ");
+    //     end
+
+    //     if (!pendingReqQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator pendingReqQ");
+    //     end
+    //     if (!vaPipelineQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkDmaReadReqAddrTranslator vaPipelineQ");
+    //     end
+
+    //     if (!readReqOutQ.notEmpty) begin
+    //         $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readReqOutQ");
+    //     end
+    //     if (!readRespOutQ.notEmpty) begin
+    //         $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkDmaReadReqAddrTranslator readRespOutQ");
+    //     end
+
+
+    // endrule
+
 
     rule handleInputReq;
         readReqInQ.deq;
@@ -407,6 +439,7 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
         };
         mrTableQueryCltInst.putReq(mrTableQueryReq);
         vaPipelineQ.enq(req.startAddr);
+        $display("time=%0t, ", $time, "mkDmaReadReqAddrTranslator, handleInputReq, req=", fshow(req));
     endrule
 
     rule handleMrRespAndSendPgtReq;
@@ -425,7 +458,7 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
         pgtQueryCltInst.putReq(pgtReq);
     endrule
 
-    rule handleRespPGT;
+    rule handleRespPGTAndSendDmaReq;
         let pa <- pgtQueryCltInst.getResp;
         let originDmaReq = pendingReqQ.first;
         pendingReqQ.deq;
@@ -434,6 +467,7 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
             addr: pa,
             len:  zeroExtend(originDmaReq.len)
         });
+        $display("time=%0t, ", $time, "mkDmaReadReqAddrTranslator, handleRespPGTAndSendDmaReq, originDmaReq=", fshow(originDmaReq));
     endrule
 
     rule forwardResponseDMA;

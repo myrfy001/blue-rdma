@@ -27,6 +27,16 @@ module mkHeader2DataStream#(
     Reg#(HeaderRDMA) rdmaHeaderReg <- mkRegU;
     Reg#(Bool)      headerValidReg <- mkReg(False);
 
+
+    // rule debug;
+    //     if (!headerDataStreamOutQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkHeader2DataStream headerDataStreamOutQ");
+    //     end
+    //     if (!headerMetaDataOutQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkHeader2DataStream headerMetaDataOutQ");
+    //     end
+    // endrule
+
     (* no_implicit_conditions, fire_when_enabled *)
     rule resetAndClear if (clearAll);
         headerDataStreamOutQ.clear;
@@ -255,6 +265,13 @@ module mkPrependHeader2PipeOut#(
 
     Reg#(ExtractOrPrependHeaderStage) stageReg <- mkReg(HEADER_META_DATA_POP);
 
+    rule debug;
+        if (!dataStreamOutQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkPrependHeader2PipeOut dataStreamOutQ");
+        end
+    endrule
+
+
     // rule debug if (!dataStreamOutQ.notFull);
     //     $display(
     //         "time=%0t: mkPrependHeader2PipeOut debug", $time,
@@ -446,7 +463,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
     DataStreamPipeOut dataPipeIn, PipeOut#(HeaderMetaData) headerMetaDataPipeIn
 )(HeaderAndPayloadSeperateDataStreamPipeOut);
 
-    BypassClient#(DATA, InputStreamFragBufferIdx) payloadStreamFragStorageInsertCltInst <- mkBypassClient;
+    BypassClient#(DATA, InputStreamFragBufferIdx) payloadStreamFragStorageInsertCltInst <- mkBypassClient("payloadStreamFragStorageInsertCltInst");
     
     FIFOF#(DataStream) headerDataStreamOutQ                     <- mkFIFOF;
     FIFOF#(DataStreamFragMetaData) payloadDataStreamFragPreOutQ <- mkFIFOF;

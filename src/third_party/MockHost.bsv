@@ -1,5 +1,6 @@
 package MockHost ;
 
+import Clocks :: * ;
 import BRAM :: *;
 import BRAMCore ::*;
 import DefaultValue ::*;
@@ -87,7 +88,7 @@ typedef struct {
 
 
 // Exported module
-module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, bar_data_t)) provisos(
+module mkMockHost #( BRAM_Configure cfg, Clock cmacRxTxClk, Reset cmacRxTxRst) (MockHost#(addr, data, n, bar_addr_t, bar_data_t)) provisos(
 	Bits#(addr, addr_sz),
 	Bits#(data, data_sz),
 	Div#(data_sz, n, chunk_sz),
@@ -100,10 +101,15 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 	FShow#(addr)
 );
 
+	Clock srcClock <- exposeCurrentClock;
+    Reset srcReset <- exposeCurrentReset;
 
     // mem
 	Reg#(Bit#(64))  memHandle   <- mkReg(0);
 	Reg#(Bool)      initDone    <- mkReg(False);
+	Reg#(Bit#(64))  memHandleForCmac   <- mkSyncReg(0, srcClock, srcReset, cmacRxTxClk);
+	Reg#(Bool)      initDoneForCamc    <- mkSyncReg(False, srcClock, srcReset, cmacRxTxClk);
+
 
 	FIFOF#(data) portRespQueueA <- mkFIFOF;
 	FIFOF#(data) portRespQueueB <- mkFIFOF;
@@ -113,8 +119,8 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 	FIFOF#(bar_addr_t) barReadReqQ <- mkFIFOF;
 	FIFOF#(bar_data_t) barReadRespQ <- mkFIFOF;
 
-	FIFOF#(AxiStream512) udpAxiTxQ <- mkFIFOF;
-	FIFOF#(AxiStream512) udpAxiRxQ <- mkFIFOF;
+	FIFOF#(AxiStream512) udpAxiTxQ <- mkFIFOF(clocked_by cmacRxTxClk, reset_by cmacRxTxRst);
+	FIFOF#(AxiStream512) udpAxiRxQ <- mkFIFOF(clocked_by cmacRxTxClk, reset_by cmacRxTxRst);
 
 
 
@@ -136,6 +142,8 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 		$display("%0t: mkControlledBRAM2ServerBE: allocate memory ptr = %h", $time, ptr);
 		memHandle <= ptr;
 		initDone <= True;
+		memHandleForCmac <= ptr;
+		initDoneForCamc <= True;
 	endrule
 
 	rule forwardBarReadReq if (initDone);
@@ -183,7 +191,7 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 		c_putPcieBarWriteResp(memHandle, resp);
 	endrule
 
-	rule forwardNetIfcTx if (initDone);
+	rule forwardNetIfcTx if (initDoneForCamc);
 
 		if (udpAxiTxQ.notEmpty) begin
 			let originTxData = udpAxiTxQ.first;
@@ -197,18 +205,18 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 				byteEn: originTxData.tKeep,
 				data: originTxData.tData
 			};
-			$display("time=%0t, ", $time, "send udp data=", fshow(req));
+			$display("time=%0t, ", $time, "net ifc send data=", fshow(req));
 			
-			c_netIfcPutTxData(memHandle, req);
+			c_netIfcPutTxData(memHandleForCmac, req);
 		end
 		else begin
-			// $display("time=%0t, ", $time, "send udp data=NO_DATA_TO_SEND");
+			// $display("time=%0t, ", $time, "net ifc send data=NO_DATA_TO_SEND");
 		end
 
 	endrule
 
-	rule forwardNetIfcRx if (initDone);
-		let rawReq <- c_netIfcGetRxData(memHandle);
+	rule forwardNetIfcRx if (initDoneForCamc);
+		let rawReq <- c_netIfcGetRxData(memHandleForCmac);
 		if (rawReq.isValid != 0) begin
 			AxiStream512 req = AxiStream512{
 				tLast: rawReq.isLast != 0 ? True : False,
@@ -218,10 +226,10 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 			};
 			if (udpAxiRxQ.notFull) begin
 				udpAxiRxQ.enq(req);
-				$display("time=%0t, ", $time, "recv udp data=", fshow(req));
+				$display("time=%0t, ", $time, "net ifc recv data=", fshow(req));
 			end 
 			else begin
-				$display("time=%0t, ", $time, "recv udp data BUT DISCARD SINCE QUEUE FULL");
+				$display("time=%0t, ", $time, "net ifc recv data BUT DISCARD SINCE QUEUE FULL");
 			end
 		end
 	endrule
@@ -232,10 +240,10 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 		interface BRAMServer portA;
 			interface Put request;
 				method Action put(BRAMRequestBE#(addr, data, n) req);
-					// $display(
-					// 	"time=%0t:", $time, "mock Host Mem Port A req.writeen=", fshow(req.writeen),
-					// 	" req.addr=", fshow(req.address)
-					// );
+					$display(
+						"time=%0t,:", $time, "mock Host Mem Port A req.writeen=", fshow(req.writeen),
+						" req.addr=", fshow(req.address)
+					);
 					if (req.writeen == 0) begin
 						let resp <- readBRAM(memHandle, req.address);
 						portRespQueueA.enq(resp);
@@ -264,10 +272,10 @@ module mkMockHost #( BRAM_Configure cfg ) (MockHost#(addr, data, n, bar_addr_t, 
 		interface BRAMServer portB;
 			interface Put request;
 				method Action put(BRAMRequestBE#(addr, data, n) req);
-					// $display(
-					// 	"time=%0t:", $time, "mock Host Mem Port B req.writeen=", fshow(req.writeen),
-					// 	" req.addr=", fshow(req.address)
-					// );
+					$display(
+						"time=%0t,:", $time, "mock Host Mem Port B req.writeen=", fshow(req.writeen),
+						" req.addr=", fshow(req.address)
+					);
 					if (req.writeen == 0) begin
 						let resp <- readBRAM(memHandle, req.address);
 						portRespQueueB.enq(resp);

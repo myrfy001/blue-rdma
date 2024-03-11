@@ -584,7 +584,7 @@ module mkSendQ#(
 )(SendQ);
     FIFOF#(WorkQueueElem)         reqQ <- mkFIFOF;
     FIFOF#(SendResp)             respQ <- mkFIFOF;
-    FIFOF#(PktInfo4UDP) udpPktInfoOutQ <- mkFIFOF;
+    FIFOF#(PktInfo4UDP) udpPktInfoOutQ <- mkSizedFIFOF(10);
 
     // Pipeline FIFOF
     FIFOF#(Tuple3#(WorkQueueElem, Bool, Bool)) totalMetaDataQ <- mkFIFOF;
@@ -605,6 +605,37 @@ module mkSendQ#(
         headerDataStreamAndMetaDataPipeOut.headerMetaData,
         payloadGenerator.payloadDataStreamPipeOut
     );
+
+
+    rule debug;
+        if (!reqQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ reqQ");
+        end
+        if (!respQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ respQ");
+        end
+        if (!udpPktInfoOutQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ udpPktInfoOutQ");
+        end
+        if (!totalMetaDataQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ totalMetaDataQ");
+        end
+        if (!psnUpdateQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ psnUpdateQ");
+        end
+        if (!headerPrepareQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ headerPrepareQ");
+        end
+        if (!pendingHeaderQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ pendingHeaderQ");
+        end
+        if (!pktHeaderQ.notFull) begin
+            $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkSendQ pktHeaderQ");
+        end
+    endrule
+
+
+
 
     rule resetAndClear if (clearAll);
         reqQ.clear;
@@ -744,14 +775,14 @@ module mkSendQ#(
         totalMetaDataQ.enq(tuple3(wqe, isRawPkt, shouldGenPayload));
         // TODO: handle pending read/atomic request number limit
 
-        // $display(
-        //     "time=%0t: mkSendQ 1st stage recvWQE", $time,
-        //     ", sqpn=%h", wqe.sqpn,
-        //     ", id=%h", wqe.id,
-        //     ", macAddr=%h", wqe.macAddr,
-        //     ", pmtu=", fshow(wqe.pmtu),
-        //     ", shouldGenPayload=", fshow(shouldGenPayload)
-        // );
+        $display(
+            "time=%0t: mkSendQ 1st stage recvWQE", $time,
+            ", sqpn=%h", wqe.sqpn,
+            ", id=%h", wqe.id,
+            ", macAddr=%h", wqe.macAddr,
+            ", pmtu=", fshow(wqe.pmtu),
+            ", shouldGenPayload=", fshow(shouldGenPayload)
+        );
     endrule
 
     rule recvTotalMetaData if (!clearAll);
@@ -803,18 +834,18 @@ module mkSendQ#(
         psnUpdateQ.enq(tuple7(
             wqe, totalLen, totalPktNum, shouldGenPayload, hasPayload, isOnlyPkt, isRawPkt
         ));
-        // $display(
-        //     "time=%0t: mkSendQ 2nd stage recvTotalMetaData", $time,
-        //     ", sqpn=%h", wqe.sqpn,
-        //     ", id=%h", wqe.id,
-        //     ", psn=%h", wqe.psn,
-        //     ", totalLen=%0d", totalLen,
-        //     ", totalPktNum=%0d", totalPktNum,
-        //     ", isRawPkt=", fshow(isRawPkt),
-        //     ", hasPayload=", fshow(hasPayload),
-        //     ", isOnlyPkt=", fshow(isOnlyPkt),
-        //     ", shouldGenPayload=", fshow(shouldGenPayload)
-        // );
+        $display(
+            "time=%0t: mkSendQ 2nd stage recvTotalMetaData", $time,
+            ", sqpn=%h", wqe.sqpn,
+            ", id=%h", wqe.id,
+            ", psn=%h", wqe.psn,
+            ", totalLen=%0d", totalLen,
+            ", totalPktNum=%0d", totalPktNum,
+            ", isRawPkt=", fshow(isRawPkt),
+            ", hasPayload=", fshow(hasPayload),
+            ", isOnlyPkt=", fshow(isOnlyPkt),
+            ", shouldGenPayload=", fshow(shouldGenPayload)
+        );
     endrule
 
     rule updatePSN if (!clearAll);
@@ -900,18 +931,18 @@ module mkSendQ#(
             isRawPkt  : isRawPkt
         };
         headerPrepareQ.enq(tuple2(wqe, headerGenInfo));
-        // $display(
-        //     "time=%0t: mkSendQ 3th stage updatePSN", $time,
-        //     ", sqpn=%h", wqe.sqpn,
-        //     ", id=%h", wqe.id,
-        //     ", curPSN=%h", curPSN,
-        //     ", pktPayloadLen=%0d", pktPayloadLen,
-        //     ", padCnt=%0d", padCnt,
-        //     ", hasPayload=", fshow(hasPayload),
-        //     ", isFirstPkt=", fshow(isFirstPkt),
-        //     ", isLastPkt=", fshow(isLastPkt),
-        //     ", isOnlyPkt=", fshow(isOnlyPkt)
-        // );
+        $display(
+            "time=%0t: mkSendQ 3th stage updatePSN", $time,
+            ", sqpn=%h", wqe.sqpn,
+            ", id=%h", wqe.id,
+            ", curPSN=%h", curPSN,
+            ", pktPayloadLen=%0d", pktPayloadLen,
+            ", padCnt=%0d", padCnt,
+            ", hasPayload=", fshow(hasPayload),
+            ", isFirstPkt=", fshow(isFirstPkt),
+            ", isLastPkt=", fshow(isLastPkt),
+            ", isOnlyPkt=", fshow(isOnlyPkt)
+        );
     endrule
 
     rule prepareHeader if (!clearAll);
@@ -985,17 +1016,17 @@ module mkSendQ#(
         pendingHeaderQ.enq(tuple6(
             wqe.macAddr, wqe.dqpIP, maybePktHeaderInfo, pktLenWithPadCnt, isRawPkt, isSendDone
         ));
-        // $display(
-        //     "time=%0t: mkSendQ 4th stage prepareHeader", $time,
-        //     ", sqpn=%h", wqe.sqpn,
-        //     ", id=%h", wqe.id,
-        //     ", curPSN=%h", curPSN,
-        //     ", isFirstPkt=", fshow(isFirstPkt),
-        //     ", isLastPkt=", fshow(isLastPkt),
-        //     ", isOnlyPkt=", fshow(isOnlyPkt),
-        //     ", isValid(maybePktHeaderInfo)=", fshow(isValid(maybePktHeaderInfo)),
-        //     ", hasPayload=", fshow(hasPayload)
-        // );
+        $display(
+            "time=%0t: mkSendQ 4th stage prepareHeader", $time,
+            ", sqpn=%h", wqe.sqpn,
+            ", id=%h", wqe.id,
+            ", curPSN=%h", curPSN,
+            ", isFirstPkt=", fshow(isFirstPkt),
+            ", isLastPkt=", fshow(isLastPkt),
+            ", isOnlyPkt=", fshow(isOnlyPkt),
+            ", isValid(maybePktHeaderInfo)=", fshow(isValid(maybePktHeaderInfo)),
+            ", hasPayload=", fshow(hasPayload)
+        );
     endrule
 
     rule genPktHeader if (!clearAll);
@@ -1027,17 +1058,17 @@ module mkSendQ#(
                 };
                 respQ.enq(sendResp);
             end
-            // $display(
-            //     "time=%0t: mkSendQ 5th stage genPktHeader", $time,
-            //     // ", sqpn=%h", wqe.sqpn,
-            //     // ", id=%h", wqe.id,
-            //     ", pktLenWithPadCnt=%0d", pktLenWithPadCnt,
-            //     ", headerLen=%0d", headerLen,
-            //     ", udpPktInfo.macAddr=%h", udpPktInfo.macAddr,
-            //     ", udpPktInfo.ipAddr=", fshow(udpPktInfo.ipAddr),
-            //     ", udpPktInfo.pktLen=%0d", udpPktInfo.pktLen,
-            //     ", hasPayload=", fshow(hasPayload)
-            // );
+            $display(
+                "time=%0t: mkSendQ 5th stage genPktHeader", $time,
+                // ", sqpn=%h", wqe.sqpn,
+                // ", id=%h", wqe.id,
+                ", pktLenWithPadCnt=%0d", pktLenWithPadCnt,
+                ", headerLen=%0d", headerLen,
+                ", udpPktInfo.macAddr=%h", udpPktInfo.macAddr,
+                ", udpPktInfo.ipAddr=", fshow(udpPktInfo.ipAddr),
+                ", udpPktInfo.pktLen=%0d", udpPktInfo.pktLen,
+                ", hasPayload=", fshow(hasPayload)
+            );
         end
     endrule
 

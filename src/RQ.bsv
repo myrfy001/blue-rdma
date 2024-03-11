@@ -26,14 +26,14 @@ module mkRQ(RQ ifc);
     FIFOF#(RdmaPktMetaDataAndQPC)     rdmaPktMetaDataInQ  <- mkFIFOF;
     FIFOF#(C2hReportEntry)              pktReportEntryQ     <- mkFIFOF;
 
-    BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkBypassClient;
-    BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient;
-    BypassClient#(PayloadConReq, PayloadConResp) payloadConsumerControlClt           <- mkBypassClient;
+    BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkBypassClient("mrTableQueryCltInst");
+    BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient("pgtQueryCltInst");
+    BypassClient#(PayloadConReq, PayloadConResp) payloadConsumerControlClt           <- mkBypassClient("payloadConsumerControlClt");
 
     // Pipeline FIFOs
-    FIFOF#(Tuple2#(RdmaPktMetaDataAndQPC, Bool))                        reqStatusCheckStep1PipeQ <- mkSizedFIFOF(2);
+    FIFOF#(Tuple2#(RdmaPktMetaDataAndQPC, Bool))                        reqStatusCheckStep1PipeQ <- mkSizedFIFOF(10);
     FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, FlagsType#(MemAccessTypeFlag), RETH)) reqStatusCheckStep2PipeQ   <- mkFIFOF;
-    FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool)) getPGTQueryRespPipeQ <- mkSizedFIFOF(2);
+    FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool)) getPGTQueryRespPipeQ <- mkSizedFIFOF(10);
     FIFOF#(Tuple3#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool))           waitDMARespPipeQ <- mkFIFOF;
 
 

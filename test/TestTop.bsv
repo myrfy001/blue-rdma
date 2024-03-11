@@ -59,9 +59,12 @@ module mkTestTop(Empty);
     Clock fastClock <- exposeCurrentClock;
     Reset fastReset <- exposeCurrentReset;
 
+    Clock cmacRxTxClk <- mkAbsoluteClock(0, 31);
+    Reset cmacRxTxRst = noReset;
+
     RdmaUserLogicWithoutXdmaAndCmacWrapper topA <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(slowClock, slowReset);
 
-    FakeXdma fakeXdmaA <- mkFakeXdma(1, clocked_by slowClock, reset_by slowReset);
+    FakeXdma fakeXdmaA <- mkFakeXdma(1, cmacRxTxClk, cmacRxTxRst, clocked_by slowClock, reset_by slowReset);
 
     mkConnection(fakeXdmaA.xdmaH2cSrv, topA.dmaReadClt);
     mkConnection(fakeXdmaA.xdmaC2hSrv, topA.dmaWriteClt);
@@ -89,13 +92,13 @@ module mkTestTop(Empty);
 
     // connect rx and tx to MockHost
 
-    SyncFIFOIfc#(AxiStream512) netIfcRxSyncFifo <- mkSyncFIFO(2, slowClock, slowReset, fastClock);
-    mkConnection(fakeXdmaA.axiStreamRxUdp, toPut(netIfcRxSyncFifo), clocked_by slowClock, reset_by slowReset);
+    SyncFIFOIfc#(AxiStream512) netIfcRxSyncFifo <- mkSyncFIFO(32, cmacRxTxClk, cmacRxTxRst, fastClock);
+    mkConnection(fakeXdmaA.axiStreamRxUdp, toPut(netIfcRxSyncFifo), clocked_by cmacRxTxClk, reset_by cmacRxTxRst);
     mkConnection(toGet(netIfcRxSyncFifo), topA.axiStreamRxInUdp);
 
-    SyncFIFOIfc#(AxiStream512) netIfcTxSyncFifo <- mkSyncFIFO(2, fastClock, fastReset, slowClock);
+    SyncFIFOIfc#(AxiStream512) netIfcTxSyncFifo <- mkSyncFIFO(32, fastClock, fastReset, cmacRxTxClk);
     mkConnection(toGet(topA.axiStreamTxOutUdp), toPut(netIfcTxSyncFifo));
-    mkConnection(convertSyncFifoToFifoOut(netIfcTxSyncFifo), fakeXdmaA.axiStreamTxUdp, clocked_by slowClock, reset_by slowReset); 
+    mkConnection(convertSyncFifoToFifoOut(netIfcTxSyncFifo), fakeXdmaA.axiStreamTxUdp, clocked_by cmacRxTxClk, reset_by cmacRxTxRst); 
 
 
     rule forwardBarReadReq;

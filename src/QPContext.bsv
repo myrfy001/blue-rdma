@@ -19,8 +19,8 @@ endinterface
 
 (* synthesize *)
 module mkQPContext(QPContext);
-    BypassServer#(ReadReqCommonQPC, Maybe#(EntryCommonQPC)) readCommonSrvInst <- mkBypassServer;
-    BypassServer#(WriteReqCommonQPC, Bool) writeCommonSrvInst <- mkBypassServer;
+    BypassServer#(ReadReqCommonQPC, Maybe#(EntryCommonQPC)) readCommonSrvInst <- mkBypassServer("readCommonSrvInst");
+    BypassServer#(WriteReqCommonQPC, Bool) writeCommonSrvInst <- mkBypassServer("writeCommonSrvInst");
 
     BRAM_Configure cfg = defaultValue;
     // Both read address and read output are registered

@@ -121,7 +121,7 @@ class BluesimRpcServer:
 
         while not self.stop_flag:
             client_socket, client_address = server_socket.accept()
-            client_socket.settimeout(0.1)
+            client_socket.settimeout(1.5)
             print('Client connected:', client_address)
 
             while not self.stop_flag:
@@ -229,8 +229,12 @@ class NetworkDataAgent:
             return None
 
 
+# rx_packet_wait_time can be used to mimic line-rate receive, the MockHost will block simulator and wait
+# up to rx_packet_wait_time seconds. This is because tx simulator may run slower than rx simulator, so from
+# rx simulator's point of view, the packet received from network interface is non-continous. if we try to
+# block rx simulator, then it may see continous input packet data at every clock-cycle
 class MockNicAndHost:
-    def __init__(self, main_memory: MockHostMem, host=HOST, port=PORT) -> None:
+    def __init__(self, main_memory: MockHostMem, host=HOST, port=PORT, rx_packet_wait_time=0) -> None:
         self.main_memory = main_memory
         self.bluesim_rpc_server = BluesimRpcServer(host, port)
         self.bluesim_rpc_server.register_opcode(
@@ -264,6 +268,7 @@ class MockNicAndHost:
         self.pending_network_packet_rx = []
 
         self.pcie_tlp_read_tag_counter = 0
+        self.rx_packet_wait_time = rx_packet_wait_time
 
     def run(self):
         self.bluesim_rpc_server.run()
@@ -336,11 +341,19 @@ class MockNicAndHost:
 
     def rpc_handler_net_ifc_get_rx_req(self, client_socket, raw_req_buf):
         req = CStructRpcNetIfcRxTxMessage.from_buffer_copy(raw_req_buf)
+        print("rx Q len=", len(self.pending_network_packet_rx))
+
+        if self.rx_packet_wait_time > 0:
+            start_time = time.time()
+            while (not self.pending_network_packet_rx and time.time()-start_time < self.rx_packet_wait_time):
+                pass
+
         if self.pending_network_packet_rx:
             req_payload = self.pending_network_packet_rx.pop(0)
             req.payload = req_payload
         else:
             req.payload.is_valid = 0
+
         client_socket.send(bytes(req))
 
     def rpc_handler_net_ifc_put_tx_req(self, client_socket, raw_req_buf):
@@ -380,6 +393,7 @@ class MockNicAndHost:
 
     def get_net_ifc_tx_data_from_nic_blocking(self):
         self.pending_network_packet_tx_sema.acquire()
+        print("tx Q len=", len(self.pending_network_packet_tx))
         return self.pending_network_packet_tx.pop(0)
 
     def put_net_ifc_rx_data_to_nic(self, frag):
@@ -456,6 +470,8 @@ RECE_SIDE_MAC = 0xAABBCCDDEEFF
 RECV_SIDE_QPN = 0x6611
 SEND_SIDE_PSN = 0x22
 
+SEND_BYTE_COUNT = 1024*32
+
 
 def test_case():
     host_mem = MockHostMem("/bluesim1", TOTAL_MEMORY_SIZE)
@@ -522,7 +538,7 @@ def test_case():
         SendQueueReqDescFragSGE(
             F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR+2),
         SendQueueReqDescFragSGE(
-            F_LKEY=SEND_SIDE_KEY, F_LEN=256, F_LADDR=REQ_SIDE_VA_ADDR+3),
+            F_LKEY=SEND_SIDE_KEY, F_LEN=SEND_BYTE_COUNT-3, F_LADDR=REQ_SIDE_VA_ADDR+3),
     ]
     send_queue.put_work_request(
         opcode=WorkReqOpCode.IBV_WR_RDMA_WRITE,
@@ -535,10 +551,11 @@ def test_case():
         r_mac=RECE_SIDE_MAC,
         dqpn=RECV_SIDE_QPN,
         psn=SEND_SIDE_PSN,
+        pmtu=PMTU_VALUE_FOR_TEST,
     )
 
     # prepare send data
-    for i in range(3+2):
+    for i in range(SEND_BYTE_COUNT):
         mock_nic.main_memory.buf[REQ_SIDE_VA_ADDR+i] = (0xBB + i) & 0xFF
         mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR+i] = 0
 
@@ -546,8 +563,10 @@ def test_case():
     for _ in range(2):
         meta_report_queue.deq_blocking()
 
-    src_mem = mock_nic.main_memory.buf[REQ_SIDE_VA_ADDR: REQ_SIDE_VA_ADDR+256]
-    dst_mem = mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR: RESP_SIDE_VA_ADDR+256]
+    src_mem = mock_nic.main_memory.buf[REQ_SIDE_VA_ADDR:
+                                       REQ_SIDE_VA_ADDR+SEND_BYTE_COUNT]
+    dst_mem = mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR:
+                                       RESP_SIDE_VA_ADDR+SEND_BYTE_COUNT]
 
     if src_mem != dst_mem:
         print("Error: DMA Target mem is not the same as source mem")

@@ -1,5 +1,6 @@
 import BuildVector :: *;
 import ClientServer :: *;
+import Connectable :: *;
 import FIFOF :: *;
 import GetPut :: *;
 import PAClib :: *;
@@ -7,6 +8,150 @@ import Vector :: *;
 
 import PrimUtils :: *;
 import RdmaUtils :: *;
+
+import Arbiter :: * ;
+
+
+
+module mkClientArbiter#(
+    String name,
+    Vector#(portSz, Client#(reqType, respType)) clientVec,
+    function Bool isReqFinished(reqType request),
+    function Bool isRespFinished(respType response)
+)(Client#(reqType, respType)) provisos(
+    // FShow#(reqType), FShow#(respType),
+    Bits#(reqType, reqSz),
+    Bits#(respType, respSz),
+    Add#(1, anysize, portSz)
+);
+
+    Arbiter_IFC#(portSz) arbiter <- mkArbiter(False);
+
+    Vector#(portSz, Reg#(Bool)) hasBeenGrantedRegVec <- replicateM(mkReg(False));
+    Vector#(portSz, FIFOF#(reqType)) clientReqFifoVec <- replicateM(mkFIFOF);
+    // Vector#(portSz, FIFOF#(respType)) clientRespFifoVec <- replicateM(mkFIFOF);
+
+    // A trick here. This fifo's size must be small, and it should be smaller than portSz, or it will
+    // queue too many granted requests ahead of time (mkArbiter will do arbit every clock cycle)
+    FIFOF#(Bit#(TLog#(portSz))) grantReqKeepOrderQ <- mkFIFOF;
+    // This Fifo can be larger since receive response may take some time and there can be many outstanding requests.
+    FIFOF#(Bit#(TLog#(portSz))) grantRespKeepOrderQ <- mkSizedFIFOF(10);
+
+    FIFOF#(reqType)   reqQ <- mkFIFOF;
+    FIFOF#(respType) respQ <- mkFIFOF;
+
+    // convert input Get interface to a FIFOF since we need full/empty signal
+    for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin
+        mkConnection(clientVec[idx].request, toPut(clientReqFifoVec[idx]));
+    end
+
+
+    rule recvArbitResp;
+
+        Vector#(portSz, Bool) arbiterRespVec;
+        for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin
+            arbiterRespVec[idx] = arbiter.clients[idx].grant;
+        end
+        if (pack(arbiterRespVec) != 0) begin
+            let idx = arbiter.grant_id;
+            hasBeenGrantedRegVec[idx] <= True;
+            grantReqKeepOrderQ.enq(idx);
+            grantRespKeepOrderQ.enq(idx);
+
+            $display(
+                "time=%0t, ", $time,
+                fshow(name),
+                " grant new request, client idx=%0d", idx
+            );
+        end
+
+    endrule
+
+    // compiler thinks conflict occur at hasBeenGrantedRegVec
+    (* conflict_free = "recvArbitResp, forwardRequest" *)
+    rule forwardRequest;
+        let idx = grantReqKeepOrderQ.first;
+        clientReqFifoVec[idx].deq;
+        let req = clientReqFifoVec[idx].first;
+        reqQ.enq(req);
+
+        let reqFinished = isReqFinished(req);
+        if (reqFinished) begin
+            hasBeenGrantedRegVec[idx] <= False;
+            grantReqKeepOrderQ.deq;
+        end
+
+        $display(
+            "time=%0t, ", $time,
+            fshow(name),
+            " arbitrate request, reqIdx=%0d", idx,
+            ", reqFinished=", fshow(reqFinished)
+        );
+    endrule
+
+    for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin
+        rule sendArbitReq if (grantReqKeepOrderQ.notFull);
+            if (clientReqFifoVec[idx].notEmpty && !hasBeenGrantedRegVec[idx]) begin
+                arbiter.clients[idx].request;
+            end
+        endrule
+
+        
+
+        rule forwardResponse if (grantRespKeepOrderQ.first == fromInteger(idx));
+            let resp = respQ.first;
+            respQ.deq;
+            clientVec[idx].response.put(resp);
+            let respFinished = isRespFinished(resp);
+            if (respFinished) begin
+                grantRespKeepOrderQ.deq;
+            end
+
+            $display(
+                "time=%0t, ", $time,
+                fshow(name),
+                " dispatch response, idx=%0d", idx,
+                ", respFinished=", fshow(respFinished)
+            );
+        endrule
+    end
+
+
+
+
+
+    // rule debug;
+    //     if (!reqQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
+    //     end
+    //     if (!respQ.notFull) begin
+    //         $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
+    //     end
+
+    //     if (!reqQ.notEmpty) begin
+    //         $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
+    //     end
+    //     if (!respQ.notEmpty) begin
+    //         $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
+    //     end
+
+    //     for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin
+
+    //         if (!clientReqFifoVec[idx].notFull) begin
+    //             $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " clientReqFifoVec[%0d]", idx);
+    //         end
+
+    //         if (!clientReqFifoVec[idx].notEmpty) begin
+    //             $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " clientReqFifoVec[%0d]", idx);
+    //         end
+            
+    //     end
+    // endrule
+
+
+    return toGPClient(reqQ, respQ);
+endmodule
+
 
 module mkServerArbiter#(
     Server#(reqType, respType) srv,
@@ -87,89 +232,114 @@ module mkServerArbiter#(
     return resultSrvVec;
 endmodule
 
-module mkClientArbiter#(
-    Vector#(portSz, Client#(reqType, respType)) clientVec,
-    function Bool isReqFinished(reqType request),
-    function Bool isRespFinished(respType response)
-)(Client#(reqType, respType)) provisos(
-    // FShow#(reqType), FShow#(respType),
-    Bits#(reqType, reqSz),
-    Bits#(respType, respSz),
-    Add#(1, anysize, portSz),
-    Add#(TLog#(portSz), 1, TLog#(TAdd#(1, portSz))) // portSz must be power of 2
-);
-    FIFOF#(reqType)   reqQ <- mkFIFOF;
-    FIFOF#(respType) respQ <- mkFIFOF;
+// module mkClientArbiter#(
+//     String name,
+//     Vector#(portSz, Client#(reqType, respType)) clientVec,
+//     function Bool isReqFinished(reqType request),
+//     function Bool isRespFinished(respType response)
+// )(Client#(reqType, respType)) provisos(
+//     // FShow#(reqType), FShow#(respType),
+//     Bits#(reqType, reqSz),
+//     Bits#(respType, respSz),
+//     Add#(1, anysize, portSz),
+//     Add#(TLog#(portSz), 1, TLog#(TAdd#(1, portSz))) // portSz must be power of 2
+// );
+//     FIFOF#(reqType)   reqQ <- mkFIFOF;
+//     FIFOF#(respType) respQ <- mkFIFOF;
 
-    function Bool isPipePayloadFinished(Tuple2#(Bit#(TLog#(portSz)), reqType) reqWithIdx);
-        let { reqIdx, inputReq } = reqWithIdx;
-        return isReqFinished(inputReq);
-    endfunction
+//     rule debug;
+//         if (!reqQ.notFull) begin
+//             $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
+//         end
+//         if (!respQ.notFull) begin
+//             $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
+//         end
 
-    Vector#(
-        portSz, FIFOF#(Tuple2#(Bit#(TLog#(portSz)), reqType))
-    ) inputReqWithIdxVec <- replicateM(mkFIFOF);
-    FIFOF#(Bit#(TLog#(portSz)))  preGrantIdxQ <- mkFIFOF;
-    Reg#(Bool) shouldSaveGrantIdxReg <- mkReg(True);
+//         if (!reqQ.notEmpty) begin
+//             $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
+//         end
+//         if (!respQ.notEmpty) begin
+//             $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
+//         end
+//     endrule
 
-    let leafArbiterVec <- mkLeafBinaryPipeOutArbiterVec(
-        map(toPipeOut, inputReqWithIdxVec),
-        isPipePayloadFinished
-    );
-    let finalReqWithIdxPipeOut <- mkBinaryPipeOutArbiterTree(
-        leafArbiterVec, isPipePayloadFinished
-    );
+//     function Bool isPipePayloadFinished(Tuple2#(Bit#(TLog#(portSz)), reqType) reqWithIdx);
+//         let { reqIdx, inputReq } = reqWithIdx;
+//         return isReqFinished(inputReq);
+//     endfunction
 
-    for (Integer idx = 0; idx < valueOf(portSz); idx = idx + 1) begin
-        rule extractReq;
-            let req <- clientVec[idx].request.get;
-            inputReqWithIdxVec[idx].enq(tuple2(fromInteger(idx), req));
+//     Vector#(
+//         portSz, FIFOF#(Tuple2#(Bit#(TLog#(portSz)), reqType))
+//     ) inputReqWithIdxVec <- replicateM(mkFIFOF);
+//     FIFOF#(Bit#(TLog#(portSz)))  preGrantIdxQ <- mkFIFOF;
+//     Reg#(Bool) shouldSaveGrantIdxReg <- mkReg(True);
 
-            // $display(
-            //     "time=%0t:", $time,
-            //     " extract request, client idx=%0d", idx
-            // );
-        endrule
-    end
+//     let leafArbiterVec <- mkLeafBinaryPipeOutArbiterVec(
+//         map(toPipeOut, inputReqWithIdxVec),
+//         isPipePayloadFinished
+//     );
+//     let finalReqWithIdxPipeOut <- mkBinaryPipeOutArbiterTree(
+//         leafArbiterVec, isPipePayloadFinished
+//     );
 
-    rule issueArbitratedReq;
-        let { reqIdx, inputReq } = finalReqWithIdxPipeOut.first;
-        finalReqWithIdxPipeOut.deq;
-        reqQ.enq(inputReq);
+//     for (Integer idx = 0; idx < valueOf(portSz); idx = idx + 1) begin
+//         rule debug1;
+//             if (!inputReqWithIdxVec[idx].notFull) begin
+//                 $display("time=%0t, ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " inputReqWithIdxVec[%d]", idx);
+//             end
+//         endrule
+//         rule extractReq;
+//             let req <- clientVec[idx].request.get;
+//             inputReqWithIdxVec[idx].enq(tuple2(fromInteger(idx), req));
 
-        if (shouldSaveGrantIdxReg) begin
-            preGrantIdxQ.enq(reqIdx);
-        end
-        let reqFinished = isReqFinished(inputReq);
-        shouldSaveGrantIdxReg <= reqFinished;
+//             $display(
+//                 "time=%0t:", $time,
+//                 fshow(name),
+//                 " extract request, client idx=%0d", idx
+//             );
+//         endrule
+//     end
 
-        // $display(
-        //     "time=%0t:", $time,
-        //     " arbitrate request, reqIdx=%0d", reqIdx,
-        //     ", reqFinished=", fshow(reqFinished)
-        // );
-    endrule
+//     rule issueArbitratedReq;
+//         let { reqIdx, inputReq } = finalReqWithIdxPipeOut.first;
+//         finalReqWithIdxPipeOut.deq;
+//         reqQ.enq(inputReq);
 
-    rule dispatchResponse;
-        let preGrantIdx = preGrantIdxQ.first;
-        let resp = respQ.first;
-        respQ.deq;
+//         if (shouldSaveGrantIdxReg) begin
+//             preGrantIdxQ.enq(reqIdx);
+//         end
+//         let reqFinished = isReqFinished(inputReq);
+//         shouldSaveGrantIdxReg <= reqFinished;
 
-        let respFinished = isRespFinished(resp);
-        clientVec[preGrantIdx].response.put(resp);
-        if (respFinished) begin
-            preGrantIdxQ.deq;
-        end
+//         $display(
+//             "time=%0t:", $time,
+//             fshow(name),
+//             " arbitrate request, reqIdx=%0d", reqIdx,
+//             ", reqFinished=", fshow(reqFinished)
+//         );
+//     endrule
 
-        // $display(
-        //     "time=%0t:", $time,
-        //     " dispatch response, preGrantIdx=%0d", preGrantIdx,
-        //     ", respFinished=", fshow(respFinished)
-        // );
-    endrule
+//     rule dispatchResponse;
+//         let preGrantIdx = preGrantIdxQ.first;
+//         let resp = respQ.first;
+//         respQ.deq;
 
-    return toGPClient(reqQ, respQ);
-endmodule
+//         let respFinished = isRespFinished(resp);
+//         clientVec[preGrantIdx].response.put(resp);
+//         if (respFinished) begin
+//             preGrantIdxQ.deq;
+//         end
+
+//         $display(
+//             "time=%0t:", $time,
+//             fshow(name),
+//             " dispatch response, preGrantIdx=%0d", preGrantIdx,
+//             ", respFinished=", fshow(respFinished)
+//         );
+//     endrule
+
+//     return toGPClient(reqQ, respQ);
+// endmodule
 
 function Bit#(nSz) arbitrateBits(
     Bit#(nSz) priorityBits, Bit#(nSz) requestBits

@@ -41,6 +41,8 @@ import RegisterBlock :: *;
 import CmdQueue :: *;
 import WorkQueueRingbuf :: *;
 
+// import SimDma :: *;
+
 typedef 4791 TEST_UDP_PORT;
 typedef 32 CMAC_SYNC_BRAM_BUF_DEPTH;
 typedef 4 CMAC_CDC_SYNC_STAGE;
@@ -168,16 +170,31 @@ module mkRqWrapper(RqWrapper);
 
     mkConnection(headerAndMetaDataAndPayloadPipeOut.rdmaPktPipeIn, toGet(inputDataStreamQ));
 
-    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData), inputRdmaPktBufAndHeaderValidation.headerMetaDataPipeIn);
-    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream), inputRdmaPktBufAndHeaderValidation.headerDataStreamPipeIn);
-    mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragMetaPipeOut), inputRdmaPktBufAndHeaderValidation.payloadStreamFragMetaPipeIn);
-    mkConnection(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragStorageInsertClt, recvStreamFragStorage.insertFragSrv);
+    // mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData), inputRdmaPktBufAndHeaderValidation.headerMetaDataPipeIn);
+    // mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream), inputRdmaPktBufAndHeaderValidation.headerDataStreamPipeIn);
+    // mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragMetaPipeOut), inputRdmaPktBufAndHeaderValidation.payloadStreamFragMetaPipeIn);
+    // mkConnection(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragStorageInsertClt, recvStreamFragStorage.insertFragSrv);
 
-    // rule dropData;
-    //     if headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData.notEmpty) begin
-    //         headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData.deq;
-    //     end
-    // endrule
+    rule debugDropData;
+        if (headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData.notEmpty) begin
+            headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData.deq;
+            $display("time=%0t", $time, "headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData.deq");
+        end
+        if (headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream.notEmpty) begin
+            headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream.deq;
+            $display("time=%0t", $time, "headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream.deq");
+        end
+        if (headerAndMetaDataAndPayloadPipeOut.payloadStreamFragMetaPipeOut.notEmpty) begin
+            headerAndMetaDataAndPayloadPipeOut.payloadStreamFragMetaPipeOut.deq;
+            $display("time=%0t", $time, "headerAndMetaDataAndPayloadPipeOut.payloadStreamFragMetaPipeOut.deq");
+        end
+    endrule
+
+    rule debugDropFragStorageAndGenFakeResp;
+        let _ <- headerAndMetaDataAndPayloadPipeOut.payloadStreamFragStorageInsertClt.request.get;
+        headerAndMetaDataAndPayloadPipeOut.payloadStreamFragStorageInsertClt.response.put(unpack(0));
+        $display("time=%0t", $time, "headerAndMetaDataAndPayloadPipeOut.payloadStreamFragStorageInsertClt.request.get");
+    endrule
 
     mkConnection(inputRdmaPktBufAndHeaderValidation.qpcReadCommonClt, qpc.readCommonSrv);
     mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.pktMetaData), rq.pktMetaDataPipeIn);
@@ -237,14 +254,14 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     Vector#(2, MrTableQueryClt)  mrTableQueryCltVec = newVector;
     mrTableQueryCltVec[0] = rq.mrTableQueryClt;
     mrTableQueryCltVec[1] = addrTranslatorForSQ.mrTableClt;
-    let mrTableQueryArbitClt <- mkClientArbiter(mrTableQueryCltVec, alwaysTrue, alwaysTrue);
+    let mrTableQueryArbitClt <- mkClientArbiter("mrTableQueryArbitClt", mrTableQueryCltVec, alwaysTrue, alwaysTrue);
     mkConnection(mrTable.querySrv, mrTableQueryArbitClt);
 
     TLB tlb <- mkTLB;
     Vector#(2, PgtQueryClt)  tlbQueryCltVec = newVector;
     tlbQueryCltVec[0] = rq.pgtQueryClt;
     tlbQueryCltVec[1] = addrTranslatorForSQ.addrTransClt;
-    let tlbQueryArbitClt <- mkClientArbiter(tlbQueryCltVec, alwaysTrue, alwaysTrue);
+    let tlbQueryArbitClt <- mkClientArbiter("tlbQueryArbitClt", tlbQueryCltVec, alwaysTrue, alwaysTrue);
     mkConnection(tlb.translateSrv, tlbQueryArbitClt);
 
     MrAndPgtManager mrAndPgtManager <- mkMrAndPgtManager;
@@ -267,6 +284,27 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     Vector#(4, UserLogicDmaReadClt)  dmaAccessH2cCltVec = newVector;
     Vector#(2, UserLogicDmaWriteClt) dmaAccessC2hCltVec = newVector;
 
+    // let mockDma <- mkSimDmaReadSrv;
+    // rule forwardDmaReq;
+    //     let req1 <- addrTranslatorForSQ.sqReqOutputClt.request.get;
+    //     mockDma.request.put(DmaReadReq {
+    //         initiator:?,
+    //         sqpn:?,
+    //         wrID:?,
+    //         startAddr: req1.addr,
+    //         len: unpack(truncate(pack(req1.len))),
+    //         mrIdx:?
+    //     });
+    // endrule
+
+    // rule forwardDmaResp;
+    //     let resp1 <- mockDma.response.get;
+    //     addrTranslatorForSQ.sqReqOutputClt.response.put(UserLogicDmaH2cResp {
+    //         dataStream: resp1.dataStream
+    //     });
+    // endrule
+
+    // dmaAccessH2cCltVec[0] <- mkFakeClient;
     dmaAccessH2cCltVec[0] = addrTranslatorForSQ.sqReqOutputClt;
     dmaAccessH2cCltVec[1] = ringbufPool.dmaAccessH2cClt;
     dmaAccessH2cCltVec[2] = mrAndPgtManager.pgtDmaReadClt;
@@ -275,8 +313,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     dmaAccessC2hCltVec[0] = rq.dmaWriteClt;
     dmaAccessC2hCltVec[1] = ringbufPool.dmaAccessC2hClt;
 
-    UserLogicDmaReadClt xdmaReadClt <- mkClientArbiter(dmaAccessH2cCltVec, isH2cDmaReqFinished, isH2cDmaRespFinished);
-    UserLogicDmaWriteClt xdmaWriteClt <- mkClientArbiter(dmaAccessC2hCltVec, isC2hDmaReqFinished, isC2hDmaRespFinished);
+    UserLogicDmaReadClt xdmaReadClt <- mkClientArbiter("xdmaReadClt", dmaAccessH2cCltVec, isH2cDmaReqFinished, isH2cDmaRespFinished);
+    UserLogicDmaWriteClt xdmaWriteClt <- mkClientArbiter("xdmaWriteClt", dmaAccessC2hCltVec, isC2hDmaReqFinished, isC2hDmaRespFinished);
 
     XdmaGearbox xdmaGearbox <- mkXdmaGearbox(slowClock, slowReset);
 
@@ -294,6 +332,13 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     Reg#(Bool)  udpParamNotSetReg <- mkReg(True);
 
+    rule debug;
+        if (!sq.sendQ.rdmaDataStreamPipeOut.notEmpty) begin
+            $display("time=%0t, ", $time, "EMPTY_QUEUE_DETECTED: sq.sendQ.rdmaDataStreamPipeOut");
+        end
+        
+    endrule
+
     rule setInitParamUDP if (udpParamNotSetReg);
         udp.udpConfig.put(UdpConfig{
             macAddr: 'hAABBCCDDEEFF,
@@ -308,12 +353,12 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
         sq.sendQ.rdmaDataStreamPipeOut.deq;
         let data = sq.sendQ.rdmaDataStreamPipeOut.first;
         $display("time=%0t, ", $time,"rdma put data to udp = ", fshow(data));
-        udp.dataStreamTxIn.put(Ports::DataStream{
-            data: swapEndian(data.data),
-            byteEn: swapEndianBit(data.byteEn),
-            isFirst:    data.isFirst,
-            isLast:     data.isLast
-        });
+        // udp.dataStreamTxIn.put(Ports::DataStream{
+        //     data: swapEndian(data.data),
+        //     byteEn: swapEndianBit(data.byteEn),
+        //     isFirst:    data.isFirst,
+        //     isLast:     data.isLast
+        // });
     endrule
 
     rule forwardTxMeta;
@@ -321,31 +366,31 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
         let meta = sq.sendQ.udpInfoPipeOut.first;
         $display("time=%0t, ", $time,"rdma_out_meta = ", fshow(meta));
 
-        IpAddr dstIP = unpack(0);
+        // IpAddr dstIP = unpack(0);
 
-        if (meta.ipAddr matches tagged IPv4 .ipv4) begin
-            dstIP = unpack(pack(ipv4));
-        end 
-        else begin
-            $display("Error: Dest IP addr is not IPv4");
-            $finish;
-        end
+        // if (meta.ipAddr matches tagged IPv4 .ipv4) begin
+        //     dstIP = unpack(pack(ipv4));
+        // end 
+        // else begin
+        //     $display("Error: Dest IP addr is not IPv4");
+        //     $finish;
+        // end
 
-        udp.udpIpMetaDataTxIn.put(UdpIpMetaData{
-            dataLen: zeroExtend(meta.pktLen),
-            ipAddr:  dstIP,
-            ipDscp:  0,
-            ipEcn:   0,
-            dstPort: fromInteger(valueOf(TEST_UDP_PORT)),
-            srcPort: fromInteger(valueOf(TEST_UDP_PORT))
-        });
-        udp.macMetaDataTxIn.put(MacMetaDataWithBypassTag{
-            macMetaData: MacMetaData{
-                macAddr: unpack(pack(meta.macAddr)),
-                ethType: fromInteger(valueOf(ETH_TYPE_IP))
-            },
-            isBypass: meta.isRawPkt
-        });
+        // udp.udpIpMetaDataTxIn.put(UdpIpMetaData{
+        //     dataLen: zeroExtend(meta.pktLen),
+        //     ipAddr:  dstIP,
+        //     ipDscp:  0,
+        //     ipEcn:   0,
+        //     dstPort: fromInteger(valueOf(TEST_UDP_PORT)),
+        //     srcPort: fromInteger(valueOf(TEST_UDP_PORT))
+        // });
+        // udp.macMetaDataTxIn.put(MacMetaDataWithBypassTag{
+        //     macMetaData: MacMetaData{
+        //         macAddr: unpack(pack(meta.macAddr)),
+        //         ethType: fromInteger(valueOf(ETH_TYPE_IP))
+        //     },
+        //     isBypass: meta.isRawPkt
+        // });
 
     endrule
 
@@ -372,7 +417,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isFirst: data.isFirst
             };
             rq.inputDataStream.put(outData);
-            $display("time=%0t, ", $time,"udp put to sq = ", fshow(outData));
+            $display("time=%0t, ", $time,"udp put to rq = ", fshow(outData));
         end
     endrule
 
