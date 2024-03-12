@@ -55,22 +55,30 @@ module mkClientArbiter#(
     rule forwardRequest;
         let idx = grantReqKeepOrderQ.first;
         
-        let req = fromMaybe(?, lookAheadReqRegVec[idx][0]);
-        reqQ.enq(req);
+        if (lookAheadReqRegVec[idx][0] matches tagged Valid .req) begin
+            reqQ.enq(req);
 
-        let reqFinished = isReqFinished(req);
-        if (reqFinished) begin
-            canSubmitArbitReqInCurrentBeat[0] <= True;
+            let reqFinished = isReqFinished(req);
+            if (reqFinished) begin
+                canSubmitArbitReqInCurrentBeat[0] <= True;
+                grantReqKeepOrderQ.deq;
+            end
             lookAheadReqRegVec[idx][0] <= tagged Invalid;
-            grantReqKeepOrderQ.deq;
-        end
 
-        $display(
-            "time=%0t: ", $time,
-            fshow(name),
-            " arbitrate request, reqIdx=%0d", idx,
-            ", reqFinished=", fshow(reqFinished)
-        );
+            $display(
+                "time=%0t: ", $time,
+                fshow(name),
+                " arbitrate request, reqIdx=%0d", idx,
+                ", reqFinished=", fshow(reqFinished)
+            );
+        end
+        else begin
+            $display(
+                "time=%0t: ", $time,
+                fshow(name),
+                " buble in arbiter, reqIdx=%0d", idx
+            );
+        end
     endrule
 
     rule shiftToLookAheadRegs;
