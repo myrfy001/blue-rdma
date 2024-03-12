@@ -224,13 +224,17 @@ module mkMockHost #( BRAM_Configure cfg, Clock cmacRxTxClk, Reset cmacRxTxRst) (
 				tData: rawReq.data,
 				tUser: 0
 			};
-			if (udpAxiRxQ.notFull) begin
-				udpAxiRxQ.enq(req);
-				$display("time=%0t: ", $time, "net ifc recv data=", fshow(req));
-			end 
-			else begin
-				$display("time=%0t: ", $time, "net ifc recv data BUT DISCARD SINCE QUEUE FULL");
-			end
+
+			udpAxiRxQ.enq(req);
+			$display("time=%0t: ", $time, "net ifc recv data=", fshow(req));
+
+			// if (udpAxiRxQ.notFull) begin
+			// 	udpAxiRxQ.enq(req);
+			// 	$display("time=%0t: ", $time, "net ifc recv data=", fshow(req));
+			// end 
+			// else begin
+			// 	$display("time=%0t: ", $time, "net ifc recv data BUT DISCARD SINCE QUEUE FULL");
+			// end
 		end
 	endrule
 

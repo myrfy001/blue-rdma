@@ -258,74 +258,6 @@ endmodule
 
 
 
-interface StreamReqProxy#(type t_in_req, type t_in_resp, type t_out_req, type t_out_resp);
-    interface Server#(t_in_req, t_in_resp) inSrv;
-    interface Client#(t_out_req, t_out_resp) outClt;
-endinterface
-
-module mkStreamReqProxy(
-        function Tuple2#(t_out_req, Maybe#(t_custom)) reqTransFn(t_in_req req),
-        function Tuple2#(t_in_resp, Bool) respTransFn(t_out_resp resp, t_custom customData),
-        StreamReqProxy#(t_in_req, t_in_resp, t_out_req, t_out_resp) ifc
-    ) provisos (
-        Bits#(t_in_req, sz_in_req),
-        Bits#(t_in_resp, sz_in_resp),
-        Bits#(t_out_req, sz_out_req),
-        Bits#(t_out_resp, sz_out_resp),
-        Bits#(t_custom, sz_custom),
-        FShow#(t_in_req),FShow#(t_in_resp),FShow#(t_out_req),FShow#(t_out_resp), FShow#(t_custom)
-    );
-
-    FIFOF#(t_in_req) inReqQ <- mkFIFOF;
-    FIFOF#(t_in_resp) inRespQ <- mkFIFOF;
-    FIFOF#(t_out_req) outReqQ <- mkFIFOF;
-    FIFOF#(t_out_resp) outRespQ <- mkFIFOF;
-    FIFOF#(t_custom) customDataQ <- mkFIFOF;
-
-    // rule debug;
-    //     if (!inReqQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy inReqQ");
-    //     end
-    //     if (!inRespQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy inRespQ");
-    //     end
-    //     if (!outReqQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy outReqQ");
-    //     end
-    //     if (!outRespQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy outRespQ");
-    //     end
-    //     if (!customDataQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkStreamReqProxy customDataQ");
-    //     end
-    // endrule
-
-    rule forwardReq;
-        inReqQ.deq;
-        let inReq = inReqQ.first;
-        let {outReq, customData} = reqTransFn(inReq);
-        if (customData matches tagged Valid .cdata) begin
-            customDataQ.enq(cdata);
-        end
-        outReqQ.enq(outReq);
-        // $display("==========>>,", fshow(outReq), fshow(customData));
-    endrule
-
-    rule forwardResp;
-        outRespQ.deq;
-        let outResp = outRespQ.first;
-        let customData = customDataQ.first;
-        let {inResp, dropCustomData} = respTransFn(outResp, customData);
-        if (dropCustomData) begin
-            customDataQ.deq;
-        end
-        inRespQ.enq(inResp);
-    endrule
-
-    interface inSrv = toGPServer(inReqQ, inRespQ);
-    interface outClt = toGPClient(outReqQ, outRespQ);
-
-endmodule
 
 
 interface XdmaAxiLiteBridgeWrapper#(type t_csr_addr, type t_csr_data);
@@ -415,72 +347,41 @@ typedef struct {
 
 
 interface BluerdmaDmaProxyForRQ;
-    interface Server#(DmaReadReqNew, DmaReadRespNew) blueSideReadSrv;
     interface Server#(DmaWriteReqNew, DmaWriteRespNew) blueSideWriteSrv;
-    interface UserLogicDmaReadClt userlogicSideReadClt;
     interface UserLogicDmaWriteClt userlogicSideWriteClt;
 endinterface
 
 (* synthesize *)
 module mkBluerdmaDmaProxyForRQ(BluerdmaDmaProxyForRQ);
 
-    function Tuple2#(UserLogicDmaH2cReq, Maybe#(UserLogicBluerdmaDmaProxyCustomDataH2c)) reqTransFnH2c(DmaReadReqNew req);
-        return tuple2(
-            UserLogicDmaH2cReq{
-                addr: req.startAddr,
-                len: zeroExtend(pack(req.len))
-            },
-            tagged Valid unpack(0)
-        );
-    endfunction
+    FIFOF#(DmaWriteReqNew) blueSideReqQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hReq) userLogicSideReqQ <- mkFIFOF;
+    FIFOF#(DmaWriteRespNew) blueSideRespQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hResp) userLogicSideRespQ <- mkFIFOF;
 
-    function Tuple2#(DmaReadRespNew, Bool) respTransFnH2c(UserLogicDmaH2cResp resp, UserLogicBluerdmaDmaProxyCustomDataH2c customData);
-        return tuple2(
-            DmaReadRespNew{
-                initiator: ?,
-                sqpn: ?,
-                isRespErr: False,
-                dataStream: reverseStream(resp.dataStream)
-            },
-            resp.dataStream.isLast
-        );
-    endfunction 
-
-
-    function Tuple2#(UserLogicDmaC2hReq, Maybe#(UserLogicBluerdmaDmaProxyCustomDataC2h)) reqTransFnC2h(DmaWriteReqNew req);
-        
-        return tuple2(
+    rule forwardReq;
+        blueSideReqQ.deq;
+        let inReq = blueSideReqQ.first;
+        userLogicSideReqQ.enq(
             UserLogicDmaC2hReq{
-                addr: req.metaData.startAddr,
-                len: zeroExtend(pack(req.metaData.len)),
-                dataStream: reverseStream(req.dataStream)
-            },
-            req.dataStream.isFirst ? tagged Valid unpack(0) : tagged Invalid
+                addr: inReq.metaData.startAddr,
+                len: zeroExtend(pack(inReq.metaData.len)),
+                dataStream: reverseStream(inReq.dataStream)
+            }
         );
-    endfunction
+    endrule
 
-    function Tuple2#(DmaWriteRespNew, Bool) respTransFnC2h(UserLogicDmaC2hResp resp, UserLogicBluerdmaDmaProxyCustomDataC2h customData);
-        return tuple2(
+    rule forwardResp;
+        userLogicSideRespQ.deq;
+        blueSideRespQ.enq(
             DmaWriteRespNew{
                 isRespErr: False
-            },
-            True
+            }
         );
-    endfunction 
+    endrule
 
-    StreamReqProxy#(
-        DmaReadReqNew, DmaReadRespNew, UserLogicDmaH2cReq, UserLogicDmaH2cResp
-    ) h2cProxy <- mkStreamReqProxy(reqTransFnH2c, respTransFnH2c);
-
-    StreamReqProxy#(
-        DmaWriteReqNew, DmaWriteRespNew, UserLogicDmaC2hReq, UserLogicDmaC2hResp
-    ) c2hProxy <- mkStreamReqProxy(reqTransFnC2h, respTransFnC2h);
-
-
-    interface blueSideReadSrv = h2cProxy.inSrv;
-    interface blueSideWriteSrv = c2hProxy.inSrv;
-    interface userlogicSideReadClt = h2cProxy.outClt;
-    interface userlogicSideWriteClt = c2hProxy.outClt;
+    interface blueSideWriteSrv = toGPServer(blueSideReqQ, blueSideRespQ);
+    interface userlogicSideWriteClt = toGPClient(userLogicSideReqQ, userLogicSideRespQ);
 
 endmodule
 

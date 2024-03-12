@@ -43,25 +43,25 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
     cfg.outFIFODepth = 4;
 
     Vector#(TExp#(splitCntExp), BRAM2Port#(subAddrType, dataType)) subBramVec <- replicateM(mkBRAM2Server(cfg));
-    Vector#(TExp#(splitCntExp), FIFOF#(BRAMRequest#(subAddrType, dataType))) subReqFifoVecPortA <- replicateM(mkFIFOF);
-    Vector#(TExp#(splitCntExp), FIFOF#(BRAMRequest#(subAddrType, dataType))) subReqFifoVecPortB <- replicateM(mkFIFOF);
+    // Vector#(TExp#(splitCntExp), FIFOF#(BRAMRequest#(subAddrType, dataType))) subReqFifoVecPortA <- replicateM(mkFIFOF);
+    // Vector#(TExp#(splitCntExp), FIFOF#(BRAMRequest#(subAddrType, dataType))) subReqFifoVecPortB <- replicateM(mkFIFOF);
 
-    FIFOF#(subBlockIdxType) orderKeepQueuePortA <- mkFIFOF;
-    FIFOF#(subBlockIdxType) orderKeepQueuePortB <- mkFIFOF;
+    FIFOF#(subBlockIdxType) orderKeepQueuePortA <- mkSizedFIFOF(6);
+    FIFOF#(subBlockIdxType) orderKeepQueuePortB <- mkSizedFIFOF(6);
 
-    for (Integer idx = 0; idx < valueOf(TExp#(splitCntExp)); idx = idx + 1) begin
-        rule forwardPortAReq;
-            let req = subReqFifoVecPortA[idx].first;
-            subReqFifoVecPortA[idx].deq;
-            subBramVec[idx].portA.request.put(req);
-        endrule
+    // for (Integer idx = 0; idx < valueOf(TExp#(splitCntExp)); idx = idx + 1) begin
+    //     rule forwardPortAReq;
+    //         let req = subReqFifoVecPortA[idx].first;
+    //         subReqFifoVecPortA[idx].deq;
+    //         subBramVec[idx].portA.request.put(req);
+    //     endrule
 
-        rule forwardPortBReq;
-            let req = subReqFifoVecPortB[idx].first;
-            subReqFifoVecPortB[idx].deq;
-            subBramVec[idx].portB.request.put(req);
-        endrule
-    end
+    //     rule forwardPortBReq;
+    //         let req = subReqFifoVecPortB[idx].first;
+    //         subReqFifoVecPortB[idx].deq;
+    //         subBramVec[idx].portB.request.put(req);
+    //     endrule
+    // end
 
     BRAM2Port#(addrType, dataType) bram2Port <- mkBRAM2Server(cfg);
 
@@ -83,7 +83,8 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
             datain: dontCareValue
         };
         subBlockIdxType subIdx = truncateLSB(pack(cacheAddr));
-        subReqFifoVecPortA[subIdx].enq(req);
+        // subReqFifoVecPortA[subIdx].enq(req);
+        subBramVec[subIdx].portA.request.put(req);
         orderKeepQueuePortA.enq(subIdx);
         // $display("send BRAM read req to sub block =", fshow(subIdx), "addr=", fshow(addr));
     endrule
@@ -109,7 +110,8 @@ module mkBramCache(BramCache#(addrType, dataType, splitCntExp)) provisos(
             datain: writeData
         };
         subBlockIdxType subIdx = truncateLSB(pack(cacheAddr));
-        subReqFifoVecPortB[subIdx].enq(req);
+        // subReqFifoVecPortB[subIdx].enq(req);
+        subBramVec[subIdx].portB.request.put(req);
         orderKeepQueuePortB.enq(subIdx);
         // $display("send BRAM write req to sub block =", fshow(subIdx), "addr=", fshow(addr));
     endrule
@@ -136,7 +138,7 @@ endinterface
 (* synthesize *)
 module mkMemRegionTable(MemRegionTable);
     BramCache#(IndexMR, Maybe#(MemRegionTableEntry), 0) mrTableStorage <- mkBramCache;
-    BypassServer#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) querySrvInst <- mkBypassServer("querySrvInst");
+    BypassServer#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) querySrvInst <- mkBypassServer("mkMemRegionTable querySrvInst");
     BypassServer#(MrTableModifyReq, MrTableModifyResp) modifySrvInst <- mkBypassServer("modifySrvInst");
 
     rule handleQueryReq;
@@ -192,7 +194,7 @@ module mkTLB(TLB);
     BypassServer#(PgtAddrTranslateReq, ADDR) translateSrvInst <- mkBypassServer("translateSrvInst");
     BypassServer#(PgtModifyReq, PgtModifyResp) modifySrvInst <- mkBypassServer("modifySrvInst");
 
-    FIFOF#(Bit#(PAGE_OFFSET_WIDTH)) offsetInputQ <- mkFIFOF;
+    FIFOF#(Bit#(PAGE_OFFSET_WIDTH)) offsetInputQ <- mkSizedFIFOF(10);
 
     rule handleTranslateReq;
         let req <- translateSrvInst.getReq;
@@ -395,8 +397,8 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
     FIFOF#(DmaReadReq) pendingReqQ <- mkSizedFIFOF(20);
     FIFOF#(ADDR) vaPipelineQ <- mkSizedFIFOF(20);
 
-    BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkSizedBypassClient("mrTableQueryCltInst", 5, 2);
-    BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient("pgtQueryCltInst");
+    BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkSizedBypassClient("mrTableQueryCltInst in mkDmaReadReqAddrTranslator", 5, 2);
+    BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient("SQ pgtQueryCltInst");
 
     // rule debug;
     //     if (!readReqInQ.notFull) begin

@@ -250,7 +250,7 @@ module mkPrependHeader2PipeOut#(
     PipeOut#(HeaderMetaData) headerMetaDataPipeIn,
     DataStreamPipeOut dataPipeIn
 )(DataStreamPipeOut);
-    FIFOF#(DataStream) dataStreamOutQ <- mkFIFOF;
+    FIFOF#(DataStream) dataStreamOutQ <- mkSizedFIFOF(20);
 
     // preDataStreamReg is right aligned
     Reg#(DataStream)                  preDataStreamReg <- mkRegU;
@@ -466,7 +466,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
     BypassClient#(DATA, InputStreamFragBufferIdx) payloadStreamFragStorageInsertCltInst <- mkBypassClient("payloadStreamFragStorageInsertCltInst");
     
     FIFOF#(DataStream) headerDataStreamOutQ                     <- mkFIFOF;
-    FIFOF#(DataStreamFragMetaData) payloadDataStreamFragPreOutQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData) payloadDataStreamFragPreOutQ <- mkSizedFIFOF(5);
     FIFOF#(DataStreamFragMetaData) payloadDataStreamFragOutQ    <- mkFIFOF;
 
     Reg#(DataStream)                  preDataStreamReg <- mkRegU;
@@ -524,6 +524,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
 
         let firstDataStreamFrag = dataPipeIn.first;
         dataPipeIn.deq;
+        $display("time=%0t: ", $time, "dataPipeIn deq 1");
 
         curDataStreamReg <= firstDataStreamFrag;
         ByteEn tmpByteEn  = truncate(firstDataStreamFrag.byteEn << headerLastFragValidByteNum);
@@ -582,6 +583,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         else begin
             let nextDataStreamFrag = dataPipeIn.first;
             dataPipeIn.deq;
+            $display("time=%0t: ", $time, "dataPipeIn deq 2");
 
             curDataStreamReg <= nextDataStreamFrag;
             ByteEn tmpByteEn  = truncate(nextDataStreamFrag.byteEn << headerLastFragValidByteNumReg);
@@ -657,6 +659,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         else begin
             let nextDataStreamFrag = dataPipeIn.first;
             dataPipeIn.deq;
+            $display("time=%0t: ", $time, "dataPipeIn deq 3");
 
             curDataStreamReg <= nextDataStreamFrag;
             ByteEn tmpByteEn  = truncate(nextDataStreamFrag.byteEn << headerLastFragValidByteNumReg);

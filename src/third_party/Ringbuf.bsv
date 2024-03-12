@@ -397,6 +397,7 @@ module mkRingbufPool(
 
     let arbitratedH2cClient <- mkClientArbiter(
         "Ringbuf arbitratedH2cClient",
+        False,
         2,
         dmaAccessH2cCltVec,
         alwaysTrue,
@@ -405,6 +406,7 @@ module mkRingbufPool(
 
     let arbitratedC2hClient <- mkClientArbiter(
         "Ringbubf arbitratedC2hClient",
+        False,
         2,
         dmaAccessC2hCltVec,
         alwaysTrue,

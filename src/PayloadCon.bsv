@@ -102,21 +102,20 @@ module mkPayloadConsumer(PayloadConsumer);
         endaction
     endfunction
 
-    // rule debug;
-    //     if (!countReqFragQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: countReqFragQ");
-    //     end
-    //     if (!pendingConReqQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: pendingConReqQ");
-    //     end
-    //     if (!genConRespQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: genConRespQ");
-    //     end
-    //     if (!pendingDmaReqQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: pendingDmaReqQ");
-    //     end
-        
-    // endrule
+    rule debug;
+        if (!countReqFragQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: countReqFragQ");
+        end
+        if (!pendingConReqQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: pendingConReqQ");
+        end
+        if (!genConRespQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: genConRespQ");
+        end
+        if (!pendingDmaReqQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: pendingDmaReqQ");
+        end
+    endrule
 
 
     rule recvReq;
@@ -316,7 +315,7 @@ module mkPayloadConsumer(PayloadConsumer);
                         data: payloadData
                     }
                 };
-                // $display("time=%0t: dmaWriteReq=", $time, fshow(dmaWriteReq));
+                $display("time=%0t: dmaWriteReq=", $time, fshow(dmaWriteReq));
                 dmaWriteCltInst.putReq(dmaWriteReq);
             end
             default: begin

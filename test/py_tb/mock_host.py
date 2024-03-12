@@ -121,7 +121,7 @@ class BluesimRpcServer:
 
         while not self.stop_flag:
             client_socket, client_address = server_socket.accept()
-            client_socket.settimeout(1.5)
+            client_socket.settimeout(5)
             print('Client connected:', client_address)
 
             while not self.stop_flag:
@@ -329,6 +329,8 @@ class MockNicAndHost:
             if byte_en & 0x01 == 0x01:
                 self.main_memory.buf[
                     host_mem_start_addr + idx] = int(req.payload.data[idx])
+                # print("write_mem ", hex(host_mem_start_addr + idx),
+                #       int(req.payload.data[idx]))
             byte_en >>= 1
         # this Op doesn't send response
 
@@ -341,7 +343,7 @@ class MockNicAndHost:
 
     def rpc_handler_net_ifc_get_rx_req(self, client_socket, raw_req_buf):
         req = CStructRpcNetIfcRxTxMessage.from_buffer_copy(raw_req_buf)
-        print("rx Q len=", len(self.pending_network_packet_rx))
+        # print("rx Q len=", len(self.pending_network_packet_rx))
 
         if self.rx_packet_wait_time > 0:
             start_time = time.time()
@@ -393,7 +395,7 @@ class MockNicAndHost:
 
     def get_net_ifc_tx_data_from_nic_blocking(self):
         self.pending_network_packet_tx_sema.acquire()
-        print("tx Q len=", len(self.pending_network_packet_tx))
+        # print("tx Q len=", len(self.pending_network_packet_tx))
         return self.pending_network_packet_tx.pop(0)
 
     def put_net_ifc_rx_data_to_nic(self, frag):
@@ -463,7 +465,7 @@ PKEY_INDEX = 0
 SEND_SIDE_QPN = 0x6611
 SEND_SIDE_PD_HANDLER = 0x6611  # in practise, this should be returned by hardware
 
-PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_256
+PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_4096
 
 RECV_SIDE_IP = 0x11223344
 RECE_SIDE_MAC = 0xAABBCCDDEEFF
@@ -560,8 +562,9 @@ def test_case():
         mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR+i] = 0
 
     send_queue.sync_pointers()
-    for _ in range(2):
+    for report_idx in range(8):
         meta_report_queue.deq_blocking()
+        print("receive meta report: ", report_idx)
 
     src_mem = mock_nic.main_memory.buf[REQ_SIDE_VA_ADDR:
                                        REQ_SIDE_VA_ADDR+SEND_BYTE_COUNT]
@@ -570,6 +573,12 @@ def test_case():
 
     if src_mem != dst_mem:
         print("Error: DMA Target mem is not the same as source mem")
+        for idx in range(len(src_mem)):
+            if src_mem[idx] != dst_mem[idx]:
+                print("id:", idx,
+                      "src: ", hex(src_mem[idx]),
+                      "dst: ", hex(dst_mem[idx])
+                      )
     else:
         print("PASS")
 

@@ -46,6 +46,12 @@ for line in sys.stdin:
 
         continous_cnt = 0
         last_time_int = time_int
+else:
+    continous_hist_entry = continous_hist.get(continous_cnt, 0)
+    continous_hist_entry += 1
+    continous_hist[continous_cnt] = continous_hist_entry
+    print("continous=%d, non_continous=%d" %
+          (continous_cnt, non_continous_cnt))
 
 
 continous_hist_pair = list(continous_hist.items())

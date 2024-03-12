@@ -16,6 +16,7 @@ import PrimUtils :: *;
 import StmtFSM::*;
 import Axi4LiteTypes :: *;
 import SemiFifo :: *;
+import UdpIpEthCmacRxTx::*;
 
 import ExtractAndPrependPipeOut :: *;
 
@@ -29,6 +30,7 @@ import StreamHandler :: *;
 import XdmaWrapper :: *;
 import UserLogicTypes :: *;
 import RegisterBlock :: *;
+import EthernetTypes :: *;
 
 
 import Top :: *;
@@ -59,8 +61,8 @@ module mkTestTop(Empty);
     Clock fastClock <- exposeCurrentClock;
     Reset fastReset <- exposeCurrentReset;
 
-    Clock cmacRxTxClk <- mkAbsoluteClock(0, 31);
-    Reset cmacRxTxRst = noReset;
+    Clock cmacRxTxClk <- mkAbsoluteClock(0, 15);
+    Reset cmacRxTxRst <- mkSyncReset(2, fastReset, cmacRxTxClk);
 
     RdmaUserLogicWithoutXdmaAndCmacWrapper topA <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(slowClock, slowReset);
 
@@ -121,7 +123,7 @@ module mkTestTop(Empty);
         let inReq = csrWriteReqSyncFifo.first;
         let outReq = CsrWriteRequest{addr: tpl_1(inReq), data: tpl_2(inReq)};
         topA.csrWriteSrv.request.put(outReq);
-        $display("csr write req = ", fshow(outReq));
+        // $display("csr write req = ", fshow(outReq));
     endrule
 
     rule forwardBarWriteResp;
@@ -134,3 +136,5 @@ module mkTestTop(Empty);
     Reg#(UInt#(32)) idx <- mkReg(0);
 
 endmodule
+
+

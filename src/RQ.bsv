@@ -26,8 +26,8 @@ module mkRQ(RQ ifc);
     FIFOF#(RdmaPktMetaDataAndQPC)     rdmaPktMetaDataInQ  <- mkFIFOF;
     FIFOF#(C2hReportEntry)              pktReportEntryQ     <- mkFIFOF;
 
-    BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkBypassClient("mrTableQueryCltInst");
-    BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient("pgtQueryCltInst");
+    BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkBypassClient("mrTableQueryCltInst in RQ");
+    BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient("RQ pgtQueryCltInst");
     BypassClient#(PayloadConReq, PayloadConResp) payloadConsumerControlClt           <- mkBypassClient("payloadConsumerControlClt");
 
     // Pipeline FIFOs

@@ -99,9 +99,11 @@ endinterface
 // This module will not discard invalid packet.
 (* synthesize *)
 module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateDataStreamPipeOut);
+    FIFOF#(DataStream) rdmaPktPipeInQ <- mkFIFOF;
+
     FIFOF#(HeaderMetaData) headerMetaDataInQ <- mkFIFOF;
     FIFOF#(DataStream) dataInQ <- mkFIFOF;
-    FIFOF#(DataStream) rdmaPktPipeInQ <- mkFIFOF;
+    
 
     Vector#(2, PipeOut#(HeaderMetaData)) headerMetaDataPipeOutVec <-
         mkForkVector(toPipeOut(headerMetaDataInQ));
@@ -111,6 +113,19 @@ module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateData
     let headerAndPayloadPipeOut <- mkExtractHeaderFromDataStreamPipeOut(
         dataPipeIn, headerMetaDataPipeIn
     );
+
+    rule debug;
+        if (!rdmaPktPipeInQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkExtractHeaderFromRdmaPktPipeOut rdmaPktPipeInQ");
+        end
+        if (!headerMetaDataInQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkExtractHeaderFromRdmaPktPipeOut headerMetaDataInQ");
+        end
+        if (!dataInQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkExtractHeaderFromRdmaPktPipeOut dataInQ");
+        end
+       
+    endrule
 
     rule extractHeader;
         let rdmaPktDataStream = rdmaPktPipeInQ.first;
@@ -225,7 +240,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
     FIFOF#(DataStreamFragMetaData)                                                   payloadFragMetaPreCheckQ <- mkFIFOF;
 
     FIFOF#(Tuple2#(HeaderRDMA, HeaderValidateInfo))                                     rdmaHeaderValidationQ <- mkSizedFIFOF(valueOf(QPC_QUERY_RESP_MAX_DELAY));
-    FIFOF#(DataStreamFragMetaData)                                                 payloadFragMetaValidationQ <- mkFIFOF;
+    FIFOF#(DataStreamFragMetaData)                                                 payloadFragMetaValidationQ <- mkSizedFIFOF(valueOf(QPC_QUERY_RESP_MAX_DELAY));
 
     FIFOF#(Tuple3#(HeaderRDMA, Maybe#(EntryCommonQPC), ValidHeaderInfo))                    rdmaHeaderFilterQ <- mkFIFOF;
     FIFOF#(DataStreamFragMetaData)                                                     payloadFragMetaFilterQ <- mkFIFOF;
@@ -241,9 +256,6 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
 
     FIFOF#(Tuple5#(PktLenCheckInfo, EntryCommonQPC, Bool, Bool, Bool))                 rdmaHeaderPktLenCheckQ <- mkFIFOF;
     FIFOF#(DataStreamFragMetaData)                                                payloadFragMetaPktLenCheckQ <- mkFIFOF;
-    
-    // FIFOF#(RdmaPktMetaDataAndQPC)                                                           rdmaHeaderOutputQ <- mkFIFOF;
-    // FIFOF#(DataStreamFragMetaData)                                                     payloadFragMetaOutputQ <- mkFIFOF;
 
 
     Reg#(Bool)        isValidPktReg <- mkRegU;
@@ -277,53 +289,53 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
     endfunction
 
 
-    // rule debug;
-    //     if (!rdmaHeaderRecvQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderRecvQ");
-    //     end
-    //     if (!payloadFragMetaRecvQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaRecvQ");
-    //     end
-    //     if (!rdmaHeaderPreCheckQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPreCheckQ");
-    //     end
-    //     if (!payloadFragMetaPreCheckQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPreCheckQ");
-    //     end
-    //     if (!rdmaHeaderValidationQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderValidationQ");
-    //     end
-    //     if (!payloadFragMetaValidationQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaValidationQ");
-    //     end
-    //     if (!rdmaHeaderFilterQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderFilterQ");
-    //     end
-    //     if (!payloadFragMetaFilterQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaFilterQ");
-    //     end
-    //     if (!rdmaHeaderFragLenCalcQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderFragLenCalcQ");
-    //     end
-    //     if (!rdmaHeaderPktLenCalcQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenCalcQ");
-    //     end
-    //     if (!payloadPktLenCalcQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadPktLenCalcQ");
-    //     end
-    //     if (!rdmaHeaderPktLenPreCheckQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenPreCheckQ");
-    //     end
-    //     if (!payloadFragMetaPktLenPreCheckQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPktLenPreCheckQ");
-    //     end
-    //     if (!rdmaHeaderPktLenCheckQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenCheckQ");
-    //     end
-    //     if (!payloadFragMetaPktLenCheckQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPktLenCheckQ");
-    //     end
-    // endrule
+    rule debug;
+        if (!rdmaHeaderRecvQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderRecvQ");
+        end
+        if (!payloadFragMetaRecvQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaRecvQ");
+        end
+        if (!rdmaHeaderPreCheckQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPreCheckQ");
+        end
+        if (!payloadFragMetaPreCheckQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPreCheckQ");
+        end
+        if (!rdmaHeaderValidationQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderValidationQ");
+        end
+        if (!payloadFragMetaValidationQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaValidationQ");
+        end
+        if (!rdmaHeaderFilterQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderFilterQ");
+        end
+        if (!payloadFragMetaFilterQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaFilterQ");
+        end
+        if (!rdmaHeaderFragLenCalcQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderFragLenCalcQ");
+        end
+        if (!rdmaHeaderPktLenCalcQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenCalcQ");
+        end
+        if (!payloadPktLenCalcQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadPktLenCalcQ");
+        end
+        if (!rdmaHeaderPktLenPreCheckQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenPreCheckQ");
+        end
+        if (!payloadFragMetaPktLenPreCheckQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPktLenPreCheckQ");
+        end
+        if (!rdmaHeaderPktLenCheckQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaHeaderPktLenCheckQ");
+        end
+        if (!payloadFragMetaPktLenCheckQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaPktLenCheckQ");
+        end
+    endrule
 
 
 
@@ -374,10 +386,10 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         end
 
         payloadFragMetaRecvQ.enq(payloadFragMeta);
-        // $display(
-        //     "time=%0t: 1st stage recvPktFrag", $time
-        //     // ", bth=", fshow(bth), ", aeth=", fshow(aeth)
-        // );
+        $display(
+            "time=%0t: 1st stage recvPktFrag", $time
+            // ", bth=", fshow(bth), ", aeth=", fshow(aeth)
+        );
     endrule
 
     rule preCheckHeader if (pktBufStateReg == RDMA_PKT_BUT_ST_PRE_CHECK_FRAG);
@@ -423,14 +435,14 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             payloadFragMetaPreCheckQ.enq(streamFragMeta);
             // $display("time=%0t: streamFragMeta=", $time, fshow(streamFragMeta));
         end
-        // $display(
-        //     "time=%0t: 2nd-1 stage preCheckHeader", $time
-        //     // ", bthCheckResult=", fshow(bthCheckResult),
-        //     // ", headerCheckResult=", fshow(headerCheckResult),
-        //     // ", nonPayloadHeaderShouldHaveNoPayload=",
-        //     // fshow(nonPayloadHeaderShouldHaveNoPayload),
-        //     // ", bth=", fshow(bth)
-        // );
+        $display(
+            "time=%0t: 2nd-1 stage preCheckHeader", $time
+            // ", bthCheckResult=", fshow(bthCheckResult),
+            // ", headerCheckResult=", fshow(headerCheckResult),
+            // ", nonPayloadHeaderShouldHaveNoPayload=",
+            // fshow(nonPayloadHeaderShouldHaveNoPayload),
+            // ", bth=", fshow(bth)
+        );
     endrule
 
     rule discardInvalidFrag if (pktBufStateReg == RDMA_PKT_BUF_ST_DISCARD_FRAG);
@@ -803,10 +815,10 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             };
 
             reqPktMetaDataAndQpcOutQ.enq(pktMetaDataAndQpc);
-            // $display(
-            //     "time=%0t:", $time, " pktMetaData=", fshow(pktMetaData)
-            //     // "time=%0t: bth=", $time, fshow(bth), ", pktMetaData=", fshow(pktMetaData)
-            // );
+            $display(
+                "time=%0t:", $time, " pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc)
+                // "time=%0t: bth=", $time, fshow(bth), ", pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc)
+            );
         end
         else begin
             reqPayloadFragMetaOutQ.enq(streamFragMeta);
@@ -842,6 +854,7 @@ interface ReceivedStreamFragStorage;
     interface Server#(Tuple2#(InputStreamFragBufferIdx, Bool), DATA) readFragSrv;
 endinterface
 
+(* synthesize *)
 module mkReceivedStreamFragStorage(ReceivedStreamFragStorage);
     BypassServer#(DATA, InputStreamFragBufferIdx) insertFragSrvInst                 <- mkBypassServer("insertFragSrvInst");
     BypassServer#(Tuple2#(InputStreamFragBufferIdx, Bool), DATA) readFragSrvInst    <- mkBypassServer("readFragSrvInst");
