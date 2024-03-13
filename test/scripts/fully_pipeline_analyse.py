@@ -15,6 +15,7 @@ non_continous_hist = {}
 
 sys.stdin.reconfigure(encoding='utf-8', errors="ignore")
 
+non_continous_cnt = 0
 for line in sys.stdin:
     if not filter_re.search(line):
         continue

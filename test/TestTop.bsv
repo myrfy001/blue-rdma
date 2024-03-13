@@ -62,6 +62,7 @@ module mkTestTop(Empty);
     Reset fastReset <- exposeCurrentReset;
 
     Clock cmacRxTxClk <- mkAbsoluteClock(0, 15);
+    // Clock cmacRxTxClk <- mkAbsoluteClock(0, 10);
     Reset cmacRxTxRst <- mkSyncReset(2, fastReset, cmacRxTxClk);
 
     RdmaUserLogicWithoutXdmaAndCmacWrapper topA <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(slowClock, slowReset);
@@ -99,7 +100,13 @@ module mkTestTop(Empty);
     mkConnection(toGet(netIfcRxSyncFifo), topA.axiStreamRxInUdp);
 
     SyncFIFOIfc#(AxiStream512) netIfcTxSyncFifo <- mkSyncFIFO(32, fastClock, fastReset, cmacRxTxClk);
-    mkConnection(toGet(topA.axiStreamTxOutUdp), toPut(netIfcTxSyncFifo));
+    // mkConnection(toGet(topA.axiStreamTxOutUdp), toPut(netIfcTxSyncFifo));
+    rule forwardUdpSendStream;
+        let txData = topA.axiStreamTxOutUdp.first;
+        topA.axiStreamTxOutUdp.deq;
+        netIfcTxSyncFifo.enq(txData);
+        $display("time=%0t: ", $time, "forward udp send data to sync FIFO of CMAC");
+    endrule
     mkConnection(convertSyncFifoToFifoOut(netIfcTxSyncFifo), fakeXdmaA.axiStreamTxUdp, clocked_by cmacRxTxClk, reset_by cmacRxTxRst); 
 
 

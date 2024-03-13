@@ -389,13 +389,13 @@ endinterface
 
 (* synthesize *)
 module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
-    FIFOF#(DmaReadReq) readReqInQ <- mkSizedFIFOF(20);
-    FIFOF#(UserLogicDmaH2cReq) readReqOutQ <- mkSizedFIFOF(20);
+    FIFOF#(DmaReadReq) readReqInQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cReq) readReqOutQ <- mkFIFOF;
     FIFOF#(UserLogicDmaH2cResp) readRespInQ <- mkFIFOF;
     FIFOF#(DmaReadResp) readRespOutQ <- mkFIFOF;
 
-    FIFOF#(DmaReadReq) pendingReqQ <- mkSizedFIFOF(20);
-    FIFOF#(ADDR) vaPipelineQ <- mkSizedFIFOF(20);
+    FIFOF#(DmaReadReq) pendingReqQ <- mkSizedFIFOF(5);
+    FIFOF#(ADDR) vaPipelineQ <- mkSizedFIFOF(5);
 
     BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkSizedBypassClient("mrTableQueryCltInst in mkDmaReadReqAddrTranslator", 5, 2);
     BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient("SQ pgtQueryCltInst");

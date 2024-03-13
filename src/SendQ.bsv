@@ -584,7 +584,7 @@ module mkSendQ#(
 )(SendQ);
     FIFOF#(WorkQueueElem)         reqQ <- mkFIFOF;
     FIFOF#(SendResp)             respQ <- mkFIFOF;
-    FIFOF#(PktInfo4UDP) udpPktInfoOutQ <- mkSizedFIFOF(10);
+    FIFOF#(PktInfo4UDP) udpPktInfoOutQ <- mkFIFOF;
 
     // Pipeline FIFOF
     FIFOF#(Tuple3#(WorkQueueElem, Bool, Bool)) totalMetaDataQ <- mkFIFOF;

@@ -70,9 +70,9 @@ module mkPayloadConsumer(PayloadConsumer);
 
     // Pipeline FIFO
     FIFOF#(Tuple3#(PayloadConReq, Bool, Bool))                    countReqFragQ <- mkFIFOF;
-    FIFOF#(Tuple4#(PayloadConReq, Bool, Bool, Bool))             pendingConReqQ <- mkSizedFIFOF(15);
-    FIFOF#(PayloadConReq)                                           genConRespQ <- mkSizedFIFOF(15);
-    FIFOF#(Tuple2#(PayloadConReq, DataStreamFragMetaData))       pendingDmaReqQ <- mkSizedFIFOF(15);
+    FIFOF#(Tuple4#(PayloadConReq, Bool, Bool, Bool))             pendingConReqQ <- mkFIFOF;
+    FIFOF#(PayloadConReq)                                           genConRespQ <- mkSizedFIFOF(5);
+    FIFOF#(Tuple2#(PayloadConReq, DataStreamFragMetaData))       pendingDmaReqQ <- mkSizedFIFOF(5);
 
 
     // TODO: check payloadOutQ buffer size is enough for DMA write delay?
@@ -115,6 +115,10 @@ module mkPayloadConsumer(PayloadConsumer);
         if (!pendingDmaReqQ.notFull) begin
             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: pendingDmaReqQ");
         end
+        if (!payloadFragMetaBufQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaBufQ");
+        end
+        
     endrule
 
 

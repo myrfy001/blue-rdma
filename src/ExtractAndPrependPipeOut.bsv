@@ -250,7 +250,7 @@ module mkPrependHeader2PipeOut#(
     PipeOut#(HeaderMetaData) headerMetaDataPipeIn,
     DataStreamPipeOut dataPipeIn
 )(DataStreamPipeOut);
-    FIFOF#(DataStream) dataStreamOutQ <- mkSizedFIFOF(20);
+    FIFOF#(DataStream) dataStreamOutQ <- mkFIFOF;
 
 
     FIFOF#(Tuple6#(ByteEnBitNum, BusBitNum, ByteEnBitNum, BusBitNum, Bool, Bool)) calculatedMetasQ <- mkFIFOF;

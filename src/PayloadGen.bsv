@@ -436,7 +436,7 @@ typedef struct {
 
 module mkAddrChunkSrv#(Bool clearAll)(AddrChunkSrv);
     FIFOF#(AddrChunkReq)   reqQ <- mkSizedFIFOF(valueOf(MAX_SGE));
-    FIFOF#(AddrChunkResp) respQ <- mkSizedFIFOF(10);
+    FIFOF#(AddrChunkResp) respQ <- mkFIFOF;
     FIFOF#(PktMetaDataSGE) sgePktMetaDataOutQ <- mkFIFOF;
 
     // Pipeline FIFOF
@@ -722,7 +722,7 @@ module mkDmaReadCntrl#(
     FIFOF#(Tuple2#(ScatterGatherElem, PMTU)) pendingScatterGatherElemQ <- mkSizedFIFOF(valueOf(MAX_SGE));
     FIFOF#(LKEY) pendingLKeyQ <- mkSizedFIFOF(5);
     FIFOF#(Tuple2#(QPN, WorkReqID)) pendingDmaCntrlReqQ <- mkSizedFIFOF(10); // TODO: remove it
-    FIFOF#(Tuple2#(Bool, Bool))     pendingDmaReadReqQ <-  mkSizedFIFOF(100);
+    FIFOF#(Tuple2#(Bool, Bool))     pendingDmaReadReqQ <-  mkSizedFIFOF(10);
 
 
     // rule debug;
