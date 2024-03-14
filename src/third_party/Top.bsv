@@ -135,6 +135,25 @@ interface RdmaUserLogicWithoutXdmaAndCmacWrapper;
 endinterface
 
 
+interface RdmaUserLogicWithoutXdmaAndUdpCmacWrapper;
+    // SQ
+    interface PipeOut#(PktInfo4UDP) sqUdpInfoPipeOut;
+    interface DataStreamPipeOut     sqRdmaDataStreamPipeOut;
+
+    // RQ
+    interface RqDataStreamWithRawPacketFlagPipeIn rqInputDataStream;
+    
+    // DMA Controller
+    interface UserLogicDmaReadWideClt dmaReadClt;
+    interface UserLogicDmaWriteWideClt dmaWriteClt;
+
+    // CSR related
+    interface Server#(CsrWriteRequest#(CsrAddr, CsrData), CsrWriteResponse) csrWriteSrv;
+    interface Server#(CsrReadRequest#(CsrAddr), CsrReadResponse#(CsrData)) csrReadSrv;
+
+endinterface
+
+
 (* synthesize *)
 module mkUdpWrapper(UdpIpEthBypassRxTx);
     let t <- mkGenericUdpIpEthBypassRxTx(`IS_SUPPORT_RDMA);
@@ -226,10 +245,10 @@ endmodule
 // (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp_1" *) 
 (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp" *)
 // (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp_1" *) 
-module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
+module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     Clock slowClock, 
     Reset slowReset, 
-    RdmaUserLogicWithoutXdmaAndCmacWrapper ifc
+    RdmaUserLogicWithoutXdmaAndUdpCmacWrapper ifc
 );
 
     RingbufPool#(RINGBUF_H2C_TOTAL_COUNT, RINGBUF_C2H_TOTAL_COUNT, RingbufRawDescriptor) ringbufPool <- mkRingbufPool;
@@ -284,25 +303,6 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     Vector#(4, UserLogicDmaReadClt)  dmaAccessH2cCltVec = newVector;
     Vector#(2, UserLogicDmaWriteClt) dmaAccessC2hCltVec = newVector;
 
-    // let mockDma <- mkSimDmaReadSrv;
-    // rule forwardDmaReq;
-    //     let req1 <- addrTranslatorForSQ.sqReqOutputClt.request.get;
-    //     mockDma.request.put(DmaReadReq {
-    //         initiator:?,
-    //         sqpn:?,
-    //         wrID:?,
-    //         startAddr: req1.addr,
-    //         len: unpack(truncate(pack(req1.len))),
-    //         mrIdx:?
-    //     });
-    // endrule
-
-    // rule forwardDmaResp;
-    //     let resp1 <- mockDma.response.get;
-    //     addrTranslatorForSQ.sqReqOutputClt.response.put(UserLogicDmaH2cResp {
-    //         dataStream: resp1.dataStream
-    //     });
-    // endrule
 
     // dmaAccessH2cCltVec[0] <- mkFakeClient;
     dmaAccessH2cCltVec[0] = addrTranslatorForSQ.sqReqOutputClt;
@@ -328,9 +328,51 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     mkConnection(sq.dmaReadClt, addrTranslatorForSQ.sqReqInputSrv);
     mkConnection(workQueueRingbufController.workReq, sq.sendQ.srvPort.request);
 
+
+    rule forwardRecvQueuePktReportDescToRingbuf;
+        let t = rqWrapper.packetMetaDescPipeOut.first;
+        rqWrapper.packetMetaDescPipeOut.deq;
+        ringbufPool.c2hRings[1].enq(t);
+    endrule
+
+    rule forwardSendQueueReportDescToRingbuf;
+        let _ <- sq.sendQ.srvPort.response.get;
+    endrule
+
+
+    // SQ
+    interface sqUdpInfoPipeOut = sq.sendQ.udpInfoPipeOut;
+    interface sqRdmaDataStreamPipeOut = sq.sendQ.rdmaDataStreamPipeOut;
+
+    // RQ
+    interface rqInputDataStream = rqWrapper.inputDataStream;
+
+
+    interface dmaReadClt = xdmaGearbox.h2cStreamClt;
+    interface dmaWriteClt = xdmaGearbox.c2hStreamClt;
+    interface csrWriteSrv = csrBlock.csrWriteSrv;
+    interface csrReadSrv = csrBlock.csrReadSrv;
+
+endmodule
+
+typedef enum {
+    UdpReceivingChannelSelectStateIdle          = 0,
+    UdpReceivingChannelSelectStateRecvRdmaData  = 1,
+    UdpReceivingChannelSelectStateRecvRawData   = 2
+} UdpReceivingChannelSelectState deriving(Bits, Eq);
+
+(* synthesize *)
+module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
+    Clock slowClock, 
+    Reset slowReset, 
+    RdmaUserLogicWithoutXdmaAndCmacWrapper ifc
+);
+
+    let rdmaAndUserLogic <- mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(slowClock, slowReset);
     let udp <- mkUdpWrapper;
 
     Reg#(Bool)  udpParamNotSetReg <- mkReg(True);
+    Reg#(UdpReceivingChannelSelectState)  isReceivingRawPacketReg <- mkReg(UdpReceivingChannelSelectStateIdle);
 
     // rule debug;
     //     if (!sq.sendQ.rdmaDataStreamPipeOut.notEmpty) begin
@@ -352,8 +394,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     endrule
 
     rule forawrdTxStream;
-        sq.sendQ.rdmaDataStreamPipeOut.deq;
-        let data = sq.sendQ.rdmaDataStreamPipeOut.first;
+        rdmaAndUserLogic.sqRdmaDataStreamPipeOut.deq;
+        let data = rdmaAndUserLogic.sqRdmaDataStreamPipeOut.first;
         $display("time=%0t: ", $time,"rdma put data to udp = ", fshow(data));
         udp.dataStreamTxIn.put(Ports::DataStream{
             data: swapEndian(data.data),
@@ -364,8 +406,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     endrule
 
     rule forwardTxMeta;
-        sq.sendQ.udpInfoPipeOut.deq;
-        let meta = sq.sendQ.udpInfoPipeOut.first;
+        rdmaAndUserLogic.sqUdpInfoPipeOut.deq;
+        let meta = rdmaAndUserLogic.sqUdpInfoPipeOut.first;
         $display("time=%0t: ", $time,"rdma_out_meta = ", fshow(meta));
 
         IpAddr dstIP = unpack(0);
@@ -396,139 +438,77 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     endrule
 
-    // rule forwardRxStream;
+    // NOTE: This forward will bring a bubble, but do we need to fix it?
+    rule forwardRdmaRxStream;
 
-    //     if (udp.udpIpMetaDataRxOut.notEmpty) begin
-    //         udp.udpIpMetaDataRxOut.deq;
-    //         $display("time=%0t: ", $time,"udp recv meta = ", fshow(udp.udpIpMetaDataRxOut.first));
-    //     end
-
-    //     if (udp.macMetaDataRxOut.notEmpty) begin
-    //         udp.macMetaDataRxOut.deq;
-    //         $display("time=%0t: ", $time,"udp recv mac meta = ", fshow(udp.macMetaDataRxOut.first));
-    //     end
-
-    //     if (udp.dataStreamRxOut.notEmpty) begin
-    //         let data = udp.dataStreamRxOut.first;
-    //         udp.dataStreamRxOut.deq;
-
-    //         let outData = DataTypes::DataStream {
-    //             data: swapEndian(data.data),
-    //             byteEn: swapEndianBit(data.byteEn),
-    //             isLast: data.isLast,
-    //             isFirst: data.isFirst
-    //         };
-    //         rqWrapper.inputDataStream.put(outData);
-    //         $display("time=%0t: ", $time,"udp put to rqWrapper = ", fshow(outData));
-    //     end
-    // endrule
-
-
-
-    // ############################ Code for test use ##########################################
-
-    FIFOF#(RqDataStreamWithRawPacketFlag) delayQ <- mkSizedFIFOF(8192);
-    // loop tx stream to rx stream with delayed time so they won't interfere eachother.
-    rule bufferTxStream;
-
-
-        if (udp.udpIpMetaDataRxOut.notEmpty) begin
-            udp.udpIpMetaDataRxOut.deq;
+        if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateIdle) begin
+            if (udp.dataStreamRxOut.notEmpty) begin
+                isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRdmaData;
+            end
+            else if (udp.rawPktStreamRxOut.notEmpty) begin
+                isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRawData;
+            end
         end
-
-        if (udp.macMetaDataRxOut.notEmpty) begin
-            udp.macMetaDataRxOut.deq;
-        end
-
-        if (udp.dataStreamRxOut.notEmpty) begin
+        else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRdmaData) begin
             let data = udp.dataStreamRxOut.first;
             udp.dataStreamRxOut.deq;
-
             let outData = DataTypes::DataStream {
                 data: swapEndian(data.data),
                 byteEn: swapEndianBit(data.byteEn),
                 isLast: data.isLast,
                 isFirst: data.isFirst
             };
-            delayQ.enq(tuple2(outData, False));
-            $display("time=%0t: ", $time,"udp put to delayQ = ", fshow(outData));
+            rdmaAndUserLogic.rqInputDataStream.put(tuple2(outData, False));
+            $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData));
+
+            if (data.isLast) begin
+                udp.udpIpMetaDataRxOut.deq;
+                udp.macMetaDataRxOut.deq;
+                if (udp.rawPktStreamRxOut.notEmpty) begin
+                    isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRawData;
+                end
+                else begin
+                    isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
+                end
+            end
         end
-    endrule
+        else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRawData) begin
+            let data = udp.rawPktStreamRxOut.first;
+            udp.rawPktStreamRxOut.deq;
+            let outData = DataTypes::DataStream {
+                data: swapEndian(data.data),
+                byteEn: swapEndianBit(data.byteEn),
+                isLast: data.isLast,
+                isFirst: data.isFirst
+            };
+            rdmaAndUserLogic.rqInputDataStream.put(tuple2(outData, True));
+            $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData));
 
-    rule outputTxStream;
-        let t <- $time;
-        if (t > 17890) begin
-            let d = delayQ.first;
-            delayQ.deq;
-            rqWrapper.inputDataStream.put(d);
-            $display("time=%0t: ", $time, "delayQ put to rqWrapper = ");
+            if (data.isLast) begin
+                if (udp.dataStreamRxOut.notEmpty) begin
+                    isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRdmaData;
+                end
+                else begin
+                    isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
+                end
+            end
         end
+        
+        
+        
+       
     endrule
-
-    // ##########################  END OF TEST USE  ############################################
-
-
-
-
-
-
     
-    rule forwardRecvQueuePktReportDescToRingbuf;
-        let t = rqWrapper.packetMetaDescPipeOut.first;
-        rqWrapper.packetMetaDescPipeOut.deq;
-        ringbufPool.c2hRings[1].enq(t);
-    endrule
-
-    rule forwardSendQueueReportDescToRingbuf;
-        let _ <- sq.sendQ.srvPort.response.get;
-    endrule
+   
 
     interface axiStreamTxOutUdp = udp.axiStreamTxOut;
     interface axiStreamRxInUdp = udp.axiStreamRxIn;
 
 
-    interface dmaReadClt = xdmaGearbox.h2cStreamClt;
-    interface dmaWriteClt = xdmaGearbox.c2hStreamClt;
-    interface csrWriteSrv = csrBlock.csrWriteSrv;
-    interface csrReadSrv = csrBlock.csrReadSrv;
-endmodule
-
-// (* synthesize *)
-module mkFakeSQ(SQ);
-    FIFOF#(DmaReadReq)   dmaReadReqQ <- mkFIFOF;
-    FIFOF#(DmaReadResp) dmaReadRespQ <- mkFIFOF;
-
-    FIFOF#(WorkQueueElem)       wqeQ <- mkFIFOF;
-    FIFOF#(SendResp)       sendRespQ <- mkFIFOF;
-
-    FIFOF#(PktInfo4UDP)       udpQ <- mkFIFOF;
-    FIFOF#(DataTypes::DataStream)       dataStreamQ <- mkFIFOF;
-
-
-    Reg#(Bit#(1024)) tReg <- mkRegU;
-
-    rule incReg;
-        tReg <= tReg + 1;
-    endrule
-
-    rule beat;
-        dmaReadReqQ.enq(unpack(truncate(tReg)));
-        wqeQ.deq;
-        dmaReadRespQ.deq;
-        sendRespQ.enq(unpack(truncate(tReg)));
-        udpQ.enq(unpack(truncate(tReg)));
-        dataStreamQ.enq(unpack(truncate(tReg)));
-    endrule
-
-    interface dmaReadClt = toGPClient(dmaReadReqQ, dmaReadRespQ);
-    interface SendQ sendQ;
-        interface srvPort = toGPServer(wqeQ, sendRespQ);
-        interface udpInfoPipeOut = toPipeOut(udpQ);
-        interface rdmaDataStreamPipeOut = toPipeOut(dataStreamQ);
-        method Bool isEmpty() = unpack(tReg[0]);
-    endinterface
-    method Action clearAll();
-    endmethod
+    interface dmaReadClt = rdmaAndUserLogic.dmaReadClt;
+    interface dmaWriteClt = rdmaAndUserLogic.dmaWriteClt;
+    interface csrWriteSrv = rdmaAndUserLogic.csrWriteSrv;
+    interface csrReadSrv = rdmaAndUserLogic.csrReadSrv;
 endmodule
 
 function Bit#(width) swapEndian(Bit#(width) data) provisos(Mul#(8, byteNum, width));
