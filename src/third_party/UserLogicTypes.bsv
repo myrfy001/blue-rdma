@@ -205,7 +205,8 @@ typedef struct {
 } SendQueueDescCommonHead deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(64)           reserved1;        // 64 bits
+    ReservedZero#(48)           reserved1;        // 40 bits
+    PKEY                        pkey;             // 16 bits
     AddrIPv4                    dqpIP;            // 32 bits
     RKEY                        rkey;             // 32 bits
     ADDR                        raddr;            // 64 bits

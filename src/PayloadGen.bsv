@@ -48,7 +48,8 @@ typedef union tagged {
 } ImmOrRKey deriving(Bits, FShow);
 
 typedef struct {
-    WorkReqID id; // TODO: remove it
+    // WorkReqID id; // TODO: remove it
+    PKEY pkey;
     WorkReqOpCode opcode;
     FlagsType#(WorkReqSendFlag) flags;
     TypeQP qpType;
@@ -140,8 +141,8 @@ typedef struct {
 typedef struct {
     ScatterGatherList sgl;
     Length totalLen;
-    QPN sqpn; // TODO: remove it
-    WorkReqID wrID; // TODO: remove it
+    // QPN sqpn; // TODO: remove it
+    // WorkReqID wrID; // TODO: remove it
 } DmaReadMetaDataSGL deriving(Bits, FShow);
 
 typedef struct {
@@ -721,7 +722,6 @@ module mkDmaReadCntrl#(
     // Pipeline FIFO
     FIFOF#(Tuple2#(ScatterGatherElem, PMTU)) pendingScatterGatherElemQ <- mkSizedFIFOF(valueOf(MAX_SGE));
     FIFOF#(LKEY) pendingLKeyQ <- mkSizedFIFOF(5);
-    FIFOF#(Tuple2#(QPN, WorkReqID)) pendingDmaCntrlReqQ <- mkSizedFIFOF(10); // TODO: remove it
     FIFOF#(Tuple2#(Bool, Bool))     pendingDmaReadReqQ <-  mkSizedFIFOF(10);
 
 
@@ -740,9 +740,6 @@ module mkDmaReadCntrl#(
     //     end
     //     if (!pendingLKeyQ.notFull) begin
     //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkDmaReadCntrl pendingLKeyQ");
-    //     end
-    //     if (!pendingDmaCntrlReqQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkDmaReadCntrl pendingDmaCntrlReqQ");
     //     end
     //     if (!pendingDmaReadReqQ.notFull) begin
     //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkDmaReadCntrl pendingDmaReadReqQ");
@@ -769,7 +766,6 @@ module mkDmaReadCntrl#(
 
         pendingScatterGatherElemQ.clear;
         pendingLKeyQ.clear;
-        pendingDmaCntrlReqQ.clear;
         pendingDmaReadReqQ.clear;
 
         cancelReg[1]       <= False;
@@ -817,15 +813,12 @@ module mkDmaReadCntrl#(
         sgeMergedMetaDataOutQ.enq(sgeMergedMetaData);
         pendingScatterGatherElemQ.enq(tuple2(sge, dmaReadCntrlReq.pmtu));
 
-        let curSQPN = dmaReadCntrlReq.sglDmaReadMetaData.sqpn;
-        let curWorkReqID = dmaReadCntrlReq.sglDmaReadMetaData.wrID;
+        // let curSQPN = dmaReadCntrlReq.sglDmaReadMetaData.sqpn;   // TODO: remove it
         let totalLen = totalLenReg;
         let sgeNum = sgeNumReg;
         if (sge.isFirst) begin
             totalLen = sge.len;
             sgeNum = 1;
-
-            pendingDmaCntrlReqQ.enq(tuple2(curSQPN, curWorkReqID));
         end
         else begin
             totalLen = totalLenReg + sge.len;
@@ -863,7 +856,6 @@ module mkDmaReadCntrl#(
 
             // let sglTotalPayloadLenMetaData = TotalPayloadLenMetaDataSGL {
             //     sqpn    : curSQPN,
-            //     wrID    : curWorkReqID,
             //     totalLen: totalLen,
             //     pmtu    : dmaReadCntrlReq.pmtu
             // };
@@ -928,14 +920,10 @@ module mkDmaReadCntrl#(
         let addrChunkResp <- addrChunkSrv.srvPort.response.get;
 
         let lkey = pendingLKeyQ.first;
-        let { curSQPN, curWorkReqID } = pendingDmaCntrlReqQ.first;
 
         let dmaReadReq = DmaReadReq {
-            initiator: DMA_SRC_SQ_RD,
-            sqpn     : curSQPN,
             startAddr: addrChunkResp.chunkAddr,
             len      : addrChunkResp.chunkLen,
-            wrID     : curWorkReqID,
             mrIdx    : key2IndexMR(lkey)
         };
         dmaReadSrv.request.put(dmaReadReq);
@@ -948,13 +936,8 @@ module mkDmaReadCntrl#(
         if (isLastChunkInSGE) begin
             pendingLKeyQ.deq;
         end
-        if (isLastDmaReqChunk) begin
-            pendingDmaCntrlReqQ.deq;
-        end
         $display(
             "time=%0t: mkDmaReadCntrl issueDmaReq", $time,
-            ", sqpn=%h", curSQPN,
-            ", pendingDmaReadCntrlReq=", fshow(pendingDmaCntrlReqQ.first),
             ", addrChunkResp=", fshow(addrChunkResp),
             ", dmaReadReq=", fshow(dmaReadReq)
         );
@@ -2090,8 +2073,8 @@ module mkConnectPipeOut2BramQ#(
 endmodule
 
 typedef struct {
-    WorkReqID         wrID; // TODO: remote it
-    QPN               sqpn; // TODO: remote it
+    // WorkReqID         wrID; // TODO: remote it
+    // QPN               sqpn; // TODO: remote it
     ScatterGatherList sgl;
     Length            totalLen;
     ADDR              raddr;
@@ -2391,9 +2374,9 @@ module mkPayloadGenerator#(
             let dmaReadCntrlReq = DmaReadCntrlReq {
                 sglDmaReadMetaData: DmaReadMetaDataSGL {
                     sgl           : payloadGenReq.sgl,
-                    totalLen      : payloadGenReq.totalLen,
-                    sqpn          : payloadGenReq.sqpn,
-                    wrID          : payloadGenReq.wrID
+                    totalLen      : payloadGenReq.totalLen
+                    // sqpn          : payloadGenReq.sqpn, // TODO: remove it
+                    // wrID          : payloadGenReq.wrID  // TODO: remove it
                 },
                 pmtu              : payloadGenReq.pmtu
             };

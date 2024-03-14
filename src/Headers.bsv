@@ -6,7 +6,7 @@ typedef 64 LONG_WIDTH;
 typedef 24 PSN_WIDTH;
 typedef 24 QPN_WIDTH;
 typedef 32 RDMA_MAX_LEN_WIDTH;
-typedef 64 WR_ID_WIDTH;
+// typedef 64 WR_ID_WIDTH; // TODO: remove it
 typedef 2  PAD_WIDTH;
 typedef 16 PKEY_WIDTH;
 typedef 5  AETH_VALUE_WIDTH;

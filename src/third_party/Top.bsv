@@ -254,7 +254,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     Vector#(2, MrTableQueryClt)  mrTableQueryCltVec = newVector;
     mrTableQueryCltVec[0] = rqWrapper.mrTableQueryClt;
     mrTableQueryCltVec[1] = addrTranslatorForSQ.mrTableClt;
-    let mrTableQueryArbitClt <- mkClientArbiter("mrTableQueryArbitClt", True, 10, mrTableQueryCltVec, alwaysTrue, alwaysTrue);
+    let mrTableQueryArbitClt <- mkClientArbiter("mrTableQueryArbitClt", False, 10, mrTableQueryCltVec, alwaysTrue, alwaysTrue);
     mkConnection(mrTable.querySrv, mrTableQueryArbitClt);
 
     TLB tlb <- mkTLB;

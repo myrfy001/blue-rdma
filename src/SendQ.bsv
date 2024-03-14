@@ -193,7 +193,7 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
             migReq   : unpack(0),
             padCnt   : padCnt,
             tver     : unpack(0),
-            pkey     : dontCareValue, // wqe.pkey,
+            pkey     : wqe.pkey,
             fecn     : unpack(0),
             becn     : unpack(0),
             resv6    : unpack(0),
@@ -397,7 +397,7 @@ function Maybe#(PktHeaderInfo) genMiddleOrLastPktHeader(
             migReq   : unpack(0),
             padCnt   : padCnt,
             tver     : unpack(0),
-            pkey     : dontCareValue, // wqe.pkey,
+            pkey     : wqe.pkey,
             fecn     : unpack(0),
             becn     : unpack(0),
             resv6    : unpack(0),
@@ -769,8 +769,8 @@ module mkSendQ#(
         end
         if (shouldGenPayload) begin
             let payloadGenReq = PayloadGenReqSG {
-                wrID      : wqe.id,
-                sqpn      : wqe.sqpn,
+                // wrID      : wqe.id,   // TODO: remove it
+                // sqpn      : wqe.sqpn, // TODO: remove it
                 sgl       : wqe.sgl,
                 totalLen  : wqe.totalLen,
                 raddr     : remoteAddr,
@@ -785,7 +785,6 @@ module mkSendQ#(
         $display(
             "time=%0t: mkSendQ 1st stage recvWQE", $time,
             ", sqpn=%h", wqe.sqpn,
-            ", id=%h", wqe.id,
             ", macAddr=%h", wqe.macAddr,
             ", pmtu=", fshow(wqe.pmtu),
             ", shouldGenPayload=", fshow(shouldGenPayload)
@@ -844,7 +843,6 @@ module mkSendQ#(
         $display(
             "time=%0t: mkSendQ 2nd stage recvTotalMetaData", $time,
             ", sqpn=%h", wqe.sqpn,
-            ", id=%h", wqe.id,
             ", psn=%h", wqe.psn,
             ", totalLen=%0d", totalLen,
             ", totalPktNum=%0d", totalPktNum,
@@ -941,7 +939,6 @@ module mkSendQ#(
         $display(
             "time=%0t: mkSendQ 3th stage updatePSN", $time,
             ", sqpn=%h", wqe.sqpn,
-            ", id=%h", wqe.id,
             ", curPSN=%h", curPSN,
             ", pktPayloadLen=%0d", pktPayloadLen,
             ", padCnt=%0d", padCnt,
@@ -1026,7 +1023,6 @@ module mkSendQ#(
         $display(
             "time=%0t: mkSendQ 4th stage prepareHeader", $time,
             ", sqpn=%h", wqe.sqpn,
-            ", id=%h", wqe.id,
             ", curPSN=%h", curPSN,
             ", isFirstPkt=", fshow(isFirstPkt),
             ", isLastPkt=", fshow(isLastPkt),

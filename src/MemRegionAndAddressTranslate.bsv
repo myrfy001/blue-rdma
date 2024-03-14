@@ -477,9 +477,9 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
         readRespInQ.deq;
 
         readRespOutQ.enq(DmaReadResp{
-            initiator   : ?,                // TODO: remove it
-            sqpn        : ?,                // TODO: remove it
-            wrID        : ?,                // TODO: remove it
+            // initiator   : ?,                // TODO: remove it
+            // sqpn        : ?,                // TODO: remove it
+            // wrID        : ?,                // TODO: remove it
             isRespErr   : False,
             dataStream  : reverseStream(inResp.dataStream)
         });

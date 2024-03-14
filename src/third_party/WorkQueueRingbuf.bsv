@@ -76,6 +76,7 @@ module mkWorkQueueRingbufController(WorkQueueRingbufController ifc);
         endcase
 
         WorkQueueElem req   = unpack(0);
+        req.pkey            = desc0.pkey;
         req.opcode          = desc0.commonHeader.opCode;
         req.flags           = unpack(pack(desc1.flags));
         req.qpType          = desc1.qpType;

@@ -72,7 +72,7 @@ module mkPayloadConsumer(PayloadConsumer);
     FIFOF#(Tuple3#(PayloadConReq, Bool, Bool))                    countReqFragQ <- mkFIFOF;
     FIFOF#(Tuple4#(PayloadConReq, Bool, Bool, Bool))             pendingConReqQ <- mkFIFOF;
     FIFOF#(PayloadConReq)                                           genConRespQ <- mkSizedFIFOF(5);
-    FIFOF#(Tuple2#(PayloadConReq, DataStreamFragMetaData))       pendingDmaReqQ <- mkSizedFIFOF(5);
+    FIFOF#(Tuple2#(PayloadConReq, DataStreamFragMetaData))       pendingDmaReqQ <- mkSizedFIFOF(6);
 
 
     // TODO: check payloadOutQ buffer size is enough for DMA write delay?

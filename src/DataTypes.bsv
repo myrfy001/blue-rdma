@@ -122,7 +122,7 @@ typedef Bit#(PMTU_FRAG_NUM_WIDTH)  PktFragNum;
 typedef Bit#(PKT_NUM_WIDTH)        PktNum;
 typedef Bit#(PKT_LEN_WIDTH)        PktLen;
 
-typedef Bit#(WR_ID_WIDTH)     WorkReqID;
+// typedef Bit#(WR_ID_WIDTH)     WorkReqID;  // TODO: remove it
 
 typedef Bit#(RETRY_CNT_WIDTH) RetryCnt;
 typedef Bit#(TIMER_WIDTH)     TimeOutTimer;
@@ -282,7 +282,7 @@ endinstance
 // DMA related
 
 typedef struct {
-    Maybe#(WorkReqID) wrID;
+    // Maybe#(WorkReqID) wrID;  // TODO: remove it
     LKEY lkey;
     RKEY rkey;
     Bool localOrRmtKey; // True for local, False for remote
@@ -294,9 +294,9 @@ typedef struct {
 } PermCheckReq deriving(Bits, FShow);
 
 typedef struct {
-    DmaReqSrcType initiator; // TODO: remove it
-    QPN sqpn; // TODO: remove it
-    WorkReqID wrID; // TODO: remove it
+    // DmaReqSrcType initiator; // TODO: remove it
+    // QPN sqpn; // TODO: remove it
+    // WorkReqID wrID; // TODO: remove it
     ADDR startAddr;
     Length len;
     IndexMR mrIdx;
@@ -311,9 +311,9 @@ typedef struct {
 } DmaReadMetaDataNew deriving(Bits, FShow);
 
 typedef struct {
-    DmaReqSrcType initiator; // TODO: remove it
-    QPN sqpn; // TODO: remove it
-    WorkReqID wrID; // TODO: remove it
+    // DmaReqSrcType initiator; // TODO: remove it
+    // QPN sqpn; // TODO: remove it
+    // WorkReqID wrID; // TODO: remove it
     ADDR startAddr;
     PktLen len;
     IndexMR mrIdx;
@@ -326,9 +326,9 @@ typedef struct {
 } DmaReadReqNew deriving(Bits, FShow);
 
 typedef struct {
-    DmaReqSrcType initiator; // TODO: remove it
-    QPN sqpn; // TODO: remove it
-    WorkReqID wrID; // TODO: remove it
+    // DmaReqSrcType initiator; // TODO: remove it
+    // QPN sqpn; // TODO: remove it
+    // WorkReqID wrID; // TODO: remove it
     Bool isRespErr;
     DataStream dataStream;
 } DmaReadResp deriving(Bits, FShow);
@@ -594,7 +594,7 @@ instance Flags#(WorkReqSendFlag);
 endinstance
 
 typedef struct {
-    WorkReqID id;
+    // WorkReqID id;        // TODO: remove it
     WorkReqOpCode opcode;
     FlagsType#(WorkReqSendFlag) flags;
     ADDR raddr;
@@ -616,7 +616,7 @@ typedef struct {
 instance FShow#(WorkReq);
     function Fmt fshow(WorkReq wr);
         return $format(
-            "WorkReq { ID=%h", wr.id, ", opcode=", fshow(wr.opcode), ", flags=", fshow(wr.flags),
+            "WorkReq { opcode=", fshow(wr.opcode), ", flags=", fshow(wr.flags),
             ", raddr=%h, rkey=%h, len=%0d, laddr=%h, lkey=%h, sqpn=%h",
             wr.raddr, wr.rkey, wr.len, wr.laddr, wr.lkey, wr.sqpn,
             ", solicited=", fshow(wr.solicited), ", comp=", fshow(wr.comp), ", swap=", fshow(wr.swap),
@@ -649,7 +649,7 @@ instance FShow#(PendingWorkReq);
 endinstance
 
 typedef struct {
-    WorkReqID id;
+    // WorkReqID id;  // TODO: remove it
     Length len;
     ADDR laddr;
     LKEY lkey;
@@ -723,7 +723,7 @@ instance Flags#(WorkCompFlags);
 endinstance
 
 typedef struct {
-    WorkReqID id;
+    // WorkReqID id;        // TODO: remove it
     WorkCompOpCode opcode;
     WorkCompFlags flags; // TODO: support multiple flags
     WorkCompStatus status;
@@ -744,7 +744,7 @@ typedef enum {
 } WorkCompReqType deriving(Bits, Eq, FShow);
 
 typedef struct {
-    Maybe#(WorkReqID) rrID;
+    // Maybe#(WorkReqID) rrID;   // TODO: remove it
     Length len;
     // QPN sqpn;
     PSN reqPSN;
