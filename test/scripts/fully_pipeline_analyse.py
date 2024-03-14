@@ -3,7 +3,8 @@
 import sys
 import re
 
-filter_re = re.compile(sys.argv[1])
+time_interval = int(sys.argv[1])
+filter_re = re.compile(sys.argv[2])
 TIME_PREFIX = "time="
 
 last_time_int = -1
@@ -24,7 +25,7 @@ for line in sys.stdin:
     if not time_str.startswith(TIME_PREFIX):
         continue
     time_str = time_str[len(TIME_PREFIX):]
-    time_int = int(int(time_str) / 10)
+    time_int = int(int(time_str) / time_interval)
     continous_cnt += 1
     non_continous_cnt = time_int - last_time_int - 1
     if last_time_int == -1:

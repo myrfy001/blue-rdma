@@ -107,7 +107,7 @@ module mkRecvStreamMocker(RecvStreamMocker);
         curInputRegForPayloadGenReg <= headerStreamInputQ.first;
 
         isFirstHeaderReg <= True;
-        let headerMeta = genHeaderMetaData(truncate(headerStreamInputQ.first.bitNum >> 3), True);
+        let headerMeta = genHeaderMetaData(truncate(headerStreamInputQ.first.bitNum >> 3), True, False);
         headerMetaForCurCalcReg <= headerMeta;
 
         isFirstPayloadReg <= True;
@@ -121,7 +121,7 @@ module mkRecvStreamMocker(RecvStreamMocker);
     rule genHeaderMeta if (!isHeaderMetaGenerateDoneReg);
         isHeaderMetaGenerateDoneReg <= True;
         let inputReq = curInputRegForHeaderMetaGenReg;
-        let headerMeta = genHeaderMetaData(truncate(inputReq.bitNum >> 3), True);
+        let headerMeta = genHeaderMetaData(truncate(inputReq.bitNum >> 3), True, False);
         headerMetaQ.enq(headerMeta);
         $display("output headerMeta====", fshow(headerMeta));
     endrule

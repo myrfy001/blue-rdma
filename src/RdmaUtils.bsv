@@ -492,7 +492,8 @@ endfunction
 
 function HeaderMetaData genHeaderMetaData(
     HeaderByteNum headerLen,
-    Bool hasPayload
+    Bool hasPayload,
+    Bool isEmptyHeader
 );
     let { headerFragNum, lastFragValidByteNum } =
         calcHeaderFragNumAndLastFragValidByeNum(headerLen);
@@ -501,7 +502,7 @@ function HeaderMetaData genHeaderMetaData(
         headerFragNum: headerFragNum,
         lastFragValidByteNum: lastFragValidByteNum,
         hasPayload: hasPayload,
-        isEmptyHeader : False
+        isEmptyHeader : isEmptyHeader
     };
     return headerMetaData;
 endfunction
@@ -512,7 +513,7 @@ function HeaderRDMA genHeaderRDMA(
     Bool hasPayload
 );
     let headerByteEn = genHeaderByteEn(headerLen);
-    let headerMetaData = genHeaderMetaData(headerLen, hasPayload);
+    let headerMetaData = genHeaderMetaData(headerLen, hasPayload, False);
     return HeaderRDMA {
         headerData    : headerData,
         headerByteEn  : headerByteEn,

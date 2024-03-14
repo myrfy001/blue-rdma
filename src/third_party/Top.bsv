@@ -145,7 +145,7 @@ interface RqWrapper;
     interface UserLogicDmaWriteClt dmaWriteClt;
     interface MrTableQueryClt mrTableQueryClt;
     interface PgtQueryClt pgtQueryClt;
-    interface Put#(DataTypes::DataStream) inputDataStream;
+    interface RqDataStreamWithRawPacketFlagPipeIn inputDataStream;
     interface Server#(WriteReqCommonQPC, Bool) qpcWriteCommonSrv;
     interface PipeOut#(RingbufRawDescriptor) packetMetaDescPipeOut;
 endinterface
@@ -164,7 +164,7 @@ module mkRqWrapper(RqWrapper);
     let payloadConsumer <- mkPayloadConsumer;
     RQReportEntryToRingbufDesc reportDescConvertor <- mkRQReportEntryToRingbufDesc;
 
-    FIFOF#(DataTypes::DataStream) inputDataStreamQ <- mkFIFOF;
+    FIFOF#(Tuple2#(DataTypes::DataStream,Bool)) inputDataStreamQ <- mkFIFOF;
 
     let headerAndMetaDataAndPayloadPipeOut <- mkExtractHeaderFromRdmaPktPipeOut;
 
@@ -396,16 +396,48 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     endrule
 
-    rule forwardRxStream;
+    // rule forwardRxStream;
+
+    //     if (udp.udpIpMetaDataRxOut.notEmpty) begin
+    //         udp.udpIpMetaDataRxOut.deq;
+    //         $display("time=%0t: ", $time,"udp recv meta = ", fshow(udp.udpIpMetaDataRxOut.first));
+    //     end
+
+    //     if (udp.macMetaDataRxOut.notEmpty) begin
+    //         udp.macMetaDataRxOut.deq;
+    //         $display("time=%0t: ", $time,"udp recv mac meta = ", fshow(udp.macMetaDataRxOut.first));
+    //     end
+
+    //     if (udp.dataStreamRxOut.notEmpty) begin
+    //         let data = udp.dataStreamRxOut.first;
+    //         udp.dataStreamRxOut.deq;
+
+    //         let outData = DataTypes::DataStream {
+    //             data: swapEndian(data.data),
+    //             byteEn: swapEndianBit(data.byteEn),
+    //             isLast: data.isLast,
+    //             isFirst: data.isFirst
+    //         };
+    //         rqWrapper.inputDataStream.put(outData);
+    //         $display("time=%0t: ", $time,"udp put to rqWrapper = ", fshow(outData));
+    //     end
+    // endrule
+
+
+
+    // ############################ Code for test use ##########################################
+
+    FIFOF#(RqDataStreamWithRawPacketFlag) delayQ <- mkSizedFIFOF(8192);
+    // loop tx stream to rx stream with delayed time so they won't interfere eachother.
+    rule bufferTxStream;
+
 
         if (udp.udpIpMetaDataRxOut.notEmpty) begin
             udp.udpIpMetaDataRxOut.deq;
-            $display("time=%0t: ", $time,"udp recv meta = ", fshow(udp.udpIpMetaDataRxOut.first));
         end
 
         if (udp.macMetaDataRxOut.notEmpty) begin
             udp.macMetaDataRxOut.deq;
-            $display("time=%0t: ", $time,"udp recv mac meta = ", fshow(udp.macMetaDataRxOut.first));
         end
 
         if (udp.dataStreamRxOut.notEmpty) begin
@@ -418,10 +450,25 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isLast: data.isLast,
                 isFirst: data.isFirst
             };
-            rqWrapper.inputDataStream.put(outData);
-            $display("time=%0t: ", $time,"udp put to rqWrapper = ", fshow(outData));
+            delayQ.enq(tuple2(outData, False));
+            $display("time=%0t: ", $time,"udp put to delayQ = ", fshow(outData));
         end
     endrule
+
+    rule outputTxStream;
+        let t <- $time;
+        if (t > 17890) begin
+            let d = delayQ.first;
+            delayQ.deq;
+            rqWrapper.inputDataStream.put(d);
+            $display("time=%0t: ", $time, "delayQ put to rqWrapper = ");
+        end
+    endrule
+
+    // ##########################  END OF TEST USE  ############################################
+
+
+
 
 
 

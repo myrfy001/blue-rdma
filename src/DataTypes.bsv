@@ -138,6 +138,10 @@ typedef Bit#(PD_HANDLE_WIDTH) HandlerPD;
 typedef PipeOut#(DataStream) DataStreamPipeOut;
 typedef Put#(DataStream) DataStreamPipeIn;
 
+typedef Tuple2#(DataStream, Bool) RqDataStreamWithRawPacketFlag;
+typedef PipeOut#(RqDataStreamWithRawPacketFlag) RqDataStreamWithRawPacketFlagPipeOut;
+typedef Put#(RqDataStreamWithRawPacketFlag) RqDataStreamWithRawPacketFlagPipeIn;
+
 typedef PipeOut#(RecvReq)                     RecvReqBuf;
 
 

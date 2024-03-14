@@ -84,30 +84,55 @@ module mkTestTop(Empty);
     SyncFIFOIfc#(Bool) csrWriteRespSyncFifo <- mkSyncFIFO(2, fastClock, fastReset, slowClock);
     mkConnection(toGet(csrWriteRespSyncFifo), fakeXdmaA.barWriteClt.response, clocked_by slowClock, reset_by slowReset); 
 
-    // // loop tx stream to rx stream
-    // rule displayAndForwardWireData;
+
+
+    
+    // FIFOF#(AxiStream512) delayQ <- mkSizedFIFOF(8192);
+    // // loop tx stream to rx stream with delayed time so they won't interfere eachother.
+    // rule bufferTxStream;
     //     let d = topA.axiStreamTxOutUdp.first;
     //     topA.axiStreamTxOutUdp.deq;
-    //     topA.axiStreamRxInUdp.put(d);
-    //     $display("udp send data: ", fshow(d));
+    //     delayQ.enq(d);
+    //     $display("time=%0t: ", $time, "udp send data and put to buffer ");
     // endrule
+
+    // rule outputTxStream;
+    //     let t <- $time;
+    //     if (t > 16890) begin
+    //         let d = delayQ.first;
+    //         delayQ.deq;
+    //         topA.axiStreamRxInUdp.put(d);
+    //         $display("time=%0t: ", $time, "deq data from delayQ");
+    //     end
+    // endrule
+
+
+
+    // loop tx stream to rx stream
+    rule displayAndForwardWireData;
+        let d = topA.axiStreamTxOutUdp.first;
+        topA.axiStreamTxOutUdp.deq;
+        topA.axiStreamRxInUdp.put(d);
+        $display("time=%0t: ", $time, "udp send data: ", fshow(d));
+    endrule
+
 
 
     // connect rx and tx to MockHost
 
-    SyncFIFOIfc#(AxiStream512) netIfcRxSyncFifo <- mkSyncFIFO(32, cmacRxTxClk, cmacRxTxRst, fastClock);
-    mkConnection(fakeXdmaA.axiStreamRxUdp, toPut(netIfcRxSyncFifo), clocked_by cmacRxTxClk, reset_by cmacRxTxRst);
-    mkConnection(toGet(netIfcRxSyncFifo), topA.axiStreamRxInUdp);
+    // SyncFIFOIfc#(AxiStream512) netIfcRxSyncFifo <- mkSyncFIFO(32, cmacRxTxClk, cmacRxTxRst, fastClock);
+    // mkConnection(fakeXdmaA.axiStreamRxUdp, toPut(netIfcRxSyncFifo), clocked_by cmacRxTxClk, reset_by cmacRxTxRst);
+    // mkConnection(toGet(netIfcRxSyncFifo), topA.axiStreamRxInUdp);
 
-    SyncFIFOIfc#(AxiStream512) netIfcTxSyncFifo <- mkSyncFIFO(32, fastClock, fastReset, cmacRxTxClk);
-    // mkConnection(toGet(topA.axiStreamTxOutUdp), toPut(netIfcTxSyncFifo));
-    rule forwardUdpSendStream;
-        let txData = topA.axiStreamTxOutUdp.first;
-        topA.axiStreamTxOutUdp.deq;
-        netIfcTxSyncFifo.enq(txData);
-        $display("time=%0t: ", $time, "forward udp send data to sync FIFO of CMAC");
-    endrule
-    mkConnection(convertSyncFifoToFifoOut(netIfcTxSyncFifo), fakeXdmaA.axiStreamTxUdp, clocked_by cmacRxTxClk, reset_by cmacRxTxRst); 
+    // SyncFIFOIfc#(AxiStream512) netIfcTxSyncFifo <- mkSyncFIFO(32, fastClock, fastReset, cmacRxTxClk);
+    // // mkConnection(toGet(topA.axiStreamTxOutUdp), toPut(netIfcTxSyncFifo));
+    // rule forwardUdpSendStream;
+    //     let txData = topA.axiStreamTxOutUdp.first;
+    //     topA.axiStreamTxOutUdp.deq;
+    //     netIfcTxSyncFifo.enq(txData);
+    //     $display("time=%0t: ", $time, "forward udp send data to sync FIFO of CMAC");
+    // endrule
+    // mkConnection(convertSyncFifoToFifoOut(netIfcTxSyncFifo), fakeXdmaA.axiStreamTxUdp, clocked_by cmacRxTxClk, reset_by cmacRxTxRst); 
 
 
     rule forwardBarReadReq;

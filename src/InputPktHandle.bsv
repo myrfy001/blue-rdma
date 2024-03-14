@@ -88,7 +88,7 @@ endfunction
 interface HeaderAndMetaDataAndPayloadSeperateDataStreamPipeOut;
     interface HeaderDataStreamAndMetaDataPipeOut headerAndMetaData;
     interface DataStreamFragMetaPipeOut payloadStreamFragMetaPipeOut;
-    interface DataStreamPipeIn rdmaPktPipeIn;
+    interface RqDataStreamWithRawPacketFlagPipeIn rdmaPktPipeIn;
     interface Client#(DATA, InputStreamFragBufferIdx) payloadStreamFragStorageInsertClt;
 endinterface
 
@@ -99,7 +99,7 @@ endinterface
 // This module will not discard invalid packet.
 (* synthesize *)
 module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateDataStreamPipeOut);
-    FIFOF#(DataStream) rdmaPktPipeInQ <- mkFIFOF;
+    FIFOF#(RqDataStreamWithRawPacketFlag) rdmaPktPipeInQ <- mkFIFOF;
 
     FIFOF#(HeaderMetaData) headerMetaDataInQ <- mkFIFOF;
     FIFOF#(DataStream) dataInQ <- mkFIFOF;
@@ -128,7 +128,7 @@ module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateData
     endrule
 
     rule extractHeader;
-        let rdmaPktDataStream = rdmaPktPipeInQ.first;
+        let {rdmaPktDataStream, isEmptyHeader} = rdmaPktPipeInQ.first;
         rdmaPktPipeInQ.deq;
         dataInQ.enq(rdmaPktDataStream);
 
@@ -150,7 +150,7 @@ module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateData
                 )
             );
 
-            let headerMetaData = genHeaderMetaData(headerLen, headerHasPayload);
+            let headerMetaData = genHeaderMetaData(headerLen, headerHasPayload, isEmptyHeader);
             headerMetaDataInQ.enq(headerMetaData);
             // $display(
             //     "time=%0t: extractHeader", $time,
