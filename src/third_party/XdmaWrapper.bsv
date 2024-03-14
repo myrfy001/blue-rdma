@@ -347,16 +347,16 @@ typedef struct {
 
 
 interface BluerdmaDmaProxyForRQ;
-    interface Server#(DmaWriteReqNew, DmaWriteRespNew) blueSideWriteSrv;
+    interface Server#(DmaWriteReq, DmaWriteResp) blueSideWriteSrv;
     interface UserLogicDmaWriteClt userlogicSideWriteClt;
 endinterface
 
 (* synthesize *)
 module mkBluerdmaDmaProxyForRQ(BluerdmaDmaProxyForRQ);
 
-    FIFOF#(DmaWriteReqNew) blueSideReqQ <- mkFIFOF;
+    FIFOF#(DmaWriteReq) blueSideReqQ <- mkFIFOF;
     FIFOF#(UserLogicDmaC2hReq) userLogicSideReqQ <- mkFIFOF;
-    FIFOF#(DmaWriteRespNew) blueSideRespQ <- mkFIFOF;
+    FIFOF#(DmaWriteResp) blueSideRespQ <- mkFIFOF;
     FIFOF#(UserLogicDmaC2hResp) userLogicSideRespQ <- mkFIFOF;
 
     rule forwardReq;
@@ -374,7 +374,7 @@ module mkBluerdmaDmaProxyForRQ(BluerdmaDmaProxyForRQ);
     rule forwardResp;
         userLogicSideRespQ.deq;
         blueSideRespQ.enq(
-            DmaWriteRespNew{
+            DmaWriteResp{
                 isRespErr: False
             }
         );

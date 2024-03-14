@@ -240,7 +240,7 @@ module mkRQ(RQ ifc);
         if (needIssueDMARequest) begin
             payloadConsumerControlClt.putReq(PayloadConReq{
                 fragNum: pktMetaData.pktFragNum,
-                consumeInfo: tagged WriteReqInfo DmaWriteMetaDataNew {
+                consumeInfo: tagged WriteReqInfo DmaWriteMetaData {
                     startAddr: phyAddr,
                     len      : pktMetaData.pktPayloadLen
                 }

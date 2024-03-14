@@ -190,10 +190,9 @@ typedef Client#(PgtAddrTranslateReq, ADDR) PgtQueryClt;
 // Common types
 
 typedef Server#(DmaReadReq, DmaReadResp)            DmaReadSrv;
-typedef Server#(DmaWriteReqNew, DmaWriteRespNew)    DmaWriteSrv;
+typedef Server#(DmaWriteReq, DmaWriteResp)    DmaWriteSrv;
 typedef Client#(DmaReadReq, DmaReadResp)            DmaReadClt;
-typedef Client#(DmaReadReqNew, DmaReadRespNew)      DmaReadNewClt;
-typedef Client#(DmaWriteReqNew, DmaWriteRespNew)    DmaWriteClt;
+typedef Client#(DmaWriteReq, DmaWriteResp)    DmaWriteClt;
 
 typedef Server#(PermCheckReq, Bool) PermCheckSrv;
 typedef Client#(PermCheckReq, Bool) PermCheckClt;
@@ -294,65 +293,35 @@ typedef struct {
 } PermCheckReq deriving(Bits, FShow);
 
 typedef struct {
-    // DmaReqSrcType initiator; // TODO: remove it
-    // QPN sqpn; // TODO: remove it
-    // WorkReqID wrID; // TODO: remove it
     ADDR startAddr;
     Length len;
     IndexMR mrIdx;
 } DmaReadMetaData deriving(Bits, FShow);
 
 typedef struct {
-    DmaReqSrcType initiator;
-    QPN sqpn;
-    ADDR startAddr;
-    Length len;
-    IndexMR mrID;
-} DmaReadMetaDataNew deriving(Bits, FShow);
-
-typedef struct {
-    // DmaReqSrcType initiator; // TODO: remove it
-    // QPN sqpn; // TODO: remove it
-    // WorkReqID wrID; // TODO: remove it
     ADDR startAddr;
     PktLen len;
     IndexMR mrIdx;
 } DmaReadReq deriving(Bits, FShow);
 
 typedef struct {
-    ADDR startAddr;
-    PktLen len;
-    IndexMR mrIdx;
-} DmaReadReqNew deriving(Bits, FShow);
-
-typedef struct {
-    // DmaReqSrcType initiator; // TODO: remove it
-    // QPN sqpn; // TODO: remove it
-    // WorkReqID wrID; // TODO: remove it
     Bool isRespErr;
     DataStream dataStream;
 } DmaReadResp deriving(Bits, FShow);
 
 typedef struct {
-    DmaReqSrcType initiator;
-    QPN sqpn;
-    Bool isRespErr;
-    DataStream dataStream;
-} DmaReadRespNew deriving(Bits, FShow);
-
-typedef struct {
-        ADDR startAddr;
+    ADDR startAddr;
     PktLen len;
-} DmaWriteMetaDataNew deriving(Bits, Eq, FShow);
+} DmaWriteMetaData deriving(Bits, Eq, FShow);
 
 typedef struct {
-    DmaWriteMetaDataNew metaData;
+    DmaWriteMetaData metaData;
     DataStream dataStream;
-} DmaWriteReqNew deriving(Bits, FShow);
+} DmaWriteReq deriving(Bits, FShow);
 
 typedef struct {
         Bool isRespErr;
-} DmaWriteRespNew deriving(Bits, FShow);
+} DmaWriteResp deriving(Bits, FShow);
 
 typedef enum {
     DMA_SRC_RQ_RD,
@@ -369,8 +338,8 @@ typedef enum {
 } DmaReqSrcType deriving(Bits, Eq, FShow); // TODO: remove it
 
 typedef struct {
-    DmaReadMetaDataNew dmaReadMetaData;
-    // DmaReadReqNew dmaReadReq;
+    DmaReadMetaData dmaReadMetaData;
+    // DmaReadReq dmaReadReq;
     // Bool segment;
     Bool          addPadding;
     PMTU          pmtu;
@@ -384,12 +353,12 @@ typedef struct {
 
 typedef union tagged {
     // void DiscardPayload;
-    DmaWriteMetaDataNew DiscardPayloadInfo;
+    DmaWriteMetaData DiscardPayloadInfo;
     struct {
-        DmaWriteMetaDataNew atomicRespDmaWriteMetaData;
+        DmaWriteMetaData atomicRespDmaWriteMetaData;
         Long atomicRespPayload;
     } AtomicRespInfoAndPayload;
-    DmaWriteMetaDataNew WriteReqInfo;
+    DmaWriteMetaData WriteReqInfo;
 } PayloadConInfo deriving(Bits, FShow);
 
 typedef struct {
@@ -398,7 +367,7 @@ typedef struct {
 } PayloadConReq deriving(Bits, FShow);
 
 typedef struct {
-    DmaWriteRespNew dmaWriteResp;
+    DmaWriteResp dmaWriteResp;
 } PayloadConResp deriving(Bits, FShow);
 
 typedef struct {

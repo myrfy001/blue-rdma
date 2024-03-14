@@ -64,7 +64,7 @@ endinterface
 module mkPayloadConsumer(PayloadConsumer);
 
     BypassServer#(PayloadConReq, PayloadConResp) controlPortSrvInst <- mkBypassServer("controlPortSrvInst");
-    BypassClient#(DmaWriteReqNew, DmaWriteRespNew) dmaWriteCltInst <- mkBypassClient("dmaWriteCltInst");
+    BypassClient#(DmaWriteReq, DmaWriteResp) dmaWriteCltInst <- mkBypassClient("dmaWriteCltInst");
     FIFOF#(DataStreamFragMetaData) payloadFragMetaInBufQ <- mkFIFOF;
     BypassClient#(Tuple2#(InputStreamFragBufferIdx, Bool), DATA) readFragCltInst <- mkBypassClient("readFragCltInst");
 
@@ -310,7 +310,7 @@ module mkPayloadConsumer(PayloadConsumer);
 
         case (consumeReq.consumeInfo) matches
             tagged WriteReqInfo .writeReqInfo: begin
-                let dmaWriteReq = DmaWriteReqNew {
+                let dmaWriteReq = DmaWriteReq {
                     metaData  : writeReqInfo,
                     dataStream: DataStream {
                         isFirst: payloadFragMeta.isFirst,
@@ -343,7 +343,7 @@ module mkPayloadConsumer(PayloadConsumer);
         case (consumeReq.consumeInfo) matches
             tagged WriteReqInfo .writeReqInfo: begin
                 let consumeResp = PayloadConResp {
-                    dmaWriteResp : DmaWriteRespNew {
+                    dmaWriteResp : DmaWriteResp {
                         isRespErr: dmaWriteResp.isRespErr
                     }
                 };
