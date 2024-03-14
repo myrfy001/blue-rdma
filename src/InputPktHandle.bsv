@@ -102,7 +102,7 @@ module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateData
     FIFOF#(RqDataStreamWithRawPacketFlag) rdmaPktPipeInQ <- mkFIFOF;
 
     FIFOF#(HeaderMetaData) headerMetaDataInQ <- mkFIFOF;
-    FIFOF#(DataStream) dataInQ <- mkFIFOF;
+    FIFOF#(DataStream) dataInQ <- mkSizedFIFOF(3);
     
 
     Vector#(2, PipeOut#(HeaderMetaData)) headerMetaDataPipeOutVec <-
