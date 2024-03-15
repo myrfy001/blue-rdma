@@ -401,6 +401,7 @@ module mkRingbufPool(
         2,
         dmaAccessH2cCltVec,
         alwaysTrue,
+        alwaysTrue,
         isRingbufDmaRespFinished
     );
 
@@ -409,6 +410,7 @@ module mkRingbufPool(
         False,
         2,
         dmaAccessC2hCltVec,
+        alwaysTrue,
         alwaysTrue,
         alwaysTrue
     );

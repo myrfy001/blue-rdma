@@ -359,6 +359,24 @@ module mkBluerdmaDmaProxyForRQ(BluerdmaDmaProxyForRQ);
     FIFOF#(DmaWriteResp) blueSideRespQ <- mkFIFOF;
     FIFOF#(UserLogicDmaC2hResp) userLogicSideRespQ <- mkFIFOF;
 
+
+    // rule debug;
+    //     if (!blueSideReqQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkBluerdmaDmaProxyForRQ blueSideReqQ");
+    //     end
+    //     if (!userLogicSideReqQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkBluerdmaDmaProxyForRQ userLogicSideReqQ");
+    //     end
+    //     if (!blueSideRespQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkBluerdmaDmaProxyForRQ blueSideRespQ");
+    //     end
+    //     if (!userLogicSideRespQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkBluerdmaDmaProxyForRQ userLogicSideRespQ");
+    //     end
+    // endrule
+
+
+
     rule forwardReq;
         blueSideReqQ.deq;
         let inReq = blueSideReqQ.first;

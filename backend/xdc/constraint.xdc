@@ -27,5 +27,5 @@ set_property USER_SLR_ASSIGNMENT SLR2 [get_cells {cmac_inst} ]
 set_property USER_SLR_ASSIGNMENT SLR2 [get_cells {bsv_userlogic_top_inst}]
 set_property USER_SLR_ASSIGNMENT SLR2 [get_cells -hierarchical "udp*"]
 
-# very trick one
+# very tricky one
 set_property USER_SLR_ASSIGNMENT SLR2 [get_cells xdma_0_i/inst/pcie4_ip_i/inst/user_reset_reg]

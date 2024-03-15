@@ -404,7 +404,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
 
             let bth = extractBTH(rdmaHeader.headerData);
             $display("bthCheckResult=", bthCheckResult, "headerCheckResult=", headerCheckResult, "nonPayloadHeaderShouldHaveNoPayload=", nonPayloadHeaderShouldHaveNoPayload);
-            if (bthCheckResult && headerCheckResult && nonPayloadHeaderShouldHaveNoPayload) begin
+            if (rdmaHeader.headerMetaData.isEmptyHeader || (bthCheckResult && headerCheckResult && nonPayloadHeaderShouldHaveNoPayload)) begin
                 // Packet header is valid
                 rdmaHeaderPreCheckQ.enq(rdmaHeader);
                 payloadFragMetaPreCheckQ.enq(streamFragMeta);
@@ -462,24 +462,29 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             let rdmaHeader = rdmaHeaderPreCheckQ.first;
             rdmaHeaderPreCheckQ.deq;
 
-            let bth    = extractBTH(rdmaHeader.headerData);
-            let deth   = extractDETH(rdmaHeader.headerData);
-            let xrceth = extractXRCETH(rdmaHeader.headerData);
+            if (!rdmaHeader.headerMetaData.isEmptyHeader) begin
+                let bth    = extractBTH(rdmaHeader.headerData);
+                let deth   = extractDETH(rdmaHeader.headerData);
+                let xrceth = extractXRCETH(rdmaHeader.headerData);
 
-            let isLastPkt       = isLastRdmaOpCode(bth.opcode);
-            let isFirstOrMidPkt = isFirstOrMiddleRdmaOpCode(bth.opcode);
-            let isLastOrOnlyPkt = isLastOrOnlyRdmaOpCode(bth.opcode);
-            let dqpn            = bth.dqpn;
-            qpcReadCommonCltInst.putReq(ReadReqCommonQPC{qpn: dqpn});
+                let isLastPkt       = isLastRdmaOpCode(bth.opcode);
+                let isFirstOrMidPkt = isFirstOrMiddleRdmaOpCode(bth.opcode);
+                let isLastOrOnlyPkt = isLastOrOnlyRdmaOpCode(bth.opcode);
+                let dqpn            = bth.dqpn;
+                qpcReadCommonCltInst.putReq(ReadReqCommonQPC{qpn: dqpn});
 
-            let headerValidateInfo = HeaderValidateInfo {
-                dqpn           : dqpn,
-                qkeyDETH       : deth.qkey,
-                isLastPkt      : isLastPkt,
-                isFirstOrMidPkt: isFirstOrMidPkt,
-                isLastOrOnlyPkt: isLastOrOnlyPkt
-            };
-            rdmaHeaderValidationQ.enq(tuple2(rdmaHeader, headerValidateInfo));
+                let headerValidateInfo = HeaderValidateInfo {
+                    dqpn           : dqpn,
+                    qkeyDETH       : deth.qkey,
+                    isLastPkt      : isLastPkt,
+                    isFirstOrMidPkt: isFirstOrMidPkt,
+                    isLastOrOnlyPkt: isLastOrOnlyPkt
+                };
+                rdmaHeaderValidationQ.enq(tuple2(rdmaHeader, headerValidateInfo));
+            end
+            else begin
+                rdmaHeaderValidationQ.enq(tuple2(rdmaHeader, ?));
+            end
         end
 
         // Notice: this fifo should be large enough to wait qpcReadCommonCltInst's response
@@ -495,43 +500,48 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             let { rdmaHeader, headerValidateInfo } = rdmaHeaderValidationQ.first;
             rdmaHeaderValidationQ.deq;
 
-            let bth    = extractBTH(rdmaHeader.headerData);
-            let isLastPkt       = headerValidateInfo.isLastPkt;
-            let isFirstOrMidPkt = headerValidateInfo.isFirstOrMidPkt;
-            let isLastOrOnlyPkt = headerValidateInfo.isLastOrOnlyPkt;
+            if (!rdmaHeader.headerMetaData.isEmptyHeader) begin
+                let bth    = extractBTH(rdmaHeader.headerData);
+                let isLastPkt       = headerValidateInfo.isLastPkt;
+                let isFirstOrMidPkt = headerValidateInfo.isFirstOrMidPkt;
+                let isLastOrOnlyPkt = headerValidateInfo.isLastOrOnlyPkt;
 
-            let isValidHeader = False;
+                let isValidHeader = False;
 
-            let qpcCommonMaybe <- qpcReadCommonCltInst.getResp;
+                let qpcCommonMaybe <- qpcReadCommonCltInst.getResp;
 
-            PMTU pmtu = IBV_MTU_256;
-            if (qpcCommonMaybe matches tagged Valid .qpcCommon) begin
+                PMTU pmtu = IBV_MTU_256;
+                if (qpcCommonMaybe matches tagged Valid .qpcCommon) begin
 
-                isValidHeader = validateHeader(
-                    bth.trans,
-                    headerValidateInfo.qkeyDETH,
-                    qpcCommon
-                );
-                pmtu = qpcCommon.pmtu;
+                    isValidHeader = validateHeader(
+                        bth.trans,
+                        headerValidateInfo.qkeyDETH,
+                        qpcCommon
+                    );
+                    pmtu = qpcCommon.pmtu;
+                end
+                // $display(
+                //     "time=%0t: checkMetaDataQP", $time,
+                //     ", dqpn=%h", headerValidateInfo.dqpn,
+                //     ", bth.dqpn=%h", bth.dqpn,
+                //     ", bth.psn=%h", bth.psn,
+                //     ", bth.opcode=", fshow(bth.opcode)
+                // );
+
+
+                let validHeaderInfo = ValidHeaderInfo {
+                    dqpn           : headerValidateInfo.dqpn,
+                    pmtu           : pmtu,
+                    isValidHeader  : isValidHeader,
+                    isLastPkt      : isLastPkt,
+                    isFirstOrMidPkt: isFirstOrMidPkt,
+                    isLastOrOnlyPkt: isLastOrOnlyPkt
+                };
+                rdmaHeaderFilterQ.enq(tuple3(rdmaHeader, qpcCommonMaybe, validHeaderInfo));
             end
-            // $display(
-            //     "time=%0t: checkMetaDataQP", $time,
-            //     ", dqpn=%h", headerValidateInfo.dqpn,
-            //     ", bth.dqpn=%h", bth.dqpn,
-            //     ", bth.psn=%h", bth.psn,
-            //     ", bth.opcode=", fshow(bth.opcode)
-            // );
-
-
-            let validHeaderInfo = ValidHeaderInfo {
-                dqpn           : headerValidateInfo.dqpn,
-                pmtu           : pmtu,
-                isValidHeader  : isValidHeader,
-                isLastPkt      : isLastPkt,
-                isFirstOrMidPkt: isFirstOrMidPkt,
-                isLastOrOnlyPkt: isLastOrOnlyPkt
-            };
-            rdmaHeaderFilterQ.enq(tuple3(rdmaHeader, qpcCommonMaybe, validHeaderInfo));
+            else begin
+                rdmaHeaderFilterQ.enq(tuple3(rdmaHeader, ?, ?));
+            end
         end
 
         payloadFragMetaFilterQ.enq(streamFragMeta);
@@ -548,27 +558,34 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             let { rdmaHeader, qpcCommonMaybe, validHeaderInfo } = rdmaHeaderFilterQ.first;
             rdmaHeaderFilterQ.deq;
 
-            let bth           = extractBTH(rdmaHeader.headerData);
-            let isValidHeader = validHeaderInfo.isValidHeader;
+            if (!rdmaHeader.headerMetaData.isEmptyHeader) begin
 
-            if (isValidHeader) begin
-                immAssert(
-                    isValid(qpcCommonMaybe),
-                    "isValid(qpcCommonMaybe) assertion @ mkInputRdmaPktBufAndHeaderValidation",
-                    $format(
-                        "qpcCommonMaybe=", fshow(qpcCommonMaybe), " should be valid"
-                    )
-                );
-                rdmaHeaderFragLenCalcQ.enq(tuple3(rdmaHeader, fromMaybe(?, qpcCommonMaybe), validHeaderInfo));
+                let bth           = extractBTH(rdmaHeader.headerData);
+                let isValidHeader = validHeaderInfo.isValidHeader;
+
+                if (isValidHeader) begin
+                    immAssert(
+                        isValid(qpcCommonMaybe),
+                        "isValid(qpcCommonMaybe) assertion @ mkInputRdmaPktBufAndHeaderValidation",
+                        $format(
+                            "qpcCommonMaybe=", fshow(qpcCommonMaybe), " should be valid"
+                        )
+                    );
+                    rdmaHeaderFragLenCalcQ.enq(tuple3(rdmaHeader, fromMaybe(?, qpcCommonMaybe), validHeaderInfo));
+                end
+                else begin
+                    $display(
+                        "time=%0t: found invalid header", $time,
+                        ", isValidHeader=", fshow(isValidHeader)
+                    );
+                end
+
+                isValidPkt = isValidHeader;
             end
             else begin
-                $display(
-                    "time=%0t: found invalid header", $time,
-                    ", isValidHeader=", fshow(isValidHeader)
-                );
+                rdmaHeaderFragLenCalcQ.enq(tuple3(rdmaHeader, fromMaybe(?, qpcCommonMaybe), validHeaderInfo));
+                isValidPkt = True;
             end
-
-            isValidPkt = isValidHeader;
             isValidPktReg <= isValidPkt;
         end
 
@@ -752,6 +769,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             } = rdmaHeaderPktLenCheckQ.first;
             rdmaHeaderPktLenCheckQ.deq;
 
+            
             let rdmaHeader      = pktLenCheckInfo.rdmaHeader;
             let pktFragNum      = pktLenCheckInfo.pktFragNum;
             let pktLen          = pktLenCheckInfo.pktLen;
@@ -761,64 +779,80 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             let isLastOrOnlyPkt = pktLenCheckInfo.isLastOrOnlyPkt;
             let isMidPkt        = pktLenCheckInfo.isMidPkt;
 
-            // fix byteEN to prevent dma write access touch unrelated bytes.
-            streamFragMeta.byteEn = streamFragMeta.byteEn << pktLenCheckInfo.padCnt;
+            if (!rdmaHeader.headerMetaData.isEmptyHeader) begin
+                // fix byteEN to prevent dma write access touch unrelated bytes.
+                streamFragMeta.byteEn = streamFragMeta.byteEn << pktLenCheckInfo.padCnt;
 
-            if (!isZeroPayloadLen) begin
-                reqPayloadFragMetaOutQ.enq(streamFragMeta);
-                // $display("time=%0t: streamFragMeta=", $time, fshow(streamFragMeta));
-            end
-            else begin
-                // Discard zero length payload no matter packet has payload or not
-                $info(
-                    "time=%0t: InputRdmaPktBuf checkPktLen", $time,
-                    ", discard zero-length payload for RDMA packet"
+                if (!isZeroPayloadLen) begin
+                    reqPayloadFragMetaOutQ.enq(streamFragMeta);
+                    // $display("time=%0t: streamFragMeta=", $time, fshow(streamFragMeta));
+                end
+                else begin
+                    // Discard zero length payload no matter packet has payload or not
+                    $info(
+                        "time=%0t: InputRdmaPktBuf checkPktLen", $time,
+                        ", discard zero-length payload for RDMA packet"
+                    );
+                end
+
+                if (pktValid) begin
+                    pktValid = (isMidPkt && isPktLenEqPMTU) ||
+                        (isLastOrOnlyPkt && !isPktLenGtPMTU);
+
+                    // $display(
+                    //     "time=%0t: checkPktLen", $time,
+                    //     ", bth.trans=", fshow(pktLenCheckInfo.trans),
+                    //     ", bth.dqpn=%h", pktLenCheckInfo.dqpn,
+                    //     ", bth.psn=%h", pktLenCheckInfo.psn,
+                    //     ", bth.opcode=", fshow(pktLenCheckInfo.opcode),
+                    //     ", bth.padCnt=%h", pktLenCheckInfo.padCnt,
+                    //     ", pktLen=%0d", pktLen,
+                    //     ", pmtu=", fshow(pmtu),
+                    //     ", isFirstOrMidPkt=", fshow(isFirstOrMidPkt),
+                    //     ", isPktLenEqPMTU=", fshow(isPktLenEqPMTU),
+                    //     ", isLastOrOnlyPkt=", fshow(isLastOrOnlyPkt),
+                    //     ", isPktLenGtPMTU=", fshow(isPktLenGtPMTU),
+                    //     ", pktValid=", fshow(pktValid)
+                    // );
+                end
+
+                let pktStatus = PKT_ST_VALID;
+                if (!pktValid) begin
+                    // Invalid packet length
+                    pktStatus = PKT_ST_LEN_ERR;
+                end
+                let pktMetaDataAndQpc = DataTypes::RdmaPktMetaDataAndQPC{
+                    metadata: RdmaPktMetaData {
+                        pktPayloadLen   : pktLen,
+                        pktFragNum      : (isZeroPayloadLen ? 0 : pktFragNum),
+                        isZeroPayloadLen: isZeroPayloadLen,
+                        pktHeader       : rdmaHeader,
+                        pktValid        : pktValid,
+                        pktStatus       : pktStatus
+                    },
+                    qpc: qpcCommon
+                };
+
+                reqPktMetaDataAndQpcOutQ.enq(pktMetaDataAndQpc);
+                $display(
+                    "time=%0t:", $time, " pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc)
+                    // "time=%0t: bth=", $time, fshow(bth), ", pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc)
                 );
             end
-
-            if (pktValid) begin
-                pktValid = (isMidPkt && isPktLenEqPMTU) ||
-                    (isLastOrOnlyPkt && !isPktLenGtPMTU);
-
-                // $display(
-                //     "time=%0t: checkPktLen", $time,
-                //     ", bth.trans=", fshow(pktLenCheckInfo.trans),
-                //     ", bth.dqpn=%h", pktLenCheckInfo.dqpn,
-                //     ", bth.psn=%h", pktLenCheckInfo.psn,
-                //     ", bth.opcode=", fshow(pktLenCheckInfo.opcode),
-                //     ", bth.padCnt=%h", pktLenCheckInfo.padCnt,
-                //     ", pktLen=%0d", pktLen,
-                //     ", pmtu=", fshow(pmtu),
-                //     ", isFirstOrMidPkt=", fshow(isFirstOrMidPkt),
-                //     ", isPktLenEqPMTU=", fshow(isPktLenEqPMTU),
-                //     ", isLastOrOnlyPkt=", fshow(isLastOrOnlyPkt),
-                //     ", isPktLenGtPMTU=", fshow(isPktLenGtPMTU),
-                //     ", pktValid=", fshow(pktValid)
-                // );
+            else begin
+                let pktMetaDataAndQpc = DataTypes::RdmaPktMetaDataAndQPC{
+                    metadata: RdmaPktMetaData {
+                        pktPayloadLen   : pktLen,
+                        pktFragNum      : (isZeroPayloadLen ? 0 : pktFragNum),
+                        isZeroPayloadLen: isZeroPayloadLen,
+                        pktHeader       : rdmaHeader,
+                        pktValid        : True,
+                        pktStatus       : PKT_ST_VALID
+                    },
+                    qpc: qpcCommon
+                };
+                reqPktMetaDataAndQpcOutQ.enq(pktMetaDataAndQpc);
             end
-
-            let pktStatus = PKT_ST_VALID;
-            if (!pktValid) begin
-                // Invalid packet length
-                pktStatus = PKT_ST_LEN_ERR;
-            end
-            let pktMetaDataAndQpc = DataTypes::RdmaPktMetaDataAndQPC{
-                metadata: RdmaPktMetaData {
-                    pktPayloadLen   : pktLen,
-                    pktFragNum      : (isZeroPayloadLen ? 0 : pktFragNum),
-                    isZeroPayloadLen: isZeroPayloadLen,
-                    pktHeader       : rdmaHeader,
-                    pktValid        : pktValid,
-                    pktStatus       : pktStatus
-                },
-                qpc: qpcCommon
-            };
-
-            reqPktMetaDataAndQpcOutQ.enq(pktMetaDataAndQpc);
-            $display(
-                "time=%0t:", $time, " pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc)
-                // "time=%0t: bth=", $time, fshow(bth), ", pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc)
-            );
         end
         else begin
             reqPayloadFragMetaOutQ.enq(streamFragMeta);

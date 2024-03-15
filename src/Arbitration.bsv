@@ -18,6 +18,7 @@ module mkClientArbiter#(
     Bool enableDebug,
     Integer keepOrderQueueLen,
     Vector#(portSz, Client#(reqType, respType)) clientVec,
+    function Bool isReqBegin(reqType request),
     function Bool isReqFinished(reqType request),
     function Bool isRespFinished(respType response)
 )(Client#(reqType, respType)) provisos(
@@ -28,9 +29,7 @@ module mkClientArbiter#(
 );
 
     Arbiter_IFC#(portSz) arbiter <- mkArbiter(False);
-    Reg#(Bool) canSubmitArbitReqInCurrentBeat[2] <- mkCReg(2, True);
-
-    Vector#(portSz, Array#(Reg#(Maybe#(reqType)))) lookAheadReqRegVec <- replicateM(mkCReg(2, tagged Invalid));
+    Reg#(Bool) canSubmitArbitReqReg <- mkReg(True);
 
     Vector#(portSz, FIFOF#(reqType)) clientReqFifoVec <- replicateM(mkFIFOF);
     // Vector#(portSz, FIFOF#(respType)) clientRespFifoVec <- replicateM(mkFIFOF);
@@ -52,63 +51,52 @@ module mkClientArbiter#(
 
 
 
-    rule forwardRequest;
+    rule forwardRequest if (!canSubmitArbitReqReg);
         let idx = grantReqKeepOrderQ.first;
+        let req = clientReqFifoVec[idx].first;
+        clientReqFifoVec[idx].deq;
+        reqQ.enq(req);
+
+        let reqFinished = isReqFinished(req);
+        if (reqFinished) begin
+            canSubmitArbitReqReg <= True;
+            grantReqKeepOrderQ.deq;
+        end
         
-        if (lookAheadReqRegVec[idx][0] matches tagged Valid .req) begin
-            reqQ.enq(req);
 
-            let reqFinished = isReqFinished(req);
-            if (reqFinished) begin
-                canSubmitArbitReqInCurrentBeat[0] <= True;
-                grantReqKeepOrderQ.deq;
-            end
-            lookAheadReqRegVec[idx][0] <= tagged Invalid;
-
-            // $display(
-            //     "time=%0t: ", $time,
-            //     fshow(name),
-            //     " arbitrate request, reqIdx=%0d", idx,
-            //     ", reqFinished=", fshow(reqFinished)
-            // );
+        if (enableDebug) begin
+            $display(
+                "time=%0t: ", $time,
+                fshow(name),
+                " arbitrate request, reqIdx=%0d", idx,
+                ", reqFinished=", fshow(reqFinished)
+            );
         end
-        else begin
-            // $display(
-            //     "time=%0t: ", $time,
-            //     fshow(name),
-            //     " buble in arbiter, reqIdx=%0d", idx
-            // );
-        end
+        
+        
     endrule
-
-    rule shiftToLookAheadRegs;
-        for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin
-            if ( !isValid(lookAheadReqRegVec[idx][1]) && clientReqFifoVec[idx].notEmpty) begin
-                let val = clientReqFifoVec[idx].first;
-                clientReqFifoVec[idx].deq;
-                lookAheadReqRegVec[idx][1] <= tagged Valid val;
-            end
-        end
-    endrule
-
 
     for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin
         rule sendArbitReq;
-            // $display(
-            //     "time=%0t: ", $time,
-            //     fshow(name),
-            //     " arbitrate sendArbitReq debug, reqIdx=%0d", idx,
-            //     " canSubmitArbitReqInCurrentBeat[1] = ", fshow(canSubmitArbitReqInCurrentBeat[1]),
-            //     " clientReqFifoVec[idx].notEmpty = ", fshow(clientReqFifoVec[idx].notEmpty)
-            // );
+            if (enableDebug) begin
+                $display(
+                    "time=%0t: ", $time,
+                    fshow(name),
+                    " arbitrate sendArbitReq debug, reqIdx=%0d", idx,
+                    " canSubmitArbitReqReg = ", fshow(canSubmitArbitReqReg),
+                    " clientReqFifoVec[idx].notEmpty = ", fshow(clientReqFifoVec[idx].notEmpty)
+                );
+            end
             
-            if ((clientReqFifoVec[idx].notEmpty || isValid(lookAheadReqRegVec[idx][1])) && canSubmitArbitReqInCurrentBeat[1]) begin
+            if (isReqBegin(clientReqFifoVec[idx].first) && canSubmitArbitReqReg) begin
                 arbiter.clients[idx].request;
-                // $display(
-                //     "time=%0t: ", $time,
-                //     fshow(name),
-                //     " arbitrate submit req, reqIdx=%0d", idx
-                // );
+                if (enableDebug) begin
+                    $display(
+                        "time=%0t: ", $time,
+                        fshow(name),
+                        " arbitrate submit req, reqIdx=%0d", idx
+                    );
+                end
             end
         endrule
 
@@ -123,37 +111,57 @@ module mkClientArbiter#(
                 grantRespKeepOrderQ.deq;
             end
 
-            // $display(
-            //     "time=%0t: ", $time,
-            //     fshow(name),
-            //     " dispatch response, idx=%0d", idx,
-            //     ", respFinished=", fshow(respFinished)
-            // );
+            if (enableDebug) begin
+                $display(
+                    "time=%0t: ", $time,
+                    fshow(name),
+                    " dispatch response, idx=%0d", idx,
+                    ", respFinished=", fshow(respFinished)
+                );
+            end
         endrule
     end
 
-    rule recvArbitResp;
+    rule recvArbitResp if (canSubmitArbitReqReg);
 
         Vector#(portSz, Bool) arbiterRespVec;
         for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin
             arbiterRespVec[idx] = arbiter.clients[idx].grant;
         end
-        // $display(
-        //     "time=%0t: ", $time,
-        //     fshow(name),
-        //     " arbit result=", fshow(arbiterRespVec)
-        // );
+        if (enableDebug) begin
+            $display(
+                "time=%0t: ", $time,
+                fshow(name),
+                " arbit result=", fshow(arbiterRespVec)
+            );
+        end
         if (pack(arbiterRespVec) != 0) begin
             let idx = arbiter.grant_id;
-            canSubmitArbitReqInCurrentBeat[1] <= False;
-            grantReqKeepOrderQ.enq(idx);
+            let req = clientReqFifoVec[idx].first;
+
+            reqQ.enq(req);
+            clientReqFifoVec[idx].deq;
             grantRespKeepOrderQ.enq(idx);
 
-            // $display(
-            //     "time=%0t: ", $time,
-            //     fshow(name),
-            //     " grant new request, client idx=%0d", idx
-            // );
+            if (!isReqFinished(req)) begin
+                grantReqKeepOrderQ.enq(idx);
+                canSubmitArbitReqReg <= False;
+                if (enableDebug) begin
+                    $display(
+                        "time=%0t: ", $time,
+                        fshow(name),
+                        " grant new single beat request, client idx=%0d", idx
+                    );
+                end
+            end
+            
+            if (enableDebug) begin
+                $display(
+                    "time=%0t: ", $time,
+                    fshow(name),
+                    " grant new request, client idx=%0d", idx
+                );
+            end
         end
 
     endrule
@@ -166,16 +174,20 @@ module mkClientArbiter#(
             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
         end
 
-        // if (!reqQ.notEmpty) begin
-        //     $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
-        // end
-        // if (!respQ.notEmpty) begin
-        //     $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
-        // end
+        if (!reqQ.notEmpty) begin
+            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " reqQ");
+        end
+        if (!respQ.notEmpty) begin
+            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
+        end
 
 
         if (!grantReqKeepOrderQ.notFull) begin
             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " grantReqKeepOrderQ");
+        end
+
+        if (!grantRespKeepOrderQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " grantRespKeepOrderQ");
         end
 
         for (Integer idx=0; idx < valueOf(portSz); idx=idx+1) begin

@@ -177,7 +177,7 @@ module mkRqWrapper(RqWrapper);
     BluerdmaDmaProxyForRQ bluerdmaDmaProxyForRQ <- mkBluerdmaDmaProxyForRQ;
 
     ReceivedStreamFragStorage recvStreamFragStorage <- mkReceivedStreamFragStorage;
-    RQ rq <- mkRQ;
+    RQ rqCore <- mkRQ;
     let inputRdmaPktBufAndHeaderValidation <- mkInputRdmaPktBufAndHeaderValidation;
     QPContext qpc <- mkQPContext;
     let payloadConsumer <- mkPayloadConsumer;
@@ -216,20 +216,20 @@ module mkRqWrapper(RqWrapper);
     // endrule
 
     mkConnection(inputRdmaPktBufAndHeaderValidation.qpcReadCommonClt, qpc.readCommonSrv);
-    mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.pktMetaData), rq.pktMetaDataPipeIn);
+    mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.pktMetaData), rqCore.pktMetaDataPipeIn);
     mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.payloadStreamFragMetaPipeOut), payloadConsumer.payloadStreamFragMetaPipeIn);
     
-    mkConnection(rq.payloadXonsumerControlPortClt, payloadConsumer.controlPortSrv);
+    mkConnection(rqCore.payloadXonsumerControlPortClt, payloadConsumer.controlPortSrv);
     mkConnection(payloadConsumer.readFragClt, recvStreamFragStorage.readFragSrv);
     
-    mkConnection(toGet(rq.pktReportEntryPipeOut), reportDescConvertor.pktReportEntryPipeIn);
+    mkConnection(toGet(rqCore.pktReportEntryPipeOut), reportDescConvertor.pktReportEntryPipeIn);
 
     mkConnection(payloadConsumer.dmaWriteClt, bluerdmaDmaProxyForRQ.blueSideWriteSrv);
 
 
     interface dmaWriteClt = bluerdmaDmaProxyForRQ.userlogicSideWriteClt;
-    interface mrTableQueryClt = rq.mrTableQueryClt;
-    interface pgtQueryClt = rq.pgtQueryClt;
+    interface mrTableQueryClt = rqCore.mrTableQueryClt;
+    interface pgtQueryClt = rqCore.pgtQueryClt;
     interface inputDataStream = toPut(inputDataStreamQ);
     interface qpcWriteCommonSrv = qpc.writeCommonSrv;
     interface packetMetaDescPipeOut = reportDescConvertor.ringbufDescPipeOut;
@@ -262,7 +262,7 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     endrule
 
 
-    let rqWrapper <- mkRqWrapper;
+    let rq <- mkRqWrapper;
 
 
     DmaReqAddrTranslator addrTranslatorForSQ <- mkDmaReadReqAddrTranslator;
@@ -271,32 +271,34 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     MemRegionTable mrTable <- mkMemRegionTable;
 
     Vector#(2, MrTableQueryClt)  mrTableQueryCltVec = newVector;
-    mrTableQueryCltVec[0] = rqWrapper.mrTableQueryClt;
+    mrTableQueryCltVec[0] = rq.mrTableQueryClt;
     mrTableQueryCltVec[1] = addrTranslatorForSQ.mrTableClt;
-    let mrTableQueryArbitClt <- mkClientArbiter("mrTableQueryArbitClt", False, 10, mrTableQueryCltVec, alwaysTrue, alwaysTrue);
+    let mrTableQueryArbitClt <- mkClientArbiter("mrTableQueryArbitClt", False, 10, mrTableQueryCltVec, alwaysTrue, alwaysTrue, alwaysTrue);
     mkConnection(mrTable.querySrv, mrTableQueryArbitClt);
 
     TLB tlb <- mkTLB;
     Vector#(2, PgtQueryClt)  tlbQueryCltVec = newVector;
-    tlbQueryCltVec[0] = rqWrapper.pgtQueryClt;
+    tlbQueryCltVec[0] = rq.pgtQueryClt;
     tlbQueryCltVec[1] = addrTranslatorForSQ.addrTransClt;
-    let tlbQueryArbitClt <- mkClientArbiter("tlbQueryArbitClt", False, 10, tlbQueryCltVec, alwaysTrue, alwaysTrue);
+    let tlbQueryArbitClt <- mkClientArbiter("tlbQueryArbitClt", False, 10, tlbQueryCltVec, alwaysTrue, alwaysTrue, alwaysTrue);
     mkConnection(tlb.translateSrv, tlbQueryArbitClt);
 
     MrAndPgtManager mrAndPgtManager <- mkMrAndPgtManager;
     mkConnection(mrAndPgtManager.mrModifyClt, mrTable.modifySrv);
     mkConnection(mrAndPgtManager.pgtModifyClt, tlb.modifySrv);
     mkConnection(cmdQController.mrAndPgtManagerClt, mrAndPgtManager.mrAndPgtModifyDescSrv);
-    mkConnection(cmdQController.qpcModifyClt, rqWrapper.qpcWriteCommonSrv);
+    mkConnection(cmdQController.qpcModifyClt, rq.qpcWriteCommonSrv);
 
 
     WorkQueueRingbufController workQueueRingbufController <- mkWorkQueueRingbufController;
     mkConnection(workQueueRingbufController.sqRingBuf, toGet(ringbufPool.h2cRings[1]));
 
 
-
+    function Bool isH2cDmaReqBegin(UserLogicDmaH2cReq req) = True;
     function Bool isH2cDmaReqFinished(UserLogicDmaH2cReq req) = True;
     function Bool isH2cDmaRespFinished(UserLogicDmaH2cResp resp) = resp.dataStream.isLast;
+
+    function Bool isC2hDmaReqBegin(UserLogicDmaC2hReq req) = req.dataStream.isFirst;
     function Bool isC2hDmaReqFinished(UserLogicDmaC2hReq req) = req.dataStream.isLast;
     function Bool isC2hDmaRespFinished(UserLogicDmaC2hResp resp) = True;
     
@@ -310,11 +312,11 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     dmaAccessH2cCltVec[2] = mrAndPgtManager.pgtDmaReadClt;
     dmaAccessH2cCltVec[3] <- mkFakeClient;
 
-    dmaAccessC2hCltVec[0] = rqWrapper.dmaWriteClt;
+    dmaAccessC2hCltVec[0] = rq.dmaWriteClt;
     dmaAccessC2hCltVec[1] = ringbufPool.dmaAccessC2hClt;
 
-    UserLogicDmaReadClt xdmaReadClt <- mkClientArbiter("xdmaReadClt", False, 10, dmaAccessH2cCltVec, isH2cDmaReqFinished, isH2cDmaRespFinished);
-    UserLogicDmaWriteClt xdmaWriteClt <- mkClientArbiter("xdmaWriteClt", False, 10, dmaAccessC2hCltVec, isC2hDmaReqFinished, isC2hDmaRespFinished);
+    UserLogicDmaReadClt xdmaReadClt <- mkClientArbiter("xdmaReadClt", False, 10, dmaAccessH2cCltVec, isH2cDmaReqBegin, isH2cDmaReqFinished, isH2cDmaRespFinished);
+    UserLogicDmaWriteClt xdmaWriteClt <- mkClientArbiter("xdmaWriteClt", True, 10, dmaAccessC2hCltVec, isC2hDmaReqBegin, isC2hDmaReqFinished, isC2hDmaRespFinished);
 
     XdmaGearbox xdmaGearbox <- mkXdmaGearbox(slowClock, slowReset);
 
@@ -330,8 +332,8 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
 
 
     rule forwardRecvQueuePktReportDescToRingbuf;
-        let t = rqWrapper.packetMetaDescPipeOut.first;
-        rqWrapper.packetMetaDescPipeOut.deq;
+        let t = rq.packetMetaDescPipeOut.first;
+        rq.packetMetaDescPipeOut.deq;
         ringbufPool.c2hRings[1].enq(t);
     endrule
 
@@ -345,7 +347,7 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     interface sqRdmaDataStreamPipeOut = sq.sendQ.rdmaDataStreamPipeOut;
 
     // RQ
-    interface rqInputDataStream = rqWrapper.inputDataStream;
+    interface rqInputDataStream = rq.inputDataStream;
 
 
     interface dmaReadClt = xdmaGearbox.h2cStreamClt;
@@ -368,7 +370,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     RdmaUserLogicWithoutXdmaAndCmacWrapper ifc
 );
 
-    let rdmaAndUserLogic <- mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(slowClock, slowReset);
+    let userLogic <- mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(slowClock, slowReset);
     let udp <- mkUdpWrapper;
 
     Reg#(Bool)  udpParamNotSetReg <- mkReg(True);
@@ -394,8 +396,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     endrule
 
     rule forawrdTxStream;
-        rdmaAndUserLogic.sqRdmaDataStreamPipeOut.deq;
-        let data = rdmaAndUserLogic.sqRdmaDataStreamPipeOut.first;
+        userLogic.sqRdmaDataStreamPipeOut.deq;
+        let data = userLogic.sqRdmaDataStreamPipeOut.first;
         $display("time=%0t: ", $time,"rdma put data to udp = ", fshow(data));
         udp.dataStreamTxIn.put(Ports::DataStream{
             data: swapEndian(data.data),
@@ -406,8 +408,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     endrule
 
     rule forwardTxMeta;
-        rdmaAndUserLogic.sqUdpInfoPipeOut.deq;
-        let meta = rdmaAndUserLogic.sqUdpInfoPipeOut.first;
+        userLogic.sqUdpInfoPipeOut.deq;
+        let meta = userLogic.sqUdpInfoPipeOut.first;
         $display("time=%0t: ", $time,"rdma_out_meta = ", fshow(meta));
 
         IpAddr dstIP = unpack(0);
@@ -458,7 +460,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isLast: data.isLast,
                 isFirst: data.isFirst
             };
-            rdmaAndUserLogic.rqInputDataStream.put(tuple2(outData, False));
+            userLogic.rqInputDataStream.put(tuple2(outData, False));
             $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData));
 
             if (data.isLast) begin
@@ -481,7 +483,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isLast: data.isLast,
                 isFirst: data.isFirst
             };
-            rdmaAndUserLogic.rqInputDataStream.put(tuple2(outData, True));
+            userLogic.rqInputDataStream.put(tuple2(outData, True));
             $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData));
 
             if (data.isLast) begin
@@ -505,10 +507,10 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     interface axiStreamRxInUdp = udp.axiStreamRxIn;
 
 
-    interface dmaReadClt = rdmaAndUserLogic.dmaReadClt;
-    interface dmaWriteClt = rdmaAndUserLogic.dmaWriteClt;
-    interface csrWriteSrv = rdmaAndUserLogic.csrWriteSrv;
-    interface csrReadSrv = rdmaAndUserLogic.csrReadSrv;
+    interface dmaReadClt = userLogic.dmaReadClt;
+    interface dmaWriteClt = userLogic.dmaWriteClt;
+    interface csrWriteSrv = userLogic.csrWriteSrv;
+    interface csrReadSrv = userLogic.csrReadSrv;
 endmodule
 
 function Bit#(width) swapEndian(Bit#(width) data) provisos(Mul#(8, byteNum, width));
