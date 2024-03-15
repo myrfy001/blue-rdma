@@ -15,10 +15,13 @@ cd $TEST_DIR
 truncate -s 0 $TEST_LOG
 
 FILES=`ls TestTop.bsv`
+TESTCASES="mkTestRdmaAndUserLogicWithoutUdp"
+# FILES=`ls TestMockHost.bsv`
 # FILES=`ls TestRdmaUtils.bsv`
+# FILES=`ls TestMockXdma.bsv`
 for FILE in $FILES; do
     # echo $FILE
-    TESTCASES=`grep -Phzo 'doc.*?\nmodule\s+\S+(?=\()' $FILE | xargs -0  -I {}  echo "{}" | grep module | cut -d ' ' -f 2`
+    # TESTCASES=`grep -Phzo 'doc.*?\nmodule\s+\S+(?=\()' $FILE | xargs -0  -I {}  echo "{}" | grep module | cut -d ' ' -f 2`
     for TESTCASE in $TESTCASES; do
         make -j8 TESTFILE=$FILE TOPMODULE=$TESTCASE 2>&1 | tee -a $TEST_LOG
     done
