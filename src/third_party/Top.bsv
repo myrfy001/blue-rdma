@@ -235,6 +235,20 @@ module mkRqWrapper(RqWrapper);
     interface packetMetaDescPipeOut = reportDescConvertor.ringbufDescPipeOut;
 endmodule
 
+
+interface QueuePair;
+    interface RqWrapper rq;
+    interface SQ sq;
+endinterface
+
+(* synthesize *)
+module mkQueuePair(QueuePair);
+    let rqInst <- mkRqWrapper;
+    let sqInst <- mkSQ;
+    interface rq = rqInst;
+    interface sq = sqInst;
+endmodule
+
 (* synthesize *)
 // TODO: refactor ringbuf module to get rid of these compiler attributes.
 (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_0.recvDmaResp" *) 
@@ -262,7 +276,7 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     endrule
 
 
-    let rq <- mkRqWrapper;
+    let queuePair <- mkQueuePair;
 
 
     DmaReqAddrTranslator addrTranslatorForSQ <- mkDmaReadReqAddrTranslator;
@@ -271,14 +285,14 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     MemRegionTable mrTable <- mkMemRegionTable;
 
     Vector#(2, MrTableQueryClt)  mrTableQueryCltVec = newVector;
-    mrTableQueryCltVec[0] = rq.mrTableQueryClt;
+    mrTableQueryCltVec[0] = queuePair.rq.mrTableQueryClt;
     mrTableQueryCltVec[1] = addrTranslatorForSQ.mrTableClt;
     let mrTableQueryArbitClt <- mkClientArbiter("mrTableQueryArbitClt", False, 10, mrTableQueryCltVec, alwaysTrue, alwaysTrue, alwaysTrue);
     mkConnection(mrTable.querySrv, mrTableQueryArbitClt);
 
     TLB tlb <- mkTLB;
     Vector#(2, PgtQueryClt)  tlbQueryCltVec = newVector;
-    tlbQueryCltVec[0] = rq.pgtQueryClt;
+    tlbQueryCltVec[0] = queuePair.rq.pgtQueryClt;
     tlbQueryCltVec[1] = addrTranslatorForSQ.addrTransClt;
     let tlbQueryArbitClt <- mkClientArbiter("tlbQueryArbitClt", False, 10, tlbQueryCltVec, alwaysTrue, alwaysTrue, alwaysTrue);
     mkConnection(tlb.translateSrv, tlbQueryArbitClt);
@@ -287,7 +301,7 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     mkConnection(mrAndPgtManager.mrModifyClt, mrTable.modifySrv);
     mkConnection(mrAndPgtManager.pgtModifyClt, tlb.modifySrv);
     mkConnection(cmdQController.mrAndPgtManagerClt, mrAndPgtManager.mrAndPgtModifyDescSrv);
-    mkConnection(cmdQController.qpcModifyClt, rq.qpcWriteCommonSrv);
+    mkConnection(cmdQController.qpcModifyClt, queuePair.rq.qpcWriteCommonSrv);
 
 
     WorkQueueRingbufController workQueueRingbufController <- mkWorkQueueRingbufController;
@@ -312,7 +326,7 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     dmaAccessH2cCltVec[2] = mrAndPgtManager.pgtDmaReadClt;
     dmaAccessH2cCltVec[3] <- mkFakeClient;
 
-    dmaAccessC2hCltVec[0] = rq.dmaWriteClt;
+    dmaAccessC2hCltVec[0] = queuePair.rq.dmaWriteClt;
     dmaAccessC2hCltVec[1] = ringbufPool.dmaAccessC2hClt;
 
     UserLogicDmaReadClt xdmaReadClt <- mkClientArbiter("xdmaReadClt", False, 10, dmaAccessH2cCltVec, isH2cDmaReqBegin, isH2cDmaReqFinished, isH2cDmaRespFinished);
@@ -322,32 +336,37 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
 
     mkConnection(xdmaReadClt, xdmaGearbox.h2cStreamSrv);
     mkConnection(xdmaWriteClt, xdmaGearbox.c2hStreamSrv);
-
     
+    mkConnection(queuePair.sq.dmaReadClt, addrTranslatorForSQ.sqReqInputSrv);
+    mkConnection(workQueueRingbufController.workReq, queuePair.sq.sendQ.srvPort.request);
 
-
-    let sq <- mkSQ();
-    mkConnection(sq.dmaReadClt, addrTranslatorForSQ.sqReqInputSrv);
-    mkConnection(workQueueRingbufController.workReq, sq.sendQ.srvPort.request);
+    // rule debug;
+    //     if (!queuePair.sq.sendQ.rdmaDataStreamPipeOut.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: queuePair.sq.sendQ.rdmaDataStreamPipeOut");
+    //     end
+    //     if (!queuePair.sq.sendQ.udpInfoPipeOut.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: queuePair.sq.sendQ.udpInfoPipeOut");
+    //     end 
+    // endrule
 
 
     rule forwardRecvQueuePktReportDescToRingbuf;
-        let t = rq.packetMetaDescPipeOut.first;
-        rq.packetMetaDescPipeOut.deq;
+        let t = queuePair.rq.packetMetaDescPipeOut.first;
+        queuePair.rq.packetMetaDescPipeOut.deq;
         ringbufPool.c2hRings[1].enq(t);
     endrule
 
     rule forwardSendQueueReportDescToRingbuf;
-        let _ <- sq.sendQ.srvPort.response.get;
+        let _ <- queuePair.sq.sendQ.srvPort.response.get;
     endrule
 
 
     // SQ
-    interface sqUdpInfoPipeOut = sq.sendQ.udpInfoPipeOut;
-    interface sqRdmaDataStreamPipeOut = sq.sendQ.rdmaDataStreamPipeOut;
+    interface sqUdpInfoPipeOut = queuePair.sq.sendQ.udpInfoPipeOut;
+    interface sqRdmaDataStreamPipeOut = queuePair.sq.sendQ.rdmaDataStreamPipeOut;
 
     // RQ
-    interface rqInputDataStream = rq.inputDataStream;
+    interface rqInputDataStream = queuePair.rq.inputDataStream;
 
 
     interface dmaReadClt = xdmaGearbox.h2cStreamClt;
@@ -376,14 +395,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     Reg#(Bool)  udpParamNotSetReg <- mkReg(True);
     Reg#(UdpReceivingChannelSelectState)  isReceivingRawPacketReg <- mkReg(UdpReceivingChannelSelectStateIdle);
 
-    // rule debug;
-    //     if (!sq.sendQ.rdmaDataStreamPipeOut.notEmpty) begin
-    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: sq.sendQ.rdmaDataStreamPipeOut");
-    //     end
-    //     if (!sq.sendQ.udpInfoPipeOut.notEmpty) begin
-    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: sq.sendQ.udpInfoPipeOut");
-    //     end 
-    // endrule
+
 
     rule setInitParamUDP if (udpParamNotSetReg);
         udp.udpConfig.put(UdpConfig{
