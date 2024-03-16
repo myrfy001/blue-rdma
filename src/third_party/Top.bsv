@@ -393,6 +393,16 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     Reg#(UdpReceivingChannelSelectState)  isReceivingRawPacketReg <- mkReg(UdpReceivingChannelSelectStateIdle);
 
 
+    FIFOF#(Ports::DataStream) udpTxStreamBufQ <- mkFIFOF;
+    FIFOF#(UdpIpMetaData) udpTxIpMetaBufQ <- mkFIFOF;
+    FIFOF#(MacMetaDataWithBypassTag) udpTxMacMetaBufQ <- mkFIFOF;
+    FIFOF#(Tuple2#(DataTypes::DataStream, Bool)) udpRxStreamBufQ <- mkFIFOF;
+
+    mkConnection(toGet(udpTxStreamBufQ), udp.dataStreamTxIn);
+    mkConnection(toGet(udpTxIpMetaBufQ), udp.udpIpMetaDataTxIn);
+    mkConnection(toGet(udpTxMacMetaBufQ), udp.macMetaDataTxIn);
+    mkConnection(toGet(udpRxStreamBufQ), userLogic.rqInputDataStream);
+
 
     rule setInitParamUDP if (udpParamNotSetReg);
         udp.udpConfig.put(UdpConfig{
@@ -408,7 +418,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
         userLogic.sqRdmaDataStreamPipeOut.deq;
         let data = userLogic.sqRdmaDataStreamPipeOut.first;
         $display("time=%0t: ", $time,"rdma put data to udp = ", fshow(data));
-        udp.dataStreamTxIn.put(Ports::DataStream{
+        udpTxStreamBufQ.enq(Ports::DataStream{
             data: swapEndian(data.data),
             byteEn: swapEndianBit(data.byteEn),
             isFirst:    data.isFirst,
@@ -431,7 +441,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             $finish;
         end
 
-        udp.udpIpMetaDataTxIn.put(UdpIpMetaData{
+        udpTxIpMetaBufQ.enq(UdpIpMetaData{
             dataLen: zeroExtend(meta.pktLen),
             ipAddr:  dstIP,
             ipDscp:  0,
@@ -439,7 +449,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             dstPort: fromInteger(valueOf(TEST_UDP_PORT)),
             srcPort: fromInteger(valueOf(TEST_UDP_PORT))
         });
-        udp.macMetaDataTxIn.put(MacMetaDataWithBypassTag{
+        udpTxMacMetaBufQ.enq(MacMetaDataWithBypassTag{
             macMetaData: MacMetaData{
                 macAddr: unpack(pack(meta.macAddr)),
                 ethType: fromInteger(valueOf(ETH_TYPE_IP))
@@ -449,8 +459,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     endrule
 
-    rule forwardRdmaRxStreamIdle;
-
+    rule forwardRdmaRxStream;
         if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateIdle) begin
             if (udp.dataStreamRxOut.notEmpty) begin
                 udp.udpIpMetaDataRxOut.deq;
@@ -463,7 +472,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                     isLast: data.isLast,
                     isFirst: data.isFirst
                 };
-                userLogic.rqInputDataStream.put(tuple2(outData, False));
+                udpRxStreamBufQ.enq(tuple2(outData, False));
                 $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData));
 
                 if (!data.isLast) begin
@@ -480,7 +489,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                     isLast: data.isLast,
                     isFirst: data.isFirst
                 };
-                userLogic.rqInputDataStream.put(tuple2(outData, True));
+                udpRxStreamBufQ.enq(tuple2(outData, True));
                 $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData));
 
                 if (!data.isLast) begin
@@ -497,7 +506,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isLast: data.isLast,
                 isFirst: data.isFirst
             };
-            userLogic.rqInputDataStream.put(tuple2(outData, False));
+            udpRxStreamBufQ.enq(tuple2(outData, False));
             $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData));
             if (data.isLast) begin
                 isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
@@ -512,7 +521,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isLast: data.isLast,
                 isFirst: data.isFirst
             };
-            userLogic.rqInputDataStream.put(tuple2(outData, True));
+            udpRxStreamBufQ.enq(tuple2(outData, True));
             $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData));
             if (data.isLast) begin
                 isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
