@@ -287,14 +287,14 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     Vector#(2, MrTableQueryClt)  mrTableQueryCltVec = newVector;
     mrTableQueryCltVec[0] = queuePair.rq.mrTableQueryClt;
     mrTableQueryCltVec[1] = addrTranslatorForSQ.mrTableClt;
-    let mrTableQueryArbitClt <- mkClientArbiter("mrTableQueryArbitClt", False, 10, mrTableQueryCltVec, alwaysTrue, alwaysTrue, alwaysTrue);
+    let mrTableQueryArbitClt <- mkClientArbiter("mrTableQueryArbitClt", False, 10, mrTableQueryCltVec, alwaysTrue, alwaysTrue);
     mkConnection(mrTable.querySrv, mrTableQueryArbitClt);
 
     TLB tlb <- mkTLB;
     Vector#(2, PgtQueryClt)  tlbQueryCltVec = newVector;
     tlbQueryCltVec[0] = queuePair.rq.pgtQueryClt;
     tlbQueryCltVec[1] = addrTranslatorForSQ.addrTransClt;
-    let tlbQueryArbitClt <- mkClientArbiter("tlbQueryArbitClt", False, 10, tlbQueryCltVec, alwaysTrue, alwaysTrue, alwaysTrue);
+    let tlbQueryArbitClt <- mkClientArbiter("tlbQueryArbitClt", False, 10, tlbQueryCltVec, alwaysTrue, alwaysTrue);
     mkConnection(tlb.translateSrv, tlbQueryArbitClt);
 
     MrAndPgtManager mrAndPgtManager <- mkMrAndPgtManager;
@@ -308,11 +308,8 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     mkConnection(workQueueRingbufController.sqRingBuf, toGet(ringbufPool.h2cRings[1]));
 
 
-    function Bool isH2cDmaReqBegin(UserLogicDmaH2cReq req) = True;
     function Bool isH2cDmaReqFinished(UserLogicDmaH2cReq req) = True;
     function Bool isH2cDmaRespFinished(UserLogicDmaH2cResp resp) = resp.dataStream.isLast;
-
-    function Bool isC2hDmaReqBegin(UserLogicDmaC2hReq req) = req.dataStream.isFirst;
     function Bool isC2hDmaReqFinished(UserLogicDmaC2hReq req) = req.dataStream.isLast;
     function Bool isC2hDmaRespFinished(UserLogicDmaC2hResp resp) = True;
     
@@ -329,8 +326,8 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     dmaAccessC2hCltVec[0] = queuePair.rq.dmaWriteClt;
     dmaAccessC2hCltVec[1] = ringbufPool.dmaAccessC2hClt;
 
-    UserLogicDmaReadClt xdmaReadClt <- mkClientArbiter("xdmaReadClt", False, 10, dmaAccessH2cCltVec, isH2cDmaReqBegin, isH2cDmaReqFinished, isH2cDmaRespFinished);
-    UserLogicDmaWriteClt xdmaWriteClt <- mkClientArbiter("xdmaWriteClt", True, 10, dmaAccessC2hCltVec, isC2hDmaReqBegin, isC2hDmaReqFinished, isC2hDmaRespFinished);
+    UserLogicDmaReadClt xdmaReadClt <- mkClientArbiter("xdmaReadClt", False, 10, dmaAccessH2cCltVec, isH2cDmaReqFinished, isH2cDmaRespFinished);
+    UserLogicDmaWriteClt xdmaWriteClt <- mkClientArbiter("xdmaWriteClt", True, 10, dmaAccessC2hCltVec, isC2hDmaReqFinished, isC2hDmaRespFinished);
 
     XdmaGearbox xdmaGearbox <- mkXdmaGearbox(slowClock, slowReset);
 
@@ -452,15 +449,43 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     endrule
 
-    // NOTE: This forward will bring a bubble, but do we need to fix it?
-    rule forwardRdmaRxStream;
+    rule forwardRdmaRxStreamIdle;
 
         if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateIdle) begin
             if (udp.dataStreamRxOut.notEmpty) begin
-                isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRdmaData;
+                udp.udpIpMetaDataRxOut.deq;
+                udp.macMetaDataRxOut.deq;
+                let data = udp.dataStreamRxOut.first;
+                udp.dataStreamRxOut.deq;
+                let outData = DataTypes::DataStream {
+                    data: swapEndian(data.data),
+                    byteEn: swapEndianBit(data.byteEn),
+                    isLast: data.isLast,
+                    isFirst: data.isFirst
+                };
+                userLogic.rqInputDataStream.put(tuple2(outData, False));
+                $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData));
+
+                if (!data.isLast) begin
+                    isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRdmaData;
+                end
             end
             else if (udp.rawPktStreamRxOut.notEmpty) begin
-                isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRawData;
+
+                let data = udp.rawPktStreamRxOut.first;
+                udp.rawPktStreamRxOut.deq;
+                let outData = DataTypes::DataStream {
+                    data: swapEndian(data.data),
+                    byteEn: swapEndianBit(data.byteEn),
+                    isLast: data.isLast,
+                    isFirst: data.isFirst
+                };
+                userLogic.rqInputDataStream.put(tuple2(outData, True));
+                $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData));
+
+                if (!data.isLast) begin
+                    isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRawData;
+                end
             end
         end
         else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRdmaData) begin
@@ -474,16 +499,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             };
             userLogic.rqInputDataStream.put(tuple2(outData, False));
             $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData));
-
             if (data.isLast) begin
-                udp.udpIpMetaDataRxOut.deq;
-                udp.macMetaDataRxOut.deq;
-                if (udp.rawPktStreamRxOut.notEmpty) begin
-                    isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRawData;
-                end
-                else begin
-                    isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
-                end
+                isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
             end
         end
         else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRawData) begin
@@ -497,20 +514,10 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             };
             userLogic.rqInputDataStream.put(tuple2(outData, True));
             $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData));
-
             if (data.isLast) begin
-                if (udp.dataStreamRxOut.notEmpty) begin
-                    isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRdmaData;
-                end
-                else begin
-                    isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
-                end
+                isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
             end
         end
-        
-        
-        
-       
     endrule
     
    

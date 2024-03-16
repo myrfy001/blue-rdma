@@ -13,12 +13,77 @@ import Arbiter :: * ;
 
 
 
+
+
+
+module mkTwoWayFixedPriorityStreamMux#(
+    String name,
+    Bool enableDebug,
+    Vector#(2, PipeOut#(reqType)) inVec,
+    function Bool isReqFinished(reqType request)
+)(Get#(Tuple2#(Bool, reqType))) provisos(
+    FShow#(reqType), 
+    Bits#(reqType, reqSz)
+);
+
+    Reg#(Bool) isIdleReg <- mkReg(True);
+    Reg#(Bool) isForwardingCh0Reg <- mkReg(False);
+
+
+    FIFOF#(Tuple2#(Bool, reqType))   reqQ <- mkFIFOF;
+
+    rule handleIdle if (isIdleReg);
+        let hasReq = inVec[0].notEmpty || inVec[1].notEmpty;
+        let data = ?;
+        let isForwardingCh0 = ?;
+        if (inVec[0].notEmpty) begin
+            data = inVec[0].first;
+            inVec[0].deq;
+            isForwardingCh0 = True;
+        end
+        else if (inVec[1].notEmpty) begin
+            data = inVec[1].first;
+            inVec[1].deq;
+            isForwardingCh0 = False;
+        end
+        isForwardingCh0Reg <= isForwardingCh0;
+
+        if (hasReq) begin
+            reqQ.enq(tuple2(isForwardingCh0, data));
+            if (!isReqFinished(data)) begin
+                isIdleReg <= False;
+            end
+        end
+    endrule
+
+    rule handleForward if (!isIdleReg);
+        let data = ?;
+        if (isForwardingCh0Reg) begin
+            data = inVec[0].first;
+            inVec[0].deq;
+        end
+        else begin
+            data = inVec[1].first;
+            inVec[1].deq;
+        end
+        reqQ.enq(tuple2(isForwardingCh0Reg, data));
+        if (isReqFinished(data)) begin
+            isIdleReg <= True;
+        end
+    endrule
+
+    return toGet(reqQ);
+endmodule
+
+
+
+
+
 module mkClientArbiter#(
     String name,
     Bool enableDebug,
     Integer keepOrderQueueLen,
     Vector#(portSz, Client#(reqType, respType)) clientVec,
-    function Bool isReqBegin(reqType request),
     function Bool isReqFinished(reqType request),
     function Bool isRespFinished(respType response)
 )(Client#(reqType, respType)) provisos(
@@ -88,7 +153,7 @@ module mkClientArbiter#(
                 );
             end
             
-            if (isReqBegin(clientReqFifoVec[idx].first) && canSubmitArbitReqReg) begin
+            if (canSubmitArbitReqReg) begin
                 arbiter.clients[idx].request;
                 if (enableDebug) begin
                     $display(

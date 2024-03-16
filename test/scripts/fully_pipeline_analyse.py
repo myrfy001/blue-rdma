@@ -43,8 +43,8 @@ for line in sys.stdin:
         non_continous_hist_entry += 1
         non_continous_hist[non_continous_cnt] = non_continous_hist_entry
 
-        print("continous=%d, non_continous=%d" %
-              (continous_cnt, non_continous_cnt))
+        print("continous=%d, non_continous=%d, time=%s" %
+              (continous_cnt, non_continous_cnt, time_str))
 
         continous_cnt = 0
         last_time_int = time_int

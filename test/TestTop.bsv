@@ -86,7 +86,8 @@ module mkTestTop(Empty);
     mkConnection(toGet(csrWriteRespSyncFifo), fakeXdmaA.barWriteClt.response, clocked_by slowClock, reset_by slowReset); 
 
 
-`define __TXRX_MODEL_LOOPBACK_DELAYED
+// `define __TXRX_MODEL_LOOPBACK_DELAYED
+`define __TXRX_MODEL_LOOPBACK_NONE_DELAY
 
 `ifdef __TXRX_MODEL_LOOPBACK_DELAYED
 

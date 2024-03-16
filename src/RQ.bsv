@@ -66,11 +66,12 @@ module mkRQ(RQ ifc);
 
         let isRespNeedDMAWrite   = rdmaRespNeedDmaWrite(bth.opcode);
         let isReqNeedDMAWrite    = rdmaReqNeedDmaWrite(bth.opcode);
+        let isRawPacket = pktMetaDataAndQpc.metadata.pktHeader.headerMetaData.isEmptyHeader;
 
-        let rdmaOpCodeNeedDMA    = isRespNeedDMAWrite || isReqNeedDMAWrite;
+        let rdmaOpCodeNeedQueryMrTable    = isRespNeedDMAWrite || isReqNeedDMAWrite;
 
         // only need to query MRTable or PGT if we need DMA access, for packet like ACK/NACK, no need to check
-        if (rdmaOpCodeNeedDMA) begin 
+        if (rdmaOpCodeNeedQueryMrTable) begin 
             let mrTableQueryReq = MrTableQueryReq{
                 idx: rkey2IndexMR(reth.rkey)
             };
@@ -78,7 +79,7 @@ module mkRQ(RQ ifc);
             mrTableQueryCltInst.putReq(mrTableQueryReq);
         end
 
-        reqStatusCheckStep1PipeQ.enq(tuple2(pktMetaDataAndQpc, rdmaOpCodeNeedDMA));
+        reqStatusCheckStep1PipeQ.enq(tuple2(pktMetaDataAndQpc, rdmaOpCodeNeedQueryMrTable));
 
         $display("time=%0t: ", $time, "queryMemoryRegionTable pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc));
         
@@ -86,7 +87,7 @@ module mkRQ(RQ ifc);
 
     rule reqStatusCheckStep1;
 
-        let {pktMetaDataAndQpc, rdmaOpCodeNeedDMA} = reqStatusCheckStep1PipeQ.first;
+        let {pktMetaDataAndQpc, rdmaOpCodeNeedQueryMrTable} = reqStatusCheckStep1PipeQ.first;
         reqStatusCheckStep1PipeQ.deq;
 
         let pktMetaData = pktMetaDataAndQpc.metadata;
@@ -115,7 +116,7 @@ module mkRQ(RQ ifc);
         
 
         // for ACK/NACK, no need to check
-        if (rdmaOpCodeNeedDMA) begin
+        if (rdmaOpCodeNeedQueryMrTable) begin
             case ({ pack(isSendReq || isWriteReq), pack(isReadReq), pack(isAtomicReq) })
                 3'b100: begin
                     isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_WRITE);
@@ -153,21 +154,21 @@ module mkRQ(RQ ifc);
             reqStatus = RDMA_REQ_ST_INV_OPCODE;
         end
 
-        reqStatusCheckStep2PipeQ.enq(tuple5(pktMetaDataAndQpc, reqStatus, rdmaOpCodeNeedDMA, reqAccFlags, reth));
+        reqStatusCheckStep2PipeQ.enq(tuple5(pktMetaDataAndQpc, reqStatus, rdmaOpCodeNeedQueryMrTable, reqAccFlags, reth));
         $display("time=%0t: ", $time, "reqStatusCheckStep1 pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc));
     endrule
 
 
     rule getMRQueryRespAndReqStatusCheckStep2;
 
-        let {pktMetaDataAndQpc, reqStatus, rdmaOpCodeNeedDMA, reqAccFlags, reth} = reqStatusCheckStep2PipeQ.first;
+        let {pktMetaDataAndQpc, reqStatus, rdmaOpCodeNeedQueryMrTable, reqAccFlags, reth} = reqStatusCheckStep2PipeQ.first;
         reqStatusCheckStep2PipeQ.deq;
 
         let pktMetaData = pktMetaDataAndQpc.metadata;
 
 
         let needWaitForPGTResponse = False;
-        if (rdmaOpCodeNeedDMA) begin
+        if (rdmaOpCodeNeedQueryMrTable) begin
         
             let isMrKeyMatch           = False;
             let isAccTypeMatch         = False;
@@ -214,14 +215,14 @@ module mkRQ(RQ ifc);
             end
         end
         
-        getPGTQueryRespPipeQ.enq(tuple4(pktMetaDataAndQpc, reqStatus, needWaitForPGTResponse, rdmaOpCodeNeedDMA));
+        getPGTQueryRespPipeQ.enq(tuple4(pktMetaDataAndQpc, reqStatus, needWaitForPGTResponse, rdmaOpCodeNeedQueryMrTable));
 
         $display("time=%0t: ", $time, "getMRQueryRespAndReqStatusCheckStep2 pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc));
 
     endrule
 
     rule recvAddrTransRespAndIssueDMA;
-        let { pktMetaDataAndQpc, reqStatus, needWaitForPGTResponse, rdmaOpCodeNeedDMA } = getPGTQueryRespPipeQ.first;
+        let { pktMetaDataAndQpc, reqStatus, needWaitForPGTResponse, rdmaOpCodeNeedQueryMrTable } = getPGTQueryRespPipeQ.first;
         getPGTQueryRespPipeQ.deq;
 
         let pktMetaData = pktMetaDataAndQpc.metadata;
@@ -232,8 +233,7 @@ module mkRQ(RQ ifc);
         end
 
         Bool needIssueDMARequest = (
-            needWaitForPGTResponse && 
-            rdmaOpCodeNeedDMA      &&
+            needWaitForPGTResponse          && 
             reqStatus == RDMA_REQ_ST_NORMAL
         );
 
@@ -250,6 +250,7 @@ module mkRQ(RQ ifc);
             // the reason for discard packet should be that we have payload data, need to do dma, but some check failed, so
             // we need to discard data. But for packet like ACK/NACK, we don't want an DMA not because we encounter an error,
             // but because it really doesn't need DAM.
+            let rdmaOpCodeNeedDMA = rdmaOpCodeNeedQueryMrTable;
             if (rdmaOpCodeNeedDMA) begin
                 let req <- genDiscardPayloadReq(pktMetaData.pktFragNum, pktMetaData.pktPayloadLen);
                 payloadConsumerControlClt.putReq(req);
