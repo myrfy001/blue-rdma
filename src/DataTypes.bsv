@@ -879,3 +879,6 @@ typedef struct {
 
 typedef PipeOut#(DataStreamFragMetaData) DataStreamFragMetaPipeOut;
 typedef Put#(DataStreamFragMetaData) DataStreamFragMetaPipeIn;
+
+typedef 9 RAW_PACKET_RECV_BUFFER_INDEX_WIDTH;    // 512 Slots
+typedef Bit#(RAW_PACKET_RECV_BUFFER_INDEX_WIDTH) RawPacketRecvBufIndex;

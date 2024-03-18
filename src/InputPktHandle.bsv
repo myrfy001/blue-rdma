@@ -612,10 +612,10 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         payloadFragMetaFragLenCalcQ.deq;
 
         let bthPadCnt = bthPadCntReg;
-        if (streamFragMeta.isFirst) begin
-            let { rdmaHeader, qpcCommon, validHeaderInfo } = rdmaHeaderFragLenCalcQ.first;
-            rdmaHeaderFragLenCalcQ.deq;
+        let { rdmaHeader, qpcCommon, validHeaderInfo } = rdmaHeaderFragLenCalcQ.first;
 
+        if (streamFragMeta.isFirst) begin
+            
             let bth       = extractBTH(rdmaHeader.headerData);
             bthPadCnt     = bth.padCnt;
             bthPadCntReg <= bthPadCnt;
@@ -629,7 +629,13 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             //     ", bth.opcode=", fshow(bth.opcode), ", bth.padCnt=%h", bth.padCnt
             // );
         end
+
+        if (streamFragMeta.isLast) begin
+            rdmaHeaderFragLenCalcQ.deq;
+        end
         
+        let isRawPacket = rdmaHeader.headerMetaData.isEmptyHeader;
+
         let payloadFragLen = calcFragByteNumFromByteEn(streamFragMeta.byteEn);
         immAssert(
             isValid(payloadFragLen),
@@ -852,6 +858,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
                     qpc: qpcCommon
                 };
                 reqPktMetaDataAndQpcOutQ.enq(pktMetaDataAndQpc);
+                reqPayloadFragMetaOutQ.enq(streamFragMeta);
             end
         end
         else begin
@@ -952,4 +959,49 @@ module mkReceivedStreamFragStorage(ReceivedStreamFragStorage);
 
     interface insertFragSrv = insertFragSrvInst.srv;
     interface readFragSrv = readFragSrvInst.srv;
+endmodule
+
+interface RawPacketFakeHeaderStreamInsert;
+    interface PipeOut#(RqDataStreamWithRawPacketFlag)  streamPipeOut;
+endinterface
+
+
+
+
+module mkRawPacketFakeHeaderStreamInsert#(PipeOut#(RqDataStreamWithRawPacketFlag) streamPipeIn)(RawPacketFakeHeaderStreamInsert);
+    Reg#(Bool) isForwardingRawPacketReg                     <- mkReg(False);
+    Reg#(ADDR) rawPacketWriteBaseAddrReg                    <- mkReg('h90000);
+    Reg#(RKEY) rawPacketWriteMrKeyReg                       <- mkReg('h6622);
+    Reg#(RawPacketRecvBufIndex) rawPacketBufferIndexReg     <- mkReg(0);
+
+    FIFOF#(RqDataStreamWithRawPacketFlag) outQ              <- mkFIFOF;
+
+    rule forwardNormalFragOrInsertFakeHeaderFrag if (!isForwardingRawPacketReg);
+        let {stream, isRawPacket} = streamPipeIn.first;
+        if (!isRawPacket) begin
+            outQ.enq(streamPipeIn.first);
+            streamPipeIn.deq;
+        end 
+        else begin
+            isForwardingRawPacketReg <= True;
+            let writeAddr = addrAddPsnMultiplyPMTU(rawPacketWriteBaseAddrReg, zeroExtend(pack(rawPacketBufferIndexReg)), IBV_MTU_4096);
+            rawPacketBufferIndexReg <= rawPacketBufferIndexReg + 1;
+            let outStream = genFakeHeaderSingleBeatStreamForRawPacketReceiveProcessing(writeAddr, rawPacketWriteMrKeyReg);
+            outQ.enq(tuple2(outStream, True));
+        end
+    endrule
+
+    rule forwardRawPacketFrag if (isForwardingRawPacketReg);
+        let {stream, isRawPacket} = streamPipeIn.first;
+        streamPipeIn.deq;
+
+        // a fake header is inserted before, so the origin stream must not be first packet.
+        stream.isFirst = False;
+        outQ.enq(tuple2(stream, isRawPacket));
+        if (stream.isLast) begin
+            isForwardingRawPacketReg <= False;
+        end
+    endrule
+
+    interface streamPipeOut = toPipeOut(outQ);
 endmodule

@@ -385,7 +385,8 @@ endfunction
 function Maybe#(ByteEnBitNum) calcFragByteNumFromByteEn(ByteEn fragByteEn);
     let rightAlignedByteEn = reverseBits(fragByteEn);
     Maybe#(ByteEnBitNum) byteEnBitNum = tagged Invalid;
-    let step = valueOf(FRAG_MIN_VALID_BYTE_NUM);
+    // let step = valueOf(FRAG_MIN_VALID_BYTE_NUM);
+    let step = 1;
     // Bool matched = False;
     for (
         Integer idx = 0;
@@ -534,6 +535,40 @@ function HeaderRDMA genEmptyHeaderRDMA(Bool hasPayload);
         headerByteEn  : 0,
         headerMetaData: emptyHeaderMetaData
     };
+endfunction
+
+function DataStream genFakeHeaderSingleBeatStreamForRawPacketReceiveProcessing(ADDR va, RKEY rkey);
+    let bth = BTH {
+        trans    : TRANS_TYPE_DTLD_EXTENDED,
+        opcode   : RDMA_WRITE_ONLY_WITH_IMMEDIATE,
+        solicited: False,
+        migReq   : unpack(0),
+        padCnt   : unpack(0),
+        tver     : unpack(0),
+        pkey     : unpack(0),
+        fecn     : unpack(0),
+        becn     : unpack(0),
+        resv6    : unpack(0),
+        dqpn     : unpack(0),
+        ackReq   : False,
+        resv7    : unpack(0),
+        psn      : 0
+    };
+
+    let reth = RETH {
+        va: va,
+        rkey: rkey,
+        dlen: 0
+    };
+
+    let fakeHeaderStream = DataStream{
+        data: zeroExtendLSB({ pack(bth), pack(reth) }),
+        byteEn: genByteEn(fromInteger(calcHeaderLenByTransTypeAndRdmaOpCode(TRANS_TYPE_DTLD_EXTENDED, RDMA_WRITE_ONLY_WITH_IMMEDIATE))),
+        isFirst: True,
+        isLast: False
+    };
+
+    return fakeHeaderStream;
 endfunction
 
 function Tuple2#(HeaderByteNum, HeaderBitNum) calcHeaderInvalidFragByteAndBitNum(

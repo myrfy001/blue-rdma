@@ -68,6 +68,11 @@ module mkRQ(RQ ifc);
         let isReqNeedDMAWrite    = rdmaReqNeedDmaWrite(bth.opcode);
         let isRawPacket = pktMetaDataAndQpc.metadata.pktHeader.headerMetaData.isEmptyHeader;
 
+        if (isRawPacket) begin
+            // for RawPacket, Update RETH len, so we can report packet len to software driver
+            reth.dlen = zeroExtend(pktMetaDataAndQpc.metadata.pktPayloadLen);
+        end
+
         let rdmaOpCodeNeedQueryMrTable    = isRespNeedDMAWrite || isReqNeedDMAWrite;
 
         // only need to query MRTable or PGT if we need DMA access, for packet like ACK/NACK, no need to check
@@ -75,7 +80,7 @@ module mkRQ(RQ ifc);
             let mrTableQueryReq = MrTableQueryReq{
                 idx: rkey2IndexMR(reth.rkey)
             };
-            // $display("reth=", fshow(reth), "mrTableQueryReq=", fshow(mrTableQueryReq));
+            $display("reth=", fshow(reth), "mrTableQueryReq=", fshow(mrTableQueryReq));
             mrTableQueryCltInst.putReq(mrTableQueryReq);
         end
 
@@ -106,6 +111,7 @@ module mkRQ(RQ ifc);
         let isFirstOrOnlyPkt     = isFirstOrOnlyRdmaOpCode(bth.opcode);
         let isLastOrOnlyPkt      = isLastOrOnlyRdmaOpCode(bth.opcode);
         let isSupportedReqOpCode = isSupportedReqOpCodeRQ(qpc.qpType, bth.opcode); 
+        let isRawPacket          = rdmaHeader.headerMetaData.isEmptyHeader;
 
 
         let reqStatus        = RDMA_REQ_ST_NORMAL;
@@ -114,7 +120,6 @@ module mkRQ(RQ ifc);
         
         let isAccCheckPass = False;
         
-
         // for ACK/NACK, no need to check
         if (rdmaOpCodeNeedQueryMrTable) begin
             case ({ pack(isSendReq || isWriteReq), pack(isReadReq), pack(isAtomicReq) })
@@ -147,11 +152,13 @@ module mkRQ(RQ ifc);
 
         let reqAccFlags = genAccessFlagFromReqType(isSendReq, isReadReq, isWriteReq, isAtomicReq);
 
-        if (!isAccCheckPass) begin
-            reqStatus = RDMA_REQ_ST_INV_ACC_FLAG;
-        end
-        else if (!isSupportedReqOpCode) begin
-            reqStatus = RDMA_REQ_ST_INV_OPCODE;
+        if (!isRawPacket) begin
+            if (!isAccCheckPass) begin
+                reqStatus = RDMA_REQ_ST_INV_ACC_FLAG;
+            end
+            else if (!isSupportedReqOpCode) begin
+                reqStatus = RDMA_REQ_ST_INV_OPCODE;
+            end
         end
 
         reqStatusCheckStep2PipeQ.enq(tuple5(pktMetaDataAndQpc, reqStatus, rdmaOpCodeNeedQueryMrTable, reqAccFlags, reth));
@@ -407,7 +414,8 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                 fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_FIRST)),
                 fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_MIDDLE)),
                 fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_LAST)),
-                fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_ONLY)):
+                fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_ONLY)),
+                fromInteger(valueOf(DTLD_EXT_RAW_PACKET_WRITE_ONLY_WITH_IMMEDIATE)):
                 begin
                     let ent = MeatReportQueueDescBthRethImmDT{
                         reqStatus   :   reportEntry.reqStatus,

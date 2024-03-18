@@ -476,13 +476,12 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
         let inResp = readRespInQ.first;
         readRespInQ.deq;
 
-        readRespOutQ.enq(DmaReadResp{
-            // initiator   : ?,                // TODO: remove it
-            // sqpn        : ?,                // TODO: remove it
-            // wrID        : ?,                // TODO: remove it
+        let resp = DmaReadResp{
             isRespErr   : False,
             dataStream  : reverseStream(inResp.dataStream)
-        });
+        };
+        readRespOutQ.enq(resp);
+        // $display("time=%0t: ", $time, "mkDmaReadReqAddrTranslator, forwardResponseDMA, resp=", fshow(resp));
     endrule
 
 

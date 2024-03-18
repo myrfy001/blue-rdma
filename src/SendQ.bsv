@@ -1006,7 +1006,7 @@ module mkSendQ#(
         let pktLenWithPadCnt = pktPayloadLen + zeroExtend(padCnt);
         PAD zeroPad = truncate(pktLenWithPadCnt);
         immAssert(
-            isZero(zeroPad),
+            isZero(zeroPad) || isRawPkt,
             "zeroPad assertion @ mkSendQ",
             $format(
                 "zeroPad=%0d", zeroPad,

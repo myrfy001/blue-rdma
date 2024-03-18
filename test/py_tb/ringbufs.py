@@ -193,7 +193,7 @@ class RingbufSendQueue:
             F_OP_CODE=opcode,
             F_IS_LAST=is_last,
             F_IS_FIRST=is_first,
-            F_SEGMENT_CNT=int(1 + len(sgl) / 2),
+            F_SEGMENT_CNT=int(1 + (len(sgl)+1) / 2),
             F_TOTAL_LEN=total_len
         )
 

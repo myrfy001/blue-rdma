@@ -185,9 +185,11 @@ module mkRqWrapper(RqWrapper);
 
     FIFOF#(Tuple2#(DataTypes::DataStream,Bool)) inputDataStreamQ <- mkFIFOF;
 
+    let rawPacketFakeHeaderInserterPipeout <- mkRawPacketFakeHeaderStreamInsert(toPipeOut(inputDataStreamQ));
+
     let headerAndMetaDataAndPayloadPipeOut <- mkExtractHeaderFromRdmaPktPipeOut;
 
-    mkConnection(headerAndMetaDataAndPayloadPipeOut.rdmaPktPipeIn, toGet(inputDataStreamQ));
+    mkConnection(headerAndMetaDataAndPayloadPipeOut.rdmaPktPipeIn, toGet(rawPacketFakeHeaderInserterPipeout.streamPipeOut));
 
     mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData), inputRdmaPktBufAndHeaderValidation.headerMetaDataPipeIn);
     mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream), inputRdmaPktBufAndHeaderValidation.headerDataStreamPipeIn);
@@ -327,7 +329,7 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     dmaAccessC2hCltVec[1] = ringbufPool.dmaAccessC2hClt;
 
     UserLogicDmaReadClt xdmaReadClt <- mkClientArbiter("xdmaReadClt", False, 10, dmaAccessH2cCltVec, isH2cDmaReqFinished, isH2cDmaRespFinished);
-    UserLogicDmaWriteClt xdmaWriteClt <- mkClientArbiter("xdmaWriteClt", True, 10, dmaAccessC2hCltVec, isC2hDmaReqFinished, isC2hDmaRespFinished);
+    UserLogicDmaWriteClt xdmaWriteClt <- mkClientArbiter("xdmaWriteClt", False, 10, dmaAccessC2hCltVec, isC2hDmaReqFinished, isC2hDmaRespFinished);
 
     XdmaGearbox xdmaGearbox <- mkXdmaGearbox(slowClock, slowReset);
 
@@ -441,14 +443,17 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             $finish;
         end
 
-        udpTxIpMetaBufQ.enq(UdpIpMetaData{
-            dataLen: zeroExtend(meta.pktLen),
-            ipAddr:  dstIP,
-            ipDscp:  0,
-            ipEcn:   0,
-            dstPort: fromInteger(valueOf(TEST_UDP_PORT)),
-            srcPort: fromInteger(valueOf(TEST_UDP_PORT))
-        });
+        if (!meta.isRawPkt) begin
+            udpTxIpMetaBufQ.enq(UdpIpMetaData{
+                dataLen: zeroExtend(meta.pktLen),
+                ipAddr:  dstIP,
+                ipDscp:  0,
+                ipEcn:   0,
+                dstPort: fromInteger(valueOf(TEST_UDP_PORT)),
+                srcPort: fromInteger(valueOf(TEST_UDP_PORT))
+            });
+        end
+
         udpTxMacMetaBufQ.enq(MacMetaDataWithBypassTag{
             macMetaData: MacMetaData{
                 macAddr: unpack(pack(meta.macAddr)),

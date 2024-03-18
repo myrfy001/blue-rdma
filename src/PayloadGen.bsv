@@ -967,8 +967,8 @@ module mkDmaReadCntrl#(
         //     ", isLast=", fshow(dmaResp.dataStream.isLast),
         //     ", isFirstDmaReqChunk=", fshow(isFirstDmaReqChunk),
         //     ", isLastDmaReqChunk=", fshow(isLastDmaReqChunk),
-        //     ", isOrigFirst=", fshow(isOrigFirst),
-        //     ", isOrigLast=", fshow(isOrigLast)
+        //     ", isFirstFragInSGL=", fshow(isFirstFragInSGL),
+        //     ", isLastFragInSGL=", fshow(isLastFragInSGL)
         // );
     endrule
 
@@ -1208,9 +1208,9 @@ module mkMergePayloadEachSGE#(
         //     ", curPayloadFrag.isFirst=", fshow(curPayloadFrag.isFirst),
         //     ", curPayloadFrag.isLast=", fshow(curPayloadFrag.isLast),
         //     ", curPayloadFrag.byteEn=%h", curPayloadFrag.byteEn,
-        //     ", outPayloadFrag.isFirst=", fshow(outPayloadFrag.isFirst),
-        //     ", outPayloadFrag.isLast=", fshow(outPayloadFrag.isLast),
-        //     ", outPayloadFrag.byteEn=%h", outPayloadFrag.byteEn
+        //     ", prePayloadFrag.isFirst=", fshow(prePayloadFrag.isFirst),
+        //     ", prePayloadFrag.isLast=", fshow(prePayloadFrag.isLast),
+        //     ", prePayloadFrag.byteEn=%h", prePayloadFrag.byteEn
         // );
     endrule
 
@@ -1275,9 +1275,9 @@ module mkMergePayloadEachSGE#(
         //     ", nextPayloadFrag.isFirst=", fshow(nextPayloadFrag.isFirst),
         //     ", nextPayloadFrag.isLast=", fshow(nextPayloadFrag.isLast),
         //     ", nextPayloadFrag.byteEn=%h", nextPayloadFrag.byteEn,
-        //     ", outPayloadFrag.isFirst=", fshow(outPayloadFrag.isFirst),
-        //     ", outPayloadFrag.isLast=", fshow(outPayloadFrag.isLast),
-        //     ", outPayloadFrag.byteEn=%h", outPayloadFrag.byteEn
+        //     ", prePayloadFrag.isFirst=", fshow(prePayloadFrag.isFirst),
+        //     ", prePayloadFrag.isLast=", fshow(prePayloadFrag.isLast),
+        //     ", prePayloadFrag.byteEn=%h", prePayloadFrag.byteEn
         // );
     endrule
 
@@ -1590,15 +1590,12 @@ module mkMergePayloadAllSGE#(
         //     ", curPayloadFrag.isFirst=", fshow(curPayloadFrag.isFirst),
         //     ", curPayloadFrag.isLast=", fshow(curPayloadFrag.isLast),
         //     ", curPayloadFrag.byteEn=%h", curPayloadFrag.byteEn,
-        //     ", mergedFrag.isFirst=", fshow(mergedFrag.isFirst),
-        //     ", mergedFrag.isLast=", fshow(mergedFrag.isLast),
-        //     ", mergedFrag.byteEn=%h", mergedFrag.byteEn,
+        //     // ", prePayloadFrag.isFirst=", fshow(prePayloadFrag.isFirst),
+        //     // ", prePayloadFrag.isLast=", fshow(prePayloadFrag.isLast),
+        //     // ", prePayloadFrag.byteEn=%h", prePayloadFrag.byteEn,
         //     ", nextPrePayloadFrag.isFirst=", fshow(nextPrePayloadFrag.isFirst),
         //     ", nextPrePayloadFrag.isLast=", fshow(nextPrePayloadFrag.isLast),
-        //     ", nextPrePayloadFrag.byteEn=%h", nextPrePayloadFrag.byteEn,
-        //     ", outPayloadFrag.isFirst=", fshow(outPayloadFrag.isFirst),
-        //     ", outPayloadFrag.isLast=", fshow(outPayloadFrag.isLast),
-        //     ", outPayloadFrag.byteEn=%h", outPayloadFrag.byteEn
+        //     ", nextPrePayloadFrag.byteEn=%h", nextPrePayloadFrag.byteEn
         // );
     endrule
 
@@ -2627,7 +2624,7 @@ module mkPayloadGenerator#(
         let isFirstPkt = isFirstPktReg;
         let isLastPkt  = isOnlyPkt || (!isFirstPktReg && isOneR(remainingPktNumReg));
         let pktLen = isFirstPkt ? firstPktLen    : (isLastPkt ? lastPktLen : pmtuLen);
-        let padCnt = isFirstPkt ? firstPktPadCnt : (isLastPkt ? lastPktPadCnt : 0);
+        let padCnt = shouldAddPadding ? (isFirstPkt ? firstPktPadCnt : (isLastPkt ? lastPktPadCnt : 0)) : 0;
 
         let payloadGenResp = PayloadGenRespSG {
             raddr           : remoteAddr,

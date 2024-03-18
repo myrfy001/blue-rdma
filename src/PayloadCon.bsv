@@ -119,6 +119,10 @@ module mkPayloadConsumer(PayloadConsumer);
             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: payloadFragMetaBufQ");
         end
         
+        // if (!payloadBufPipeOut.notEmpty) begin
+        //     $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: payloadBufPipeOut");
+        // end
+        
     endrule
 
 

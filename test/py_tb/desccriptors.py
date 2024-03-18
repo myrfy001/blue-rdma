@@ -66,7 +66,7 @@ class TypeQP:
     IBV_QPT_RC = 2
     IBV_QPT_UC = 3
     IBV_QPT_UD = 4
-    # IBV_QPT_RAW_PACKET = 8
+    IBV_QPT_RAW_PACKET = 8
     IBV_QPT_XRC_SEND = 9
     IBV_QPT_XRC_RECV = 10
     # IBV_QPT_DRIVER = 0xff
