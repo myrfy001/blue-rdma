@@ -154,6 +154,36 @@ class RingbufCommandReqQueue:
         )
         self.rb.enq(obj)
 
+    def put_desc_set_udp_param(self, gateway, netmask, ip_addr, mac_addr, user_data=0):
+        cmd_queue_common_header = CmdQueueReqDescCommonHeader(
+            F_VALID=1,
+            F_SEGMENT_CNT=0,
+            F_OP_CODE=CmdQueueDescOperators.F_OPCODE_CMDQ_SET_NETWORK_PARAM,
+            F_CMD_QUEUE_USER_DATA=user_data,
+        )
+        obj = CmdQueueDescSetNetworkParam(
+            common_header=cmd_queue_common_header,
+            F_NET_PARAM_GATEWAY=gateway,
+            F_NET_PARAM_NETMASK=netmask,
+            F_NET_PARAM_IPADDR=ip_addr,
+            F_NET_PARAM_MACADDR=mac_addr,
+        )
+        self.rb.enq(obj)
+
+    def put_desc_set_raw_packet_receive_meta(self, base_addr, mr_key, user_data=0):
+        cmd_queue_common_header = CmdQueueReqDescCommonHeader(
+            F_VALID=1,
+            F_SEGMENT_CNT=0,
+            F_OP_CODE=CmdQueueDescOperators.F_OPCODE_CMDQ_SET_RAW_PACKET_RECEIVE_META,
+            F_CMD_QUEUE_USER_DATA=user_data,
+        )
+        obj = CmdQueueDescSetRawPacketReceiveMeta(
+            common_header=cmd_queue_common_header,
+            F_RAW_PACKET_META_BASE_ADDR=base_addr,
+            F_RAW_PACKET_META_MR_KEY=mr_key,
+        )
+        self.rb.enq(obj)
+
 
 class RingbufCommandRespQueue:
     def __init__(self, backend_mem, addr, mock_host) -> None:

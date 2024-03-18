@@ -144,20 +144,27 @@ interface RdmaUserLogicWithoutXdmaAndUdpCmacWrapper;
     interface RqDataStreamWithRawPacketFlagPipeIn rqInputDataStream;
     
     // DMA Controller
-    interface UserLogicDmaReadWideClt dmaReadClt;
-    interface UserLogicDmaWriteWideClt dmaWriteClt;
+    interface UserLogicDmaReadWideClt   dmaReadClt;
+    interface UserLogicDmaWriteWideClt  dmaWriteClt;
 
     // CSR related
-    interface Server#(CsrWriteRequest#(CsrAddr, CsrData), CsrWriteResponse) csrWriteSrv;
-    interface Server#(CsrReadRequest#(CsrAddr), CsrReadResponse#(CsrData)) csrReadSrv;
+    interface Server#(CsrWriteRequest#(CsrAddr, CsrData), CsrWriteResponse)     csrWriteSrv;
+    interface Server#(CsrReadRequest#(CsrAddr), CsrReadResponse#(CsrData))      csrReadSrv;
+
+    // UDP config related
+    interface Get#(UdpConfig)    setNetworkParamReqOut;
 
 endinterface
 
 
+interface UdpWrapper;
+    interface UdpIpEthBypassRxTx netTxRxIfc;
+endinterface
+
 (* synthesize *)
-module mkUdpWrapper(UdpIpEthBypassRxTx);
-    let t <- mkGenericUdpIpEthBypassRxTx(`IS_SUPPORT_RDMA);
-    return t;
+module mkUdpWrapper(UdpWrapper);
+    let udpCore <- mkGenericUdpIpEthBypassRxTx(`IS_SUPPORT_RDMA);
+    interface netTxRxIfc = udpCore;
 endmodule
 
 interface RqWrapper;
@@ -167,6 +174,7 @@ interface RqWrapper;
     interface RqDataStreamWithRawPacketFlagPipeIn inputDataStream;
     interface Server#(WriteReqCommonQPC, Bool) qpcWriteCommonSrv;
     interface PipeOut#(RingbufRawDescriptor) packetMetaDescPipeOut;
+    interface Put#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqIn;
 endinterface
 
 
@@ -235,6 +243,7 @@ module mkRqWrapper(RqWrapper);
     interface inputDataStream = toPut(inputDataStreamQ);
     interface qpcWriteCommonSrv = qpc.writeCommonSrv;
     interface packetMetaDescPipeOut = reportDescConvertor.ringbufDescPipeOut;
+    interface setRawPacketReceiveMetaReqIn = rawPacketFakeHeaderInserterPipeout.setRawPacketReceiveMetaReqIn;
 endmodule
 
 
@@ -279,7 +288,7 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
 
 
     let queuePair <- mkQueuePair;
-
+    mkConnection(cmdQController.setRawPacketReceiveMetaReqOut, queuePair.rqIfc.setRawPacketReceiveMetaReqIn);
 
     DmaReqAddrTranslator addrTranslatorForSQ <- mkDmaReadReqAddrTranslator;
     function Bool alwaysTrue(anytype t) = True;
@@ -373,6 +382,8 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     interface csrWriteSrv = csrBlock.csrWriteSrv;
     interface csrReadSrv = csrBlock.csrReadSrv;
 
+    interface setNetworkParamReqOut = cmdQController.setNetworkParamReqOut;
+
 endmodule
 
 typedef enum {
@@ -391,7 +402,6 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     let userLogic <- mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(slowClock, slowReset);
     let udp <- mkUdpWrapper;
 
-    Reg#(Bool)  udpParamNotSetReg <- mkReg(True);
     Reg#(UdpReceivingChannelSelectState)  isReceivingRawPacketReg <- mkReg(UdpReceivingChannelSelectStateIdle);
 
 
@@ -400,21 +410,11 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     FIFOF#(MacMetaDataWithBypassTag) udpTxMacMetaBufQ <- mkFIFOF;
     FIFOF#(Tuple2#(DataTypes::DataStream, Bool)) udpRxStreamBufQ <- mkFIFOF;
 
-    mkConnection(toGet(udpTxStreamBufQ), udp.dataStreamTxIn);
-    mkConnection(toGet(udpTxIpMetaBufQ), udp.udpIpMetaDataTxIn);
-    mkConnection(toGet(udpTxMacMetaBufQ), udp.macMetaDataTxIn);
+    mkConnection(toGet(udpTxStreamBufQ), udp.netTxRxIfc.dataStreamTxIn);
+    mkConnection(toGet(udpTxIpMetaBufQ), udp.netTxRxIfc.udpIpMetaDataTxIn);
+    mkConnection(toGet(udpTxMacMetaBufQ), udp.netTxRxIfc.macMetaDataTxIn);
     mkConnection(toGet(udpRxStreamBufQ), userLogic.rqInputDataStream);
-
-
-    rule setInitParamUDP if (udpParamNotSetReg);
-        udp.udpConfig.put(UdpConfig{
-            macAddr: 'hAABBCCDDEEFF,
-            ipAddr: 'h11223344,
-            netMask: 32'hFFFFFFFF,
-            gateWay: 1
-        });
-        udpParamNotSetReg <= False;
-    endrule
+    mkConnection(userLogic.setNetworkParamReqOut, udp.netTxRxIfc.udpConfig);
 
     rule forawrdTxStream;
         userLogic.sqRdmaDataStreamPipeOut.deq;
@@ -466,11 +466,11 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     rule forwardRdmaRxStream;
         if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateIdle) begin
-            if (udp.dataStreamRxOut.notEmpty) begin
-                udp.udpIpMetaDataRxOut.deq;
-                udp.macMetaDataRxOut.deq;
-                let data = udp.dataStreamRxOut.first;
-                udp.dataStreamRxOut.deq;
+            if (udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
+                udp.netTxRxIfc.udpIpMetaDataRxOut.deq;
+                udp.netTxRxIfc.macMetaDataRxOut.deq;
+                let data = udp.netTxRxIfc.dataStreamRxOut.first;
+                udp.netTxRxIfc.dataStreamRxOut.deq;
                 let outData = DataTypes::DataStream {
                     data: swapEndian(data.data),
                     byteEn: swapEndianBit(data.byteEn),
@@ -484,10 +484,10 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                     isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRdmaData;
                 end
             end
-            else if (udp.rawPktStreamRxOut.notEmpty) begin
+            else if (udp.netTxRxIfc.rawPktStreamRxOut.notEmpty) begin
 
-                let data = udp.rawPktStreamRxOut.first;
-                udp.rawPktStreamRxOut.deq;
+                let data = udp.netTxRxIfc.rawPktStreamRxOut.first;
+                udp.netTxRxIfc.rawPktStreamRxOut.deq;
                 let outData = DataTypes::DataStream {
                     data: swapEndian(data.data),
                     byteEn: swapEndianBit(data.byteEn),
@@ -503,8 +503,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             end
         end
         else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRdmaData) begin
-            let data = udp.dataStreamRxOut.first;
-            udp.dataStreamRxOut.deq;
+            let data = udp.netTxRxIfc.dataStreamRxOut.first;
+            udp.netTxRxIfc.dataStreamRxOut.deq;
             let outData = DataTypes::DataStream {
                 data: swapEndian(data.data),
                 byteEn: swapEndianBit(data.byteEn),
@@ -518,8 +518,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             end
         end
         else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRawData) begin
-            let data = udp.rawPktStreamRxOut.first;
-            udp.rawPktStreamRxOut.deq;
+            let data = udp.netTxRxIfc.rawPktStreamRxOut.first;
+            udp.netTxRxIfc.rawPktStreamRxOut.deq;
             let outData = DataTypes::DataStream {
                 data: swapEndian(data.data),
                 byteEn: swapEndianBit(data.byteEn),
@@ -536,8 +536,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     
    
 
-    interface axiStreamTxOutUdp = udp.axiStreamTxOut;
-    interface axiStreamRxInUdp = udp.axiStreamRxIn;
+    interface axiStreamTxOutUdp = udp.netTxRxIfc.axiStreamTxOut;
+    interface axiStreamRxInUdp = udp.netTxRxIfc.axiStreamRxIn;
 
 
     interface dmaReadClt = userLogic.dmaReadClt;

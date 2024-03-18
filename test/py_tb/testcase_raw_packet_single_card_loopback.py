@@ -60,8 +60,13 @@ SEND_SIDE_PD_HANDLER = 0x6611  # in practise, this should be returned by hardwar
 
 PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_4096
 
-RECV_SIDE_IP = 0x11223344
-RECE_SIDE_MAC = 0xAABBCCDDEEFF
+NIC_CONFIG_GATEWAY = 0x00000001
+NIC_CONFIG_IPADDR = 0x11223344
+NIC_CONFIG_NETMASK = 0xFFFFFFFF
+NIC_CONFIG_MACADDR = 0xAABBCCDDEEFF
+
+RECV_SIDE_IP = NIC_CONFIG_IPADDR
+RECE_SIDE_MAC = NIC_CONFIG_MACADDR
 RECV_SIDE_QPN = 0x6611
 SEND_SIDE_PSN = 0x22
 
@@ -82,6 +87,11 @@ def test_case():
         host_mem, SEND_QUEUE_RINGBUF_START_PA, mock_host=mock_nic)
     meta_report_queue = RingbufMetaReportQueue(
         host_mem, META_REPORT_QUEUE_RINGBUF_START_PA, mock_host=mock_nic)
+
+    cmd_req_queue.put_desc_set_udp_param(
+        NIC_CONFIG_GATEWAY, NIC_CONFIG_NETMASK, NIC_CONFIG_IPADDR, NIC_CONFIG_MACADDR)
+    cmd_req_queue.put_desc_set_raw_packet_receive_meta(
+        RESP_SIDE_VA_ADDR, RECV_SIDE_KEY)
 
     cmd_req_queue.put_desc_update_mr_table(
         base_va=PGT_MR0_BASE_VA,
@@ -160,7 +170,7 @@ def test_case():
         meta_report_queue.deq_blocking()
         print("receive meta report: ", report_idx)
 
-    dst_mem = mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR:RESP_SIDE_VA_ADDR + 57]
+    dst_mem = mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR:RESP_SIDE_VA_ADDR+256]
 
     print("dst_mem=", bytes(dst_mem))
 

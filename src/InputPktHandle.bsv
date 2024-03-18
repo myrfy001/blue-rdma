@@ -963,6 +963,7 @@ endmodule
 
 interface RawPacketFakeHeaderStreamInsert;
     interface PipeOut#(RqDataStreamWithRawPacketFlag)  streamPipeOut;
+    interface Put#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqIn;
 endinterface
 
 
@@ -970,8 +971,8 @@ endinterface
 
 module mkRawPacketFakeHeaderStreamInsert#(PipeOut#(RqDataStreamWithRawPacketFlag) streamPipeIn)(RawPacketFakeHeaderStreamInsert);
     Reg#(Bool) isForwardingRawPacketReg                     <- mkReg(False);
-    Reg#(ADDR) rawPacketWriteBaseAddrReg                    <- mkReg('h90000);
-    Reg#(RKEY) rawPacketWriteMrKeyReg                       <- mkReg('h6622);
+    Reg#(ADDR) rawPacketWriteBaseAddrReg                    <- mkRegU;
+    Reg#(RKEY) rawPacketWriteMrKeyReg                       <- mkRegU;
     Reg#(RawPacketRecvBufIndex) rawPacketBufferIndexReg     <- mkReg(0);
 
     FIFOF#(RqDataStreamWithRawPacketFlag) outQ              <- mkFIFOF;
@@ -1002,6 +1003,13 @@ module mkRawPacketFakeHeaderStreamInsert#(PipeOut#(RqDataStreamWithRawPacketFlag
             isForwardingRawPacketReg <= False;
         end
     endrule
+
+    interface Put setRawPacketReceiveMetaReqIn;
+        method Action put(RawPacketReceiveMeta meta);
+            rawPacketWriteBaseAddrReg   <= meta.writeBaseAddr;
+            rawPacketWriteMrKeyReg      <= meta.writeMrKey;
+        endmethod
+    endinterface
 
     interface streamPipeOut = toPipeOut(outQ);
 endmodule

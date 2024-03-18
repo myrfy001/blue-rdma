@@ -6,6 +6,7 @@ import UserLogicSettings :: *;
 import ClientServer :: *;
 import PrimUtils :: *;
 import PayloadGen :: *;
+import EthernetTypes :: *;
 
 typedef 20 CSR_ADDR_WIDTH;
 typedef 4 CSR_DATA_STRB_WIDTH;
@@ -132,7 +133,9 @@ typedef 4 SQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
 typedef enum {
     CmdQueueOpcodeUpdateMrTable = 'h0,
     CmdQueueOpcodeUpdatePGT = 'h1,
-    CmdQueueOpcodeQpManagement = 'h2
+    CmdQueueOpcodeQpManagement = 'h2,
+    CmdQueueOpcodeSetNetworkParam = 'h3,
+    CmdQueueOpcodeSetRawPacketReceiveMeta = 'h4
 } CommandQueueOpcode deriving(Bits, Eq);
 
 typedef Bit#(TLog#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT)) DescriptorSegmentIndex;
@@ -145,6 +148,11 @@ typedef struct {
     Bool                    isSuccessOrNeedSignalCplt;
     Bool                    valid;
 } CmdQueueDescCommonHead deriving(Bits, FShow);
+
+typedef struct {
+    ReservedZero#(192)              reserved1;      // 192 bits
+    CmdQueueDescCommonHead          commonHeader;   // 64  bits
+} CmdQueueRespDescOnlyCommonHeader deriving(Bits, FShow);
 
 typedef struct {
     ReservedZero#(7)            reserved1;
@@ -191,6 +199,24 @@ typedef struct {
 
 typedef CmdQueueReqDescQpManagementSeg0 CmdQueueRespDescQpManagementSeg0;
 
+
+typedef struct {
+    ReservedZero#(16)               reserved1;      // 16  bits
+    EthMacAddr                      macAddr;        // 48  bits
+    ReservedZero#(32)               reserved2;      // 32  bits
+    IpAddr                          ipAddr;         // 32  bits
+    IpNetMask                       netMask;        // 32  bits
+    IpGateWay                       gateWay;        // 32  bits
+    CmdQueueDescCommonHead          commonHeader;   // 64  bits
+} CmdQueueReqDescSetNetworkParam deriving(Bits, FShow);
+
+
+typedef struct {
+    ReservedZero#(96)               reserved1;      // 96  bits
+    RKEY                            writeMrKey;     // 32  bits
+    ADDR                            writeBaseAddr;  // 64  bits
+    CmdQueueDescCommonHead          commonHeader;   // 64  bits
+} CmdQueueReqDescSetRawPacketReceiveMeta deriving(Bits, FShow);
 
 
 typedef struct {

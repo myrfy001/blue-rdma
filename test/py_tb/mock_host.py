@@ -9,6 +9,7 @@ import time
 from hw_consts import *
 from ringbufs import *
 import math
+import itertools
 
 
 # Define the types we need.
@@ -170,6 +171,8 @@ class MockHostMem:
 
         self.buf = self.shared_mem_obj.buf
         atexit.register(self.__deinit__)
+
+        self.buf[:] = b"\0" * shared_mem_size
 
     def __deinit__(self):
         self.shared_mem_obj.unlink()

@@ -147,10 +147,32 @@ class CmdQueueDescQpManagementSeg0(Structure):
                 ]
 
 
+class CmdQueueDescSetNetworkParam(Structure):
+    _fields_ = [("common_header", CmdQueueReqDescCommonHeader),
+                ("F_NET_PARAM_GATEWAY", c_int, 32),
+                ("F_NET_PARAM_NETMASK", c_int, 32),
+                ("F_NET_PARAM_IPADDR", c_int, 32),
+                ("F_RESERVED_0", c_int, 32),
+                ("F_NET_PARAM_MACADDR", c_longlong, 48),
+                ("F_RESERVED_1", c_int, 16),
+                ]
+
+
+class CmdQueueDescSetRawPacketReceiveMeta(Structure):
+    _fields_ = [("common_header", CmdQueueReqDescCommonHeader),
+                ("F_RAW_PACKET_META_BASE_ADDR", c_longlong),
+                ("F_RAW_PACKET_META_MR_KEY", c_int, 32),
+                ("F_RESERVED_0", c_int),
+                ("F_RESERVED_1", c_longlong),
+                ]
+
+
 class CmdQueueDescOperators:
     F_OPCODE_CMDQ_UPDATE_MR_TABLE = 0x00
     F_OPCODE_CMDQ_UPDATE_PGT = 0x01
     F_OPCODE_CMDQ_MANAGE_QP = 0x02
+    F_OPCODE_CMDQ_SET_NETWORK_PARAM = 0x03
+    F_OPCODE_CMDQ_SET_RAW_PACKET_RECEIVE_META = 0x04
 
 
 class SendQueueDescCommonHeader(Structure):
