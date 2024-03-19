@@ -321,7 +321,7 @@ module top#(
     );
 
 
-    mkBsvTop bsv_userlogic_top_inst(
+    mkBsvTop bsv_top(
       .CLK_slowClock(user_clk_250),
       .RST_N_slowReset(user_resetn),
       .CLK(user_clk_500),

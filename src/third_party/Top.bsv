@@ -72,11 +72,11 @@ module mkBsvTop(
     
     XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper(clocked_by slowClock, reset_by slowReset);
     XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(slowClock, slowReset);
-    RdmaUserLogicWithoutXdmaAndCmacWrapper rdmaAndUserlogic <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(slowClock, slowReset);
-    mkConnection(xdmaAxiLiteWrap.csrWriteClt, rdmaAndUserlogic.csrWriteSrv);
-    mkConnection(xdmaAxiLiteWrap.csrReadClt, rdmaAndUserlogic.csrReadSrv);
-    mkConnection(xdmaWrap.dmaReadSrv, rdmaAndUserlogic.dmaReadClt);
-    mkConnection(xdmaWrap.dmaWriteSrv, rdmaAndUserlogic.dmaWriteClt);
+    RdmaUserLogicWithoutXdmaAndCmacWrapper udpAndRdma <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(slowClock, slowReset);
+    mkConnection(xdmaAxiLiteWrap.csrWriteClt, udpAndRdma.csrWriteSrv);
+    mkConnection(xdmaAxiLiteWrap.csrReadClt, udpAndRdma.csrReadSrv);
+    mkConnection(xdmaWrap.dmaReadSrv, udpAndRdma.dmaReadClt);
+    mkConnection(xdmaWrap.dmaWriteSrv, udpAndRdma.dmaWriteClt);
 
     let udpClk <- exposeCurrentClock;
     let udpReset <- exposeCurrentReset;
@@ -86,7 +86,7 @@ module mkBsvTop(
     Bool isEnableFlowControl = False;
     Bool isEnableRsFec = True;
 
-    let axiStream512RxIn <- mkPutToFifoIn(rdmaAndUserlogic.axiStreamRxInUdp);
+    let axiStream512RxIn <- mkPutToFifoIn(udpAndRdma.axiStreamRxInUdp);
 
     let axiStream512SyncFifoForCMAC <- mkDuplexAxiStreamAsyncFifo(
         valueOf(CMAC_SYNC_BRAM_BUF_DEPTH),
@@ -97,7 +97,7 @@ module mkBsvTop(
         cmacRxReset,
         cmacTxReset,
         axiStream512RxIn,
-        rdmaAndUserlogic.axiStreamTxOutUdp
+        udpAndRdma.axiStreamTxOutUdp
     );
 
 
@@ -287,8 +287,8 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     endrule
 
 
-    let queuePair <- mkQueuePair;
-    mkConnection(cmdQController.setRawPacketReceiveMetaReqOut, queuePair.rqIfc.setRawPacketReceiveMetaReqIn);
+    let qp <- mkQueuePair;
+    mkConnection(cmdQController.setRawPacketReceiveMetaReqOut, qp.rqIfc.setRawPacketReceiveMetaReqIn);
 
     DmaReqAddrTranslator addrTranslatorForSQ <- mkDmaReadReqAddrTranslator;
     function Bool alwaysTrue(anytype t) = True;
@@ -296,14 +296,14 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     MemRegionTable mrTable <- mkMemRegionTable;
 
     Vector#(2, MrTableQueryClt)  mrTableQueryCltVec = newVector;
-    mrTableQueryCltVec[0] = queuePair.rqIfc.mrTableQueryClt;
+    mrTableQueryCltVec[0] = qp.rqIfc.mrTableQueryClt;
     mrTableQueryCltVec[1] = addrTranslatorForSQ.mrTableClt;
     let mrTableQueryArbitClt <- mkClientArbiter("mrTableQueryArbitClt", False, 10, mrTableQueryCltVec, alwaysTrue, alwaysTrue);
     mkConnection(mrTable.querySrv, mrTableQueryArbitClt);
 
     TLB tlb <- mkTLB;
     Vector#(2, PgtQueryClt)  tlbQueryCltVec = newVector;
-    tlbQueryCltVec[0] = queuePair.rqIfc.pgtQueryClt;
+    tlbQueryCltVec[0] = qp.rqIfc.pgtQueryClt;
     tlbQueryCltVec[1] = addrTranslatorForSQ.addrTransClt;
     let tlbQueryArbitClt <- mkClientArbiter("tlbQueryArbitClt", False, 10, tlbQueryCltVec, alwaysTrue, alwaysTrue);
     mkConnection(tlb.translateSrv, tlbQueryArbitClt);
@@ -312,7 +312,7 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     mkConnection(mrAndPgtManager.mrModifyClt, mrTable.modifySrv);
     mkConnection(mrAndPgtManager.pgtModifyClt, tlb.modifySrv);
     mkConnection(cmdQController.mrAndPgtManagerClt, mrAndPgtManager.mrAndPgtModifyDescSrv);
-    mkConnection(cmdQController.qpcModifyClt, queuePair.rqIfc.qpcWriteCommonSrv);
+    mkConnection(cmdQController.qpcModifyClt, qp.rqIfc.qpcWriteCommonSrv);
 
 
     WorkQueueRingbufController workQueueRingbufController <- mkWorkQueueRingbufController;
@@ -334,7 +334,7 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     dmaAccessH2cCltVec[2] = mrAndPgtManager.pgtDmaReadClt;
     dmaAccessH2cCltVec[3] <- mkFakeClient;
 
-    dmaAccessC2hCltVec[0] = queuePair.rqIfc.dmaWriteClt;
+    dmaAccessC2hCltVec[0] = qp.rqIfc.dmaWriteClt;
     dmaAccessC2hCltVec[1] = ringbufPool.dmaAccessC2hClt;
 
     UserLogicDmaReadClt xdmaReadClt <- mkClientArbiter("xdmaReadClt", False, 10, dmaAccessH2cCltVec, isH2cDmaReqFinished, isH2cDmaRespFinished);
@@ -345,36 +345,36 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     mkConnection(xdmaReadClt, xdmaGearbox.h2cStreamSrv);
     mkConnection(xdmaWriteClt, xdmaGearbox.c2hStreamSrv);
     
-    mkConnection(queuePair.sqIfc.dmaReadClt, addrTranslatorForSQ.sqReqInputSrv);
-    mkConnection(workQueueRingbufController.workReq, queuePair.sqIfc.sendQ.srvPort.request);
+    mkConnection(qp.sqIfc.dmaReadClt, addrTranslatorForSQ.sqReqInputSrv);
+    mkConnection(workQueueRingbufController.workReq, qp.sqIfc.sendQ.srvPort.request);
 
     // rule debug;
-    //     if (!queuePair.sqIfc.sendQ.rdmaDataStreamPipeOut.notEmpty) begin
-    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: queuePair.sqIfc.sendQ.rdmaDataStreamPipeOut");
+    //     if (!qp.sqIfc.sendQ.rdmaDataStreamPipeOut.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: qp.sqIfc.sendQ.rdmaDataStreamPipeOut");
     //     end
-    //     if (!queuePair.sqIfc.sendQ.udpInfoPipeOut.notEmpty) begin
-    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: queuePair.sqIfc.sendQ.udpInfoPipeOut");
+    //     if (!qp.sqIfc.sendQ.udpInfoPipeOut.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: qp.sqIfc.sendQ.udpInfoPipeOut");
     //     end 
     // endrule
 
 
     rule forwardRecvQueuePktReportDescToRingbuf;
-        let t = queuePair.rqIfc.packetMetaDescPipeOut.first;
-        queuePair.rqIfc.packetMetaDescPipeOut.deq;
+        let t = qp.rqIfc.packetMetaDescPipeOut.first;
+        qp.rqIfc.packetMetaDescPipeOut.deq;
         ringbufPool.c2hRings[1].enq(t);
     endrule
 
     rule forwardSendQueueReportDescToRingbuf;
-        let _ <- queuePair.sqIfc.sendQ.srvPort.response.get;
+        let _ <- qp.sqIfc.sendQ.srvPort.response.get;
     endrule
 
 
     // SQ
-    interface sqUdpInfoPipeOut = queuePair.sqIfc.sendQ.udpInfoPipeOut;
-    interface sqRdmaDataStreamPipeOut = queuePair.sqIfc.sendQ.rdmaDataStreamPipeOut;
+    interface sqUdpInfoPipeOut = qp.sqIfc.sendQ.udpInfoPipeOut;
+    interface sqRdmaDataStreamPipeOut = qp.sqIfc.sendQ.rdmaDataStreamPipeOut;
 
     // RQ
-    interface rqInputDataStream = queuePair.rqIfc.inputDataStream;
+    interface rqInputDataStream = qp.rqIfc.inputDataStream;
 
 
     interface dmaReadClt = xdmaGearbox.h2cStreamClt;
@@ -399,7 +399,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     RdmaUserLogicWithoutXdmaAndCmacWrapper ifc
 );
 
-    let userLogic <- mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(slowClock, slowReset);
+    let rdma <- mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(slowClock, slowReset);
     let udp <- mkUdpWrapper;
 
     Reg#(UdpReceivingChannelSelectState)  isReceivingRawPacketReg <- mkReg(UdpReceivingChannelSelectStateIdle);
@@ -413,12 +413,12 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     mkConnection(toGet(udpTxStreamBufQ), udp.netTxRxIfc.dataStreamTxIn);
     mkConnection(toGet(udpTxIpMetaBufQ), udp.netTxRxIfc.udpIpMetaDataTxIn);
     mkConnection(toGet(udpTxMacMetaBufQ), udp.netTxRxIfc.macMetaDataTxIn);
-    mkConnection(toGet(udpRxStreamBufQ), userLogic.rqInputDataStream);
-    mkConnection(userLogic.setNetworkParamReqOut, udp.netTxRxIfc.udpConfig);
+    mkConnection(toGet(udpRxStreamBufQ), rdma.rqInputDataStream);
+    mkConnection(rdma.setNetworkParamReqOut, udp.netTxRxIfc.udpConfig);
 
     rule forawrdTxStream;
-        userLogic.sqRdmaDataStreamPipeOut.deq;
-        let data = userLogic.sqRdmaDataStreamPipeOut.first;
+        rdma.sqRdmaDataStreamPipeOut.deq;
+        let data = rdma.sqRdmaDataStreamPipeOut.first;
         $display("time=%0t: ", $time,"rdma put data to udp = ", fshow(data));
         udpTxStreamBufQ.enq(Ports::DataStream{
             data: swapEndian(data.data),
@@ -429,8 +429,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     endrule
 
     rule forwardTxMeta;
-        userLogic.sqUdpInfoPipeOut.deq;
-        let meta = userLogic.sqUdpInfoPipeOut.first;
+        rdma.sqUdpInfoPipeOut.deq;
+        let meta = rdma.sqUdpInfoPipeOut.first;
         $display("time=%0t: ", $time,"rdma_out_meta = ", fshow(meta));
 
         IpAddr dstIP = unpack(0);
@@ -540,10 +540,10 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     interface axiStreamRxInUdp = udp.netTxRxIfc.axiStreamRxIn;
 
 
-    interface dmaReadClt = userLogic.dmaReadClt;
-    interface dmaWriteClt = userLogic.dmaWriteClt;
-    interface csrWriteSrv = userLogic.csrWriteSrv;
-    interface csrReadSrv = userLogic.csrReadSrv;
+    interface dmaReadClt = rdma.dmaReadClt;
+    interface dmaWriteClt = rdma.dmaWriteClt;
+    interface csrWriteSrv = rdma.csrWriteSrv;
+    interface csrReadSrv = rdma.csrReadSrv;
 endmodule
 
 function Bit#(width) swapEndian(Bit#(width) data) provisos(Mul#(8, byteNum, width));
