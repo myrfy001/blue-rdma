@@ -858,6 +858,7 @@ typedef enum {
     RDMA_REQ_ST_INV_MR_KEY          = 4,
     RDMA_REQ_ST_INV_MR_REGION       = 5,
     RDMA_REQ_ST_UNKNOWN             = 6,
+    RDMA_REQ_ST_INV_HEADER          = 7,
     RDMA_REQ_ST_MAX_GUARD           = 255
 } RdmaReqStatus deriving(Bits, Eq, FShow);
 

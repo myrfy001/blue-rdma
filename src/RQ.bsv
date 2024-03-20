@@ -172,6 +172,7 @@ module mkRQ(RQ ifc);
         reqStatusCheckStep2PipeQ.deq;
 
         let pktMetaData = pktMetaDataAndQpc.metadata;
+        let pktValid =  pktMetaData.pktValid;
 
 
         let needWaitForPGTResponse = False;
@@ -210,8 +211,10 @@ module mkRQ(RQ ifc);
                 needWaitForPGTResponse = True;
             end
 
-           
-            if (!isMrKeyMatch) begin
+            if (!pktValid) begin
+                reqStatus = RDMA_REQ_ST_INV_HEADER;
+            end
+            else if (!isMrKeyMatch) begin
                 reqStatus = RDMA_REQ_ST_INV_MR_KEY;
             end
             else if (!isAccTypeMatch) begin
@@ -233,6 +236,7 @@ module mkRQ(RQ ifc);
         getPGTQueryRespPipeQ.deq;
 
         let pktMetaData = pktMetaDataAndQpc.metadata;
+        let isZeroPayloadLen =  pktMetaData.isZeroPayloadLen;
 
         let phyAddr = 0;
         if (needWaitForPGTResponse) begin
@@ -258,7 +262,7 @@ module mkRQ(RQ ifc);
             // we need to discard data. But for packet like ACK/NACK, we don't want an DMA not because we encounter an error,
             // but because it really doesn't need DAM.
             let rdmaOpCodeNeedDMA = rdmaOpCodeNeedQueryMrTable;
-            if (rdmaOpCodeNeedDMA) begin
+            if (rdmaOpCodeNeedDMA && !isZeroPayloadLen) begin
                 let req <- genDiscardPayloadReq(pktMetaData.pktFragNum, pktMetaData.pktPayloadLen);
                 payloadConsumerControlClt.putReq(req);
             end

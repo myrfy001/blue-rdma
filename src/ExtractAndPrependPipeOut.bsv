@@ -611,8 +611,8 @@ module mkExtractHeaderFromDataStreamPipeOut#(
     //       original input data stream, which makes the rawPacket stream looks like a WriteOnlyWithImmediate packet.
     //       so we can handle it as a normal packet.
     // 1. if header is not last beat, then simply output Header, and decrease header counter
-    // 2. if header is last beat, and no Data, then output Header with right byteEn, and move
-    //    to handle next packet.
+    // 2. if header is last beat, and no Data, then output Header with right byteEn, output a fake Data beat with
+    //    byteEn=0, and move to handle next packet.
     // 3. if header is last beat, and Data also is last beat, then output Header with right byteEn,
     //    and output data as well. then move on to handle next packet.
     // 4. if header is last beat, but Data has extra beat, then only output Header and jump to DATA_OUTPUT
@@ -639,6 +639,9 @@ module mkExtractHeaderFromDataStreamPipeOut#(
 
         let isHeaderLastBeat = isOne(curHeaderFragCounter);
 
+        let leftShiftedPayloadData = inDataStreamFrag.data << headerLastFragValidBitNum;
+        let leftShiftedPayloadByteEn = inDataStreamFrag.byteEn << headerLastFragValidByteNum;
+
         if (!isHeaderLastBeat) begin // case 1
             immAssert(
                 !inDataStreamFrag.isLast,
@@ -658,11 +661,21 @@ module mkExtractHeaderFromDataStreamPipeOut#(
                     "last header beat assertion @ mkExtractHeaderFromDataStreamPipeOut",
                     $format("should be last beat", fshow(inDataStreamFrag))
                 );
+
+                // inject zero-sized payload stream, to make following pipeline not deadlock.
+                let outDataStreamFragMeta = DataStreamFragMetaData {
+                    bufIdx : ?,
+                    byteEn : 0,
+                    isFirst: True,
+                    isLast : True
+                };
+                payloadDataStreamFragPreOutQ.enq(outDataStreamFragMeta);
+                payloadStreamFragStorageInsertCltInst.putReq(leftShiftedPayloadData);
+
                 calculatedMetasQ.deq;  // move on to next packet
+
             end
             else if (inDataStreamFrag.isLast) begin // case 3, has payload, but all payload is included in this beat
-                let leftShiftedPayloadData = inDataStreamFrag.data << headerLastFragValidBitNum;
-                let leftShiftedPayloadByteEn = inDataStreamFrag.byteEn << headerLastFragValidByteNum;
                 immAssert(
                     !isZeroR(leftShiftedPayloadByteEn),
                     "last header beat assertion @ mkExtractHeaderFromDataStreamPipeOut",
