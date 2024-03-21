@@ -1203,6 +1203,13 @@ function Bool isCongestionNotificationPkt(BTH bth);
     return { pack(bth.trans), pack(bth.opcode) } == fromInteger(valueOf(ROCE_CNP));
 endfunction
 
+function Bool isAckRdmaOpCode(RdmaOpCode opcode);
+    return case (opcode)
+        ACKNOWLEDGE             : True;
+        default                 : False;
+    endcase;
+endfunction
+
 function Bool isFirstRdmaOpCode(RdmaOpCode opcode);
     return case (opcode)
         SEND_FIRST              ,

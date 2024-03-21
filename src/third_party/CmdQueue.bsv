@@ -11,6 +11,7 @@ import MetaData :: *;
 import PrimUtils :: *;
 import Ringbuf :: *;
 import Ports :: *;
+import Headers :: *;
 
 interface CommandQueueController;
     interface Server#(RingbufRawDescriptor, RingbufRawDescriptor)   ringbufSrv;
@@ -18,6 +19,7 @@ interface CommandQueueController;
     interface Client#(WriteReqCommonQPC, Bool)                      qpcModifyClt;
     interface Get#(UdpConfig)                                       setNetworkParamReqOut;
     interface Get#(RawPacketReceiveMeta)                            setRawPacketReceiveMetaReqOut;
+    interface Get#(Tuple2#(IndexQP, PSN))                           setRqExpectedPsnReqOut;
 endinterface
 
 
@@ -37,7 +39,7 @@ module mkCommandQueueController(CommandQueueController ifc);
 
     FIFOF#(UdpConfig)            setNetworkParamReqQ            <- mkFIFOF;
     FIFOF#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqQ    <- mkFIFOF;
-
+    FIFOF#(Tuple2#(IndexQP, PSN))    setRqExpectedPsnReqQ           <- mkFIFOF;
 
 
     RingbufDescriptorReadProxy#(COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) descReadProxy <- mkRingbufDescriptorReadProxy;
@@ -74,6 +76,7 @@ module mkCommandQueueController(CommandQueueController ifc);
                         ent: desc0.isValid ? tagged Valid ent : tagged Invalid
                     }
                 );
+                setRqExpectedPsnReqQ.enq(?);
                 isDispatchingReqReg <= False;
                 $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(desc0));
             end
@@ -156,4 +159,5 @@ module mkCommandQueueController(CommandQueueController ifc);
 
     interface setNetworkParamReqOut = toGet(setNetworkParamReqQ);
     interface setRawPacketReceiveMetaReqOut = toGet(setRawPacketReceiveMetaReqQ);
+    interface setRqExpectedPsnReqOut = toGet(setRqExpectedPsnReqQ);
 endmodule

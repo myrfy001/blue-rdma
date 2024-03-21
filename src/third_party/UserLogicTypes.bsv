@@ -281,12 +281,6 @@ typedef struct {
 
 // Datapath report channel related
 
-// we now mix received packet metadata and WQE send finish event into the same queue, 
-// so we need a type as identifier.
-typedef enum {
-    MeatReportQueueDescTypeRecvPacketMeta = 0,
-    MeatReportQueueDescTypeSendFinished   = 1
-} MeatReportQueueDescType deriving(Bits, FShow);
 
 typedef struct {
     ReservedZero#(4)                reserved1;    // 4
@@ -325,8 +319,7 @@ typedef struct {
     ReservedZero#(160)              reserved1;      // 160
     MeatReportQueueDescFragBTH      bth;            // 64
     RdmaReqStatus                   reqStatus;      // 8
-    ReservedZero#(23)               reserved2;      // 23
-    MeatReportQueueDescType         descType;       // 1
+    PSN                             expectedPSN;    // 24
 } MeatReportQueueDescBth deriving(Bits, FShow);
 
 typedef struct {
@@ -334,8 +327,7 @@ typedef struct {
     MeatReportQueueDescFragRETH     reth;           // 128
     MeatReportQueueDescFragBTH      bth;            // 64
     RdmaReqStatus                   reqStatus;      // 8 
-    ReservedZero#(23)               reserved1;      // 23
-    MeatReportQueueDescType         descType;       // 1
+    PSN                             expectedPSN;    // 24
 } MeatReportQueueDescBthRethImmDT deriving(Bits, FShow);
 
 typedef struct {
@@ -343,18 +335,10 @@ typedef struct {
     MeatReportQueueDescFragAETH     aeth;           // 55
     MeatReportQueueDescFragBTH      bth;            // 64
     RdmaReqStatus                   reqStatus;      // 8 
-    ReservedZero#(23)               reserved2;      // 23
-    MeatReportQueueDescType         descType;       // 1
+    PSN                             expectedPSN;    // 24
 } MeatReportQueueDescBthAeth deriving(Bits, FShow);
 
 typedef struct {
     ReservedZero#(160)                          reserved1;       // 160
     MeatReportQueueDescFragSecondaryRETH        secReth;         // 96
 } MeatReportQueueDescSecondaryReth deriving(Bits, FShow);
-
-typedef struct {
-    ReservedZero#(231)              reserved1;      // 231
-    Bool                            hasDmaRespErr;  // 1            
-    ReservedZero#(23)               reserved2;      // 23
-    MeatReportQueueDescType         descType;       // 1
-} MeatReportQueueDescSendQueueReport deriving(Bits, FShow);
