@@ -12,12 +12,18 @@ import PrimUtils :: *;
 import UserLogicTypes :: *;
 
 
+
+
+
 interface RQ;
     interface Put#(RdmaPktMetaDataAndQPC) pktMetaDataPipeIn;
     interface MrTableQueryClt mrTableQueryClt;
     interface PgtQueryClt pgtQueryClt;
-    interface Client#(PayloadConReq, PayloadConResp) payloadXonsumerControlPortClt;
+    interface Client#(PayloadConReq, PayloadConResp) payloadConsumerControlPortClt;
     interface PipeOut#(C2hReportEntry) pktReportEntryPipeOut;
+
+    // method Value#(Tuple2#(QPN, PSN)) updatePsnCmdOut;
+    // method Action getPsnResultIn(QPN qpn, PSN psn);
 endinterface
 
 
@@ -35,6 +41,9 @@ module mkRQ(RQ ifc);
     FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, FlagsType#(MemAccessTypeFlag), RETH)) reqStatusCheckStep2PipeQ   <- mkFIFOF;
     FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool)) getPGTQueryRespPipeQ <- mkSizedFIFOF(5);
     FIFOF#(Tuple3#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool))           waitDMARespPipeQ <- mkFIFOF;
+
+
+
 
 
     function FlagsType#(MemAccessTypeFlag) genAccessFlagFromReqType(Bool isSend, Bool isRead, Bool isWrite, Bool isAtomic);
@@ -273,6 +282,9 @@ module mkRQ(RQ ifc);
         $display("time=%0t: ", $time, "recvAddrTransRespAndIssueDMA pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc));
     endrule
 
+    rule checkPsnContinuity;
+    endrule
+
     rule waitDMAFinishAndWriteMetaToHost;
         let { pktMetaDataAndQpc, reqStatus, needIssueDMARequest } = waitDMARespPipeQ.first;
         waitDMARespPipeQ.deq;
@@ -328,8 +340,15 @@ module mkRQ(RQ ifc);
     interface pktMetaDataPipeIn             = toPut(rdmaPktMetaDataInQ);
     interface mrTableQueryClt               = mrTableQueryCltInst.clt;
     interface pgtQueryClt                   = pgtQueryCltInst.clt;
-    interface payloadXonsumerControlPortClt = payloadConsumerControlClt.clt;
+    interface payloadConsumerControlPortClt = payloadConsumerControlClt.clt;
     interface pktReportEntryPipeOut         = toPipeOut(pktReportEntryQ);
+
+    // method Value#(Tuple2#(QPN, PSN)) updatePsnCmdOut;
+    //     return ?;
+    // endmethod
+
+    // method Action getPsnResultIn(QPN qpn, PSN psn);
+    // endmethod
 endmodule
 
 
@@ -473,7 +492,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                     state <= RQReportEntryToRingbufDescStatusOutputBasicInfo;
                     ringbufDescPipeOutQ.enq(pack(ent));
                     pktReportEntryPipeInQ.deq;
-                    $display("send recv packet meta to host:",fshow(ent));
+                    $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "RQ send recv packet meta to host: ", fshow(ent));
                 end
                 default: begin
                     $display("Warn: Received Not Supported Packet, Will not report to software.");

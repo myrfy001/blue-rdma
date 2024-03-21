@@ -4,6 +4,7 @@ import FIFOF :: *;
 
 import DataTypes :: *;
 import RdmaUtils :: *;
+import Headers :: *;
 
 import Vector :: *;
 
@@ -12,9 +13,16 @@ import MetaData :: *;
 import PrimUtils :: *;
 
 
+interface ExpectedPsnManager;
+    method Action updatePsnCmdIn(QPN qpn, PSN psn);
+    method Action getPsnCmdIn(QPN qpn);
+    method PSN getPsnResultOut;
+endinterface
+
 interface QPContext;
     interface Server#(ReadReqCommonQPC, Maybe#(EntryCommonQPC)) readCommonSrv;
     interface Server#(WriteReqCommonQPC, Bool) writeCommonSrv;
+    interface ExpectedPsnManager expectedPsnManager;
 endinterface
 
 (* synthesize *)
@@ -30,6 +38,9 @@ module mkQPContext(QPContext);
     BRAM2Port#(IndexQP, Maybe#(EntryCommonQPC)) qpcEntryCommonStorage <- mkBRAM2Server(cfg);
 
     FIFOF#(KeyQP) keyPipeQ <- mkFIFOF;
+
+    // Expected PSN for different Queues
+    Vector#(MAX_QP, Reg#(PSN)) expectedPSNRegVec <- replicateM(mkReg(0)); 
 
     rule handleReadReq;
         let req <- readCommonSrvInst.getReq;
@@ -79,6 +90,22 @@ module mkQPContext(QPContext);
         let resp <- qpcEntryCommonStorage.portB.response.get;
         writeCommonSrvInst.putResp(True);
     endrule
+
+    let getPsnResultOutWire <- mkWire;
+
+    interface ExpectedPsnManager expectedPsnManager;
+        method Action updatePsnCmdIn(QPN qpn, PSN psn);
+            expectedPSNRegVec[qpn] <= psn;
+        endmethod
+
+        method Action getPsnCmdIn(QPN qpn);
+            getPsnResultOutWire <= expectedPSNRegVec[qpn];
+        endmethod
+
+        method PSN getPsnResultOut = getPsnResultOutWire;
+
+
+    endinterface
 
     interface readCommonSrv = readCommonSrvInst.srv;
     interface writeCommonSrv = writeCommonSrvInst.srv;

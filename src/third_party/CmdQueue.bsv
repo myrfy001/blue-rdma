@@ -51,7 +51,7 @@ module mkCommandQueueController(CommandQueueController ifc);
         let opcode = getCmdQueueOpcodeFromRawRingbufDescriptor(rawDesc);
         case (unpack(truncate(opcode)))
             CmdQueueOpcodeUpdateMrTable, CmdQueueOpcodeUpdatePGT: begin
-                                mrAndPgtReqQ.enq(rawDesc);
+                mrAndPgtReqQ.enq(rawDesc);
                 mrAndPgtInflightReqQ.enq(rawDesc); // TODO, we can simplify this to only include 32-bit user_data field
                 isDispatchingReqReg <= False;
             end
@@ -75,6 +75,7 @@ module mkCommandQueueController(CommandQueueController ifc);
                     }
                 );
                 isDispatchingReqReg <= False;
+                $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(desc0));
             end
             CmdQueueOpcodeSetNetworkParam: begin
                 CmdQueueReqDescSetNetworkParam reqDesc = unpack(rawDesc);
@@ -91,6 +92,8 @@ module mkCommandQueueController(CommandQueueController ifc);
                 respDesc.commonHeader.extraSegmentCnt = 0;
                 respRawDescSeg[0] = pack(respDesc);
                 descWriteProxy.setWideDesc(respRawDescSeg, 0);
+                $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(reqDesc));
+                $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware Send cmd queue response: ", fshow(respDesc));
             end
             CmdQueueOpcodeSetRawPacketReceiveMeta: begin
                 CmdQueueReqDescSetRawPacketReceiveMeta reqDesc = unpack(rawDesc);
@@ -105,6 +108,8 @@ module mkCommandQueueController(CommandQueueController ifc);
                 respDesc.commonHeader.extraSegmentCnt = 0;
                 respRawDescSeg[0] = pack(respDesc);
                 descWriteProxy.setWideDesc(respRawDescSeg, 0);
+                $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(reqDesc));
+                $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware Send cmd queue response: ", fshow(respDesc));
             end
         endcase
 
@@ -128,7 +133,7 @@ module mkCommandQueueController(CommandQueueController ifc);
             respRawDescSeg[0] = pack(respDesc);
             descWriteProxy.setWideDesc(respRawDescSeg, 0);
             isDispatchingReqReg <= True;
-            // $display("send cmdq resp mr=", fshow(respRawDescSeg));
+            $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware Send cmd queue response: ", fshow(respDesc));
         end 
         else if (qpcRespQ.notEmpty) begin 
             qpcRespQ.deq;
@@ -141,7 +146,7 @@ module mkCommandQueueController(CommandQueueController ifc);
             respRawDescSeg[0] = pack(respDesc);
             descWriteProxy.setWideDesc(respRawDescSeg, 0);
             isDispatchingReqReg <= True;
-            // $display("send cmdq resp qpc=", fshow(respRawDescSeg));
+            $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware Send cmd queue response: ", fshow(respDesc));
         end
     endrule
 

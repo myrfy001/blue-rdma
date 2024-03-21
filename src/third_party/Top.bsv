@@ -229,7 +229,7 @@ module mkRqWrapper(RqWrapper);
     mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.pktMetaData), rqCore.pktMetaDataPipeIn);
     mkConnection(toGet(inputRdmaPktBufAndHeaderValidation.reqPktPipeOut.payloadStreamFragMetaPipeOut), payloadConsumer.payloadStreamFragMetaPipeIn);
     
-    mkConnection(rqCore.payloadXonsumerControlPortClt, payloadConsumer.controlPortSrv);
+    mkConnection(rqCore.payloadConsumerControlPortClt, payloadConsumer.controlPortSrv);
     mkConnection(payloadConsumer.readFragClt, recvStreamFragStorage.readFragSrv);
     
     mkConnection(toGet(rqCore.pktReportEntryPipeOut), reportDescConvertor.pktReportEntryPipeIn);

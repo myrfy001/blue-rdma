@@ -289,7 +289,6 @@ module mkMrAndPgtManager(MrAndPgtManager);
             CmdQueueOpcodeUpdateMrTable: begin
                 state <= MrAndPgtManagerFsmStateWaitMRModifyResponse;
                 CmdQueueReqDescUpdateMrTable desc = unpack(descRaw);
-                // $display("CmdQueueReqDescUpdateMrTable=",fshow(desc));
                 let modifyReq = MrTableModifyReq {
                     idx: key2IndexMR(desc.mrKey),
                     entry: isZeroR(desc.mrLength) ?
@@ -304,18 +303,17 @@ module mkMrAndPgtManager(MrAndPgtManager);
                             }
                 };
                 mrModifyCltInst.putReq(modifyReq);
-                // $display("addr translate modify first stage finished.");
+                $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(desc));
             end
             CmdQueueOpcodeUpdatePGT: begin
                 CmdQueueReqDescUpdatePGT desc = unpack(descRaw);
-                // $display("CmdQueueReqDescUpdatePGT=",fshow(desc));
                 dmaReadReqQ.enq(UserLogicDmaH2cReq{
                     addr: desc.dmaAddr,
                     len: truncate(desc.dmaReadLength)
                 });
                 curSecondStagePgtWriteIdxReg <= truncate(desc.startIndex);
                 state <= MrAndPgtManagerFsmStateHandlePGTUpdate;
-                // $display("addr translate modify second stage start.");
+                $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(desc));
             end
         endcase
     endrule

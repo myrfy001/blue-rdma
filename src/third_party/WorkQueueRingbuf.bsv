@@ -98,8 +98,7 @@ module mkWorkQueueRingbufController(WorkQueueRingbufController ifc);
         req.immDtOrInvRKey = (hasImmDt || hasInv) ? tagged Valid immOrInv : tagged Invalid;
 
         workReqQ.enq(req);
-
-        $display("SQ read a new descriptor: ", fshow(req));
+        $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "SQ read a new descriptor: ", fshow(req));
     endrule
 
     interface sqRingBuf = toPut(sqRingBufQ);
