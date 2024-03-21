@@ -462,7 +462,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                     };
                     ringbufDescPipeOutQ.enq(pack(ent));
                     pktReportEntryPipeInQ.deq;
-                    $display("send recv packet meta to host:",fshow(ent));
+                    $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "RQ send recv packet meta to host: ", fshow(ent));
                 end
                 fromInteger(valueOf(RC_RDMA_WRITE_FIRST)),
                 fromInteger(valueOf(RC_RDMA_WRITE_MIDDLE)),
@@ -495,7 +495,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                         pktReportEntryPipeInQ.deq;
                     end
                     ringbufDescPipeOutQ.enq(pack(ent));
-                    $display("send recv packet meta to host:",fshow(ent));
+                    $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "RQ send recv packet meta to host: ", fshow(ent));
                 end
                 fromInteger(valueOf(RC_ACKNOWLEDGE)),
                 fromInteger(valueOf(RC_ATOMIC_ACKNOWLEDGE)),
@@ -511,7 +511,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                     };
                     pktReportEntryPipeInQ.deq;
                     ringbufDescPipeOutQ.enq(pack(ent));
-                    $display("send recv packet meta to host:",fshow(ent));
+                    $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "RQ send recv packet meta to host: ", fshow(ent));
                 end
 
                 default: begin
