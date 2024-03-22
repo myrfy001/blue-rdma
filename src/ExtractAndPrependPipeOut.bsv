@@ -420,6 +420,12 @@ module mkPrependHeader2PipeOut#(
             end
         end 
         else if (!curHeaderDataStreamFrag.isLast || (curHeaderDataStreamFrag.isLast && !headerHasPayload)) begin // case 2 & 3
+
+            if (curHeaderDataStreamFrag.isLast) begin
+                curHeaderDataStreamFrag.byteEn = curHeaderDataStreamFrag.byteEn << headerLastFragInvalidByteNum;
+                curHeaderDataStreamFrag.data = curHeaderDataStreamFrag.data << headerLastFragInvalidBitNum;
+            end
+
             dataStreamOutQ.enq(curHeaderDataStreamFrag);
             $display("time=%0t: ", $time, "mkPrependHeader2PipeOut case2,3==", fshow(curHeaderDataStreamFrag));
         end 
@@ -626,7 +632,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
 
         let curHeaderFragCounter = headerFragCounterReg;
         if (inDataStreamFrag.isFirst) begin
-            headerFragCounterReg <= headerMetaData.headerFragNum;
+            headerFragCounterReg <= headerMetaData.headerFragNum-1;
             curHeaderFragCounter = headerMetaData.headerFragNum;
         end
         else begin

@@ -207,7 +207,7 @@ module mkTLB(TLB);
 
         offsetInputQ.enq(getPageOffset(va));
 
-        // $display("query TLB req = ", fshow(req), "pte index=", fshow(pteIdx));
+        $display("query TLB req = ", fshow(req), "pte index=", fshow(pteIdx));
     endrule
 
     rule handleTranslateResp;
@@ -219,14 +219,14 @@ module mkTLB(TLB);
         let pa = restorePA(pte.pn, pageOffset);
         translateSrvInst.putResp(pa);
 
-        // $display("query TLB resp pageOffset= ", fshow(pageOffset), "pte =", fshow(pte));
+        $display("query TLB resp pageOffset= ", fshow(pageOffset), "pte =", fshow(pte));
         
     endrule
 
     rule handleModifyReq;
         let req <- modifySrvInst.getReq;
         pageTableStorage.write.request.put(tuple2(req.idx, req.pte));
-        // $display("insert TLB = ", fshow(req));
+        $display("insert TLB = ", fshow(req));
     endrule
 
     rule handleModifyResp;
@@ -467,7 +467,7 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
             addr: pa,
             len:  zeroExtend(originDmaReq.len)
         });
-        $display("time=%0t: ", $time, "mkDmaReadReqAddrTranslator, handleRespPGTAndSendDmaReq, originDmaReq=", fshow(originDmaReq));
+        $display("time=%0t: ", $time, "mkDmaReadReqAddrTranslator, handleRespPGTAndSendDmaReq, originDmaReq=", fshow(originDmaReq), "pa=", fshow(pa));
     endrule
 
     rule forwardResponseDMA;
