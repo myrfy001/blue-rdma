@@ -637,7 +637,10 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         byteEnAdjustedFragForLastHeader.byteEn = headerLastFragByteEn;
         byteEnAdjustedFragForLastHeader.isLast = True;
 
-        let isHeaderLastBeat = isOne(curHeaderFragCounter);
+        // This is a tricky one. Since the Header at most will be 2, so the LSB can be used to distinguish 1 or 2.
+        // The logic level here is high enough, if we compare the two bits, EDA tool will give warning.
+        // But this rule is hard to split into two rules.
+        let isHeaderLastBeat = curHeaderFragCounter[0] == 1;
 
         let leftShiftedPayloadData = inDataStreamFrag.data << headerLastFragValidBitNum;
         let leftShiftedPayloadByteEn = inDataStreamFrag.byteEn << headerLastFragValidByteNum;

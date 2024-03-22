@@ -327,6 +327,9 @@ module mkRQ(RQ ifc);
             isPacketAbnormal
         );
 
+        // For Debug Use
+        needReportPacketMeta = True;
+
 
         waitDMARespPipeQ.enq(tuple5(pktMetaDataAndQpc, reqStatus, expectedPsn, needIssueDMARequest, needReportPacketMeta));
     endrule
