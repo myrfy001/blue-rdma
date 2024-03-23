@@ -854,7 +854,7 @@ endmodule
 
 interface RawPacketFakeHeaderStreamInsert;
     interface PipeOut#(RqDataStreamWithRawPacketFlag)  streamPipeOut;
-    interface Put#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqIn;
+    interface Put#(RawPacketReceiveMeta) rawPacketReceiveConfigIn;
 endinterface
 
 
@@ -895,7 +895,7 @@ module mkRawPacketFakeHeaderStreamInsert#(PipeOut#(RqDataStreamWithRawPacketFlag
         end
     endrule
 
-    interface Put setRawPacketReceiveMetaReqIn;
+    interface Put rawPacketReceiveConfigIn;
         method Action put(RawPacketReceiveMeta meta);
             rawPacketWriteBaseAddrReg   <= meta.writeBaseAddr;
             rawPacketWriteMrKeyReg      <= meta.writeMrKey;

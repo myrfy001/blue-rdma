@@ -265,7 +265,7 @@ module mkTestSendQueueRawPktCase(Empty);
     Reg#(PktLen) payloadLenReg <- mkRegU;
     let countDown <- mkCountDown(valueOf(MAX_CMP_CNT));
 
-    // mkSink(dut.rdmaDataStreamPipeOut);
+    // mkSink(dut.dataStreamPipeOutSQ);
     // mkSink(dataStreamPipeOut4Ref);
     // mkSink(dut.udpInfoPipeOut);
     // mkSink(wqePipeOut4Ref);
@@ -349,8 +349,8 @@ module mkTestSendQueueRawPktCase(Empty);
     endrule
 
     rule checkPktFrag if (!clearReg);
-        let pktFrag = dut.rdmaDataStreamPipeOut.first;
-        dut.rdmaDataStreamPipeOut.deq;
+        let pktFrag = dut.dataStreamPipeOutSQ.first;
+        dut.dataStreamPipeOutSQ.deq;
 
         let expectedPktFrag = dataStreamPipeOut4Ref.first;
         dataStreamPipeOut4Ref.deq;
@@ -458,7 +458,7 @@ module mkTestSendQueueNormalAndNoPayloadCase#(
 
     // Extract header DataStream, HeaderMetaData and payload DataStream
     let headerAndMetaDataAndPayloadPipeOut <- mkExtractHeaderFromRdmaPktPipeOut(
-        dut.rdmaDataStreamPipeOut
+        dut.dataStreamPipeOutSQ
     );
     // Convert header DataStream to HeaderRDMA
     let rdmaHeaderPipeOut <- mkDataStream2Header(
@@ -477,7 +477,7 @@ module mkTestSendQueueNormalAndNoPayloadCase#(
 
     // mkSink(wqePipeOut4Ref);
     // mkSink(dut.udpInfoPipeOut);
-    // mkSink(dut.rdmaDataStreamPipeOut);
+    // mkSink(dut.dataStreamPipeOutSQ);
     // mkSink(rdmaHeaderPipeOut);
     // mkSink(toPipeOut(headerLenAndMacAddrQ));
     // mkSink(headerAndMetaDataAndPayloadPipeOut.payload);

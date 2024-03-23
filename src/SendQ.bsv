@@ -572,9 +572,9 @@ typedef struct {
 } SendResp deriving(Bits, FShow);
 
 interface SendQ;
-    interface Server#(WorkQueueElem, SendResp) srvPort;
-    interface PipeOut#(PktInfo4UDP) udpInfoPipeOut;
-    interface DataStreamPipeOut rdmaDataStreamPipeOut;
+    interface Server#(WorkQueueElem, SendResp) wqeSrv;
+    interface PipeOut#(PktInfo4UDP) udpInfoPipeOutSQ;
+    interface DataStreamPipeOut dataStreamPipeOutSQ;
     method Bool isEmpty();
 endinterface
 
@@ -1075,9 +1075,9 @@ module mkSendQ#(
         end
     endrule
 
-    interface srvPort = toGPServer(reqQ, respQ);
-    interface rdmaDataStreamPipeOut = rdmaPktDataStreamPipeOut;
-    interface udpInfoPipeOut = toPipeOut(udpPktInfoOutQ);
+    interface wqeSrv = toGPServer(reqQ, respQ);
+    interface dataStreamPipeOutSQ = rdmaPktDataStreamPipeOut;
+    interface udpInfoPipeOutSQ = toPipeOut(udpPktInfoOutQ);
     method Bool isEmpty() = !(
         reqQ.notEmpty           ||
         respQ.notEmpty          ||

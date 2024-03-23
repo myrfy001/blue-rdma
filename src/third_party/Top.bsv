@@ -171,10 +171,10 @@ interface RqWrapper;
     interface UserLogicDmaWriteClt dmaWriteClt;
     interface MrTableQueryClt mrTableQueryClt;
     interface PgtQueryClt pgtQueryClt;
-    interface RqDataStreamWithRawPacketFlagPipeIn inputDataStream;
+    interface RqDataStreamWithRawPacketFlagPipeIn rdmaDataStreamInput;
     interface Server#(WriteReqCommonQPC, Bool) qpcWriteCommonSrv;
-    interface PipeOut#(RingbufRawDescriptor) packetMetaDescPipeOut;
-    interface Put#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqIn;
+    interface PipeOut#(RingbufRawDescriptor) packetMetaDescPipeOutRQ;
+    interface Put#(RawPacketReceiveMeta) rawPacketReceiveConfigIn;
 endinterface
 
 
@@ -240,10 +240,10 @@ module mkRqWrapper(RqWrapper);
     interface dmaWriteClt = bluerdmaDmaProxyForRQ.userlogicSideWriteClt;
     interface mrTableQueryClt = rqCore.mrTableQueryClt;
     interface pgtQueryClt = rqCore.pgtQueryClt;
-    interface inputDataStream = toPut(inputDataStreamQ);
+    interface rdmaDataStreamInput = toPut(inputDataStreamQ);
     interface qpcWriteCommonSrv = qpc.writeCommonSrv;
-    interface packetMetaDescPipeOut = reportDescConvertor.ringbufDescPipeOut;
-    interface setRawPacketReceiveMetaReqIn = rawPacketFakeHeaderInserterPipeout.setRawPacketReceiveMetaReqIn;
+    interface packetMetaDescPipeOutRQ = reportDescConvertor.ringbufDescPipeOut;
+    interface rawPacketReceiveConfigIn = rawPacketFakeHeaderInserterPipeout.rawPacketReceiveConfigIn;
 endmodule
 
 
@@ -288,7 +288,7 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
 
 
     let qp <- mkQueuePair;
-    mkConnection(cmdQController.setRawPacketReceiveMetaReqOut, qp.rqIfc.setRawPacketReceiveMetaReqIn);
+    mkConnection(cmdQController.setRawPacketReceiveMetaReqOut, qp.rqIfc.rawPacketReceiveConfigIn);
 
     DmaReqAddrTranslator addrTranslatorForSQ <- mkDmaReadReqAddrTranslator;
     function Bool alwaysTrue(anytype t) = True;
@@ -346,35 +346,35 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     mkConnection(xdmaWriteClt, xdmaGearbox.c2hStreamSrv);
     
     mkConnection(qp.sqIfc.dmaReadClt, addrTranslatorForSQ.sqReqInputSrv);
-    mkConnection(workQueueRingbufController.workReq, qp.sqIfc.sendQ.srvPort.request);
+    mkConnection(workQueueRingbufController.workReq, qp.sqIfc.sendQ.wqeSrv.request);
 
     // rule debug;
-    //     if (!qp.sqIfc.sendQ.rdmaDataStreamPipeOut.notEmpty) begin
-    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: qp.sqIfc.sendQ.rdmaDataStreamPipeOut");
+    //     if (!qp.sqIfc.sendQ.dataStreamPipeOutSQ.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: qp.sqIfc.sendQ.dataStreamPipeOutSQ");
     //     end
-    //     if (!qp.sqIfc.sendQ.udpInfoPipeOut.notEmpty) begin
-    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: qp.sqIfc.sendQ.udpInfoPipeOut");
+    //     if (!qp.sqIfc.sendQ.udpInfoPipeOutSQ.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: qp.sqIfc.sendQ.udpInfoPipeOutSQ");
     //     end 
     // endrule
 
 
     rule forwardRecvQueuePktReportDescToRingbuf;
-        let t = qp.rqIfc.packetMetaDescPipeOut.first;
-        qp.rqIfc.packetMetaDescPipeOut.deq;
+        let t = qp.rqIfc.packetMetaDescPipeOutRQ.first;
+        qp.rqIfc.packetMetaDescPipeOutRQ.deq;
         ringbufPool.c2hRings[1].enq(t);
     endrule
 
     rule forwardSendQueueReportDescToRingbuf;
-        let _ <- qp.sqIfc.sendQ.srvPort.response.get;
+        let _ <- qp.sqIfc.sendQ.wqeSrv.response.get;
     endrule
 
 
     // SQ
-    interface sqUdpInfoPipeOut = qp.sqIfc.sendQ.udpInfoPipeOut;
-    interface sqRdmaDataStreamPipeOut = qp.sqIfc.sendQ.rdmaDataStreamPipeOut;
+    interface sqUdpInfoPipeOut = qp.sqIfc.sendQ.udpInfoPipeOutSQ;
+    interface sqRdmaDataStreamPipeOut = qp.sqIfc.sendQ.dataStreamPipeOutSQ;
 
     // RQ
-    interface rqInputDataStream = qp.rqIfc.inputDataStream;
+    interface rqInputDataStream = qp.rqIfc.rdmaDataStreamInput;
 
 
     interface dmaReadClt = xdmaGearbox.h2cStreamClt;
