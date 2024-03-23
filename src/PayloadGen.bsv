@@ -2158,12 +2158,11 @@ typedef struct {
 } TmpPayloadGenRespData deriving(Bits);
 
 typedef struct {
-    // ByteEnBitNum firstPktLastFragValidByteNumWithPadding;
-    // ByteEnBitNum lastPktLastFragValidByteNumWithPadding;
     ByteEn       firstPktLastFragByteEnWithPadding;
     ByteEn       lastPktLastFragByteEnWithPadding;
     Bool         isZeroPayloadLen;
-    Bool         shouldAddPadding;
+    Bool         shouldAddPaddingFirst;
+    Bool         shouldAddPaddingLast;
 } TmpPaddingData deriving(Bits);
 
 interface PayloadGenerator;
@@ -2642,7 +2641,8 @@ module mkPayloadGenerator#(
             firstPktLastFragByteEnWithPadding      : firstPktLastFragByteEnWithPadding,
             lastPktLastFragByteEnWithPadding       : lastPktLastFragByteEnWithPadding,
             isZeroPayloadLen                       : isZeroPayloadLen,
-            shouldAddPadding                       : shouldAddPadding
+            shouldAddPaddingFirst                  : shouldAddPadding && isFirstPkt,
+            shouldAddPaddingLast                   : shouldAddPadding && isLastPkt
         };
         addPaddingDataQ.enq(tuple2(payloadGenResp, tmpPaddingData));
 
@@ -2684,7 +2684,6 @@ module mkPayloadGenerator#(
         let firstPktLastFragByteEnWithPadding = tmpPaddingData.firstPktLastFragByteEnWithPadding;
         let lastPktLastFragByteEnWithPadding  = tmpPaddingData.lastPktLastFragByteEnWithPadding;
         let isZeroPayloadLen = tmpPaddingData.isZeroPayloadLen;
-        let shouldAddPadding = tmpPaddingData.shouldAddPadding;
         // let firstPktLastFragByteEnWithPadding = genByteEn(firstPktLastFragValidByteNumWithPadding);
         // let lastPktLastFragByteEnWithPadding  = genByteEn(lastPktLastFragValidByteNumWithPadding);
 
@@ -2711,15 +2710,12 @@ module mkPayloadGenerator#(
             // Generate response by the end of the payload
             // Every segmented payload has a payloadGenResp
             if (curPayloadFrag.isLast) begin
-                if (shouldAddPadding) begin
-                    if (isFirstPkt) begin
-                        curPayloadFrag.byteEn = firstPktLastFragByteEnWithPadding;
-                    end
-                    else if (isLastPkt) begin
-                        curPayloadFrag.byteEn = lastPktLastFragByteEnWithPadding;
-                    end
+                if (tmpPaddingData.shouldAddPaddingFirst) begin
+                    curPayloadFrag.byteEn = firstPktLastFragByteEnWithPadding;
                 end
-
+                else if (tmpPaddingData.shouldAddPaddingLast) begin
+                    curPayloadFrag.byteEn = lastPktLastFragByteEnWithPadding;
+                end
                 addPaddingDataQ.deq;
                 payloadGenRespQ.enq(payloadGenResp);
                 // $display(

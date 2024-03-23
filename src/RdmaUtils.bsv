@@ -380,6 +380,10 @@ function Tuple3#(BusBitNum, ByteEnBitNum, BusBitNum) calcFragBitNumAndByteNum(
     return tuple3(fragValidBitNum, fragInvalidByteNum, fragInvalidBitNum);
 endfunction
 
+function BusBitNum getFragEnBitNumByByteEnNum(ByteEnBitNum byteEnNum);
+    return zeroExtend(byteEnNum) << 3;
+endfunction
+
 // TODO: check timing of the for loop
 // TODO: refactor the for loop using case statement
 function Maybe#(ByteEnBitNum) calcFragByteNumFromByteEn(ByteEn fragByteEn);
