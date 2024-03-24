@@ -1060,6 +1060,8 @@ function Bool isSupportedReqOpCodeRQ(TypeQP qpt, RdmaOpCode opcode);
             RDMA_WRITE_ONLY               ,
             RDMA_WRITE_ONLY_WITH_IMMEDIATE: True;
             RDMA_READ_REQUEST             : True;
+            ACKNOWLEDGE                   ,
+            ATOMIC_ACKNOWLEDGE            : True;
             COMPARE_SWAP                  ,
             FETCH_ADD                     : True;
             default                       : False;

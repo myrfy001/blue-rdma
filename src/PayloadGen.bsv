@@ -2187,6 +2187,7 @@ module mkPayloadGenerator#(
     FIFOF#(TmpPayloadGenRespData) genPayloadRespQ <- mkFIFOF;
     FIFOF#(Tuple2#(PayloadGenRespSG, TmpPaddingData)) addPaddingDataQ <- mkSizedFIFOF(10);
     FIFOF#(AdjustedTotalPayloadMetaData) adjustedTotalPayloadMetaDataQ <- mkFIFOF;
+    FIFOF#(DataStream) bramQueueTimingFixStageQ <- mkFIFOF;
 
 
 
@@ -2265,6 +2266,7 @@ module mkPayloadGenerator#(
 
         payloadBufQ.clear;
         bramQ2PipeOut.clear;
+        bramQueueTimingFixStageQ.clear;
 
         // remainingPktNumReg <= 0;
         isFirstPktReg <= True;
@@ -2723,7 +2725,7 @@ module mkPayloadGenerator#(
                 //     ", payloadGenResp=", fshow(payloadGenResp)
                 // );
             end
-            payloadBufQ.enq(curPayloadFrag);
+            bramQueueTimingFixStageQ.enq(curPayloadFrag);
 
             // let isLastFragInFirstPkt = curPayloadFrag.isLast && isFirstPkt;
             // let isLastFragInLastPkt  = curPayloadFrag.isLast && isLastPkt;
@@ -2739,6 +2741,13 @@ module mkPayloadGenerator#(
             //     ", curPayloadFrag.isLast=", fshow(curPayloadFrag.isLast)
             // );
         end
+    endrule
+
+    rule storeToOutputBramQueue if (!clearAll);
+        // The BRAM FIFO is a lot complex than simple FIFO, so enq into it need
+        // more time
+        bramQueueTimingFixStageQ.deq;
+        payloadBufQ.enq(bramQueueTimingFixStageQ.first);
     endrule
 
     interface srvPort = toGPServer(payloadGenReqQ, payloadGenRespQ);
