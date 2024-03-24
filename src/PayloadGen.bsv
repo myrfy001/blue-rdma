@@ -707,8 +707,9 @@ interface DmaReadCntrl;
     interface DmaCntrlReadSrv srvPort;
     interface DmaCntrl dmaCntrl;
     interface PipeOut#(PktMetaDataSGE) sgePktMetaDataPipeOut;
-    // interface PipeOut#(TotalPayloadLenMetaDataSGL) sglTotalPayloadLenMetaDataPipeOut;
+`ifdef SUPPORT_SGL
     interface PipeOut#(MergedMetaDataSGE) sgeMergedMetaDataPipeOut;
+`endif
 endinterface
 
 module mkDmaReadCntrl#(
@@ -716,8 +717,9 @@ module mkDmaReadCntrl#(
 )(DmaReadCntrl);
     FIFOF#(DmaReadCntrlReq)   reqQ <- mkFIFOF;
     FIFOF#(DmaReadCntrlResp) respQ <- mkFIFOF;
+`ifdef SUPPORT_SGL
     FIFOF#(MergedMetaDataSGE) sgeMergedMetaDataOutQ <- mkSizedFIFOF(valueOf(MAX_SGE));
-    // FIFOF#(TotalPayloadLenMetaDataSGL) sglTotalPayloadLenMetaDataOutQ <- mkFIFOF;
+`endif
 
     // Pipeline FIFO
     FIFOF#(Tuple2#(ScatterGatherElem, PMTU)) pendingScatterGatherElemQ <- mkSizedFIFOF(valueOf(MAX_SGE));
@@ -761,7 +763,9 @@ module mkDmaReadCntrl#(
     rule resetAndClear if (clearAll);
         reqQ.clear;
         respQ.clear;
+`ifdef SUPPORT_SGL
         sgeMergedMetaDataOutQ.clear;
+`endif
         // sglTotalPayloadLenMetaDataOutQ.clear;
 
         pendingScatterGatherElemQ.clear;
@@ -804,13 +808,14 @@ module mkDmaReadCntrl#(
                 " and sglIdxReg=%0d", sglIdxReg
             )
         );
-
+`ifdef SUPPORT_SGL
         let sgeMergedMetaData = MergedMetaDataSGE {
             lastFragValidByteNum: mergedLastPktLastFragValidByteNum,
             isFirst             : sge.isFirst,
             isLast              : sge.isLast
         };
         sgeMergedMetaDataOutQ.enq(sgeMergedMetaData);
+`endif
         pendingScatterGatherElemQ.enq(tuple2(sge, dmaReadCntrlReq.pmtu));
 
         // let curSQPN = dmaReadCntrlReq.sglDmaReadMetaData.sqpn;   // TODO: remove it
@@ -994,8 +999,10 @@ module mkDmaReadCntrl#(
         method Bool isIdle() = gracefulStopReg[0];
     endinterface;
 
-    // interface sglTotalPayloadLenMetaDataPipeOut = toPipeOut(sglTotalPayloadLenMetaDataOutQ);
+`ifdef SUPPORT_SGL
     interface sgeMergedMetaDataPipeOut = toPipeOut(sgeMergedMetaDataOutQ);
+`endif
+
     interface sgePktMetaDataPipeOut = addrChunkSrv.sgePktMetaDataPipeOut;
 endmodule
 
@@ -2193,7 +2200,7 @@ module mkPayloadGenerator#(
 
 
 
-
+`ifdef SUPPORT_SGL
     let sgeMergedPayloadPipeOut <- mkMergePayloadEachSGE(
         clearAll, dmaReadCntrl.sgePktMetaDataPipeOut, toPipeOut(sgePayloadOutQ)
     );
@@ -2203,6 +2210,16 @@ module mkPayloadGenerator#(
     let adjustedPayloadPipeOut <- mkAdjustPayloadSegment(
         clearAll, toPipeOut(adjustedTotalPayloadMetaDataQ), sglMergedPayloadPipeOut
     );
+`else
+    let sgeMergedPayloadPipeOut <- mkMergePayloadEachSGE(
+        clearAll, dmaReadCntrl.sgePktMetaDataPipeOut, toPipeOut(sgePayloadOutQ)
+    );
+    let adjustedPayloadPipeOut <- mkAdjustPayloadSegment(
+        clearAll, toPipeOut(adjustedTotalPayloadMetaDataQ), sgeMergedPayloadPipeOut
+    );
+`endif
+
+
 
     // TODO: check payloadOutQ buffer size is enough for DMA read delay?
     FIFOF#(DataStream) payloadBufQ <- mkSizedBRAMFIFOF(valueOf(DATA_STREAM_FRAG_BUF_SIZE));

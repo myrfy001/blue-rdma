@@ -1,3 +1,5 @@
+// `define SUPPORT_SGL
+
 // Adjustible settings
 // typedef 500 TARGET_FREQ_MHZ;
 typedef 2 TARGET_CYCLE_NS;
@@ -13,7 +15,11 @@ typedef TExp#(31)           MAX_MR_SIZE;   // 2GB
 typedef TExp#(21)           PAGE_SIZE_CAP; // 2MB
 typedef 8                   MAX_QP;
 typedef 32                  MAX_QP_WR;
-typedef 4                   MAX_SGE;
+`ifdef SUPPORT_SGL
+    typedef 4               MAX_SGE;
+`else
+    typedef 1               MAX_SGE;
+`endif
 typedef 8                   MAX_CQ;
 typedef MAX_QP_WR           MAX_CQE;
 typedef 256                 MAX_MR;

@@ -240,30 +240,30 @@ typedef struct {
 } SendQueueReqDescSeg0 deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(64)       reserved1;          // 64 bits
+    ReservedZero#(64)                                   reserved1;          // 64 bits
 
-    IMM                     imm;                // 32 bits
+    IMM                                                 imm;                // 32 bits
     
-    ReservedZero#(8)        reserved2;          // 8  bits
-    QPN                     dqpn;               // 24 bits
+    ReservedZero#(8)                                    reserved2;          // 8  bits
+    QPN                                                 dqpn;               // 24 bits
 
-    ReservedZero#(16)       reserved3;          // 16 bits
-    MAC                     macAddr;            // 48 bits
+    ReservedZero#(16)                                   reserved3;          // 16 bits
+    MAC                                                 macAddr;            // 48 bits
 
-    ReservedZero#(8)        reserved4;          // 8  bits
-    PSN                     psn;                // 24 bits
+    ReservedZero#(8)                                    reserved4;          // 8  bits
+    PSN                                                 psn;                // 24 bits
 
-    ReservedZero#(5)        reserved5;          // 5  bits
-    NumSGE                  sgeCnt;             // 3  bits
+    ReservedZero#(TSub#(BYTE_WIDTH, SizeOf#(NumSGE)))   reserved5;          // total 8 bits
+    NumSGE                                              sgeCnt;             // total 8 bits
 
-    ReservedZero#(4)        reserved6;          // 4  bits
-    TypeQP                  qpType;             // 4  bits
+    ReservedZero#(4)                                    reserved6;          // 4  bits
+    TypeQP                                              qpType;             // 4  bits
     
-    ReservedZero#(3)        reserved7;          // 3  bits
-    WorkReqSendFlag         flags;              // 5  bits 
+    ReservedZero#(3)                                    reserved7;          // 3  bits
+    WorkReqSendFlag                                     flags;              // 5  bits 
 
-    ReservedZero#(5)        reserved8;          // 5  bits
-    PMTU                    pmtu;               // 3  bits
+    ReservedZero#(5)                                    reserved8;          // 5  bits
+    PMTU                                                pmtu;               // 3  bits
 } SendQueueReqDescSeg1 deriving(Bits, FShow);
 
 typedef struct {

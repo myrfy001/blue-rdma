@@ -72,16 +72,21 @@ def test_case():
         cmd_resp_queue.deq_blocking()
 
     # move send queue head to send WQE
+    # sgl = [
+    #     SendQueueReqDescFragSGE(
+    #         F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR),
+    #     SendQueueReqDescFragSGE(
+    #         F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR+1),
+    #     SendQueueReqDescFragSGE(
+    #         F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR+2),
+    #     SendQueueReqDescFragSGE(
+    #         F_LKEY=SEND_SIDE_KEY, F_LEN=SEND_BYTE_COUNT-3, F_LADDR=REQ_SIDE_VA_ADDR+3),
+    # ]
     sgl = [
         SendQueueReqDescFragSGE(
-            F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR),
-        SendQueueReqDescFragSGE(
-            F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR+1),
-        SendQueueReqDescFragSGE(
-            F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR+2),
-        SendQueueReqDescFragSGE(
-            F_LKEY=SEND_SIDE_KEY, F_LEN=SEND_BYTE_COUNT-3, F_LADDR=REQ_SIDE_VA_ADDR+3),
+            F_LKEY=SEND_SIDE_KEY, F_LEN=SEND_BYTE_COUNT, F_LADDR=REQ_SIDE_VA_ADDR),
     ]
+
     send_queue.put_work_request(
         opcode=WorkReqOpCode.IBV_WR_RDMA_WRITE,
         is_first=True,

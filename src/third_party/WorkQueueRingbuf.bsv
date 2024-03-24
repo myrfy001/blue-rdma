@@ -46,6 +46,7 @@ module mkWorkQueueRingbufController(WorkQueueRingbufController ifc);
         sgl[0].laddr   =    desc2.sge1.laddr;
         sgl[0].len     =    desc2.sge1.len;
         sgl[0].lkey    =    desc2.sge1.lkey;
+`ifdef SUPPORT_SGL
         sgl[1].laddr   =    desc2.sge2.laddr;
         sgl[1].len     =    desc2.sge2.len;
         sgl[1].lkey    =    desc2.sge2.lkey;
@@ -74,7 +75,12 @@ module mkWorkQueueRingbufController(WorkQueueRingbufController ifc);
                 sgl[3].isLast  =    True;
             end
         endcase
-
+`else
+        if (desc1.sgeCnt == 1) begin
+            sgl[0].isFirst =    True;
+            sgl[0].isLast  =    True;
+        end
+`endif
         WorkQueueElem req   = unpack(0);
         req.pkey            = desc0.pkey;
         req.opcode          = desc0.commonHeader.opCode;
