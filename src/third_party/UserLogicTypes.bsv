@@ -231,7 +231,7 @@ typedef struct {
 } SendQueueDescCommonHead deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(48)           reserved1;        // 40 bits
+    ReservedZero#(48)           reserved1;        // 48 bits
     PKEY                        pkey;             // 16 bits
     AddrIPv4                    dqpIP;            // 32 bits
     RKEY                        rkey;             // 32 bits
@@ -316,19 +316,26 @@ typedef struct {
 } MeatReportQueueDescFragImmDT deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(160)              reserved1;      // 160
+    ReservedZero#(136)              reserved1;      // 136
+    MSN                             msn;            // 24
     MeatReportQueueDescFragBTH      bth;            // 64
     RdmaReqStatus                   reqStatus;      // 8
     PSN                             expectedPSN;    // 24
 } MeatReportQueueDescBth deriving(Bits, FShow);
 
 typedef struct {
-    MeatReportQueueDescFragImmDT    immDt;          // 32
+    ReservedZero#(8)                reserved1;      // 8
+    MSN                             msn;            // 24
     MeatReportQueueDescFragRETH     reth;           // 128
     MeatReportQueueDescFragBTH      bth;            // 64
     RdmaReqStatus                   reqStatus;      // 8 
     PSN                             expectedPSN;    // 24
-} MeatReportQueueDescBthRethImmDT deriving(Bits, FShow);
+} MeatReportQueueDescBthReth deriving(Bits, FShow);
+
+typedef struct {
+    ReservedZero#(224)                reserved1;    // 224
+    MeatReportQueueDescFragImmDT    immDt;          // 32
+} MeatReportQueueDescImmDT deriving(Bits, FShow);
 
 typedef struct {
     ReservedZero#(105)              reserved1;      // 105

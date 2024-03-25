@@ -382,8 +382,8 @@ module mkRQ(RQ ifc);
         rptEntry.code           = aeth.code;
         rptEntry.value          = aeth.value;
         rptEntry.msn            = aeth.msn;
-        rptEntry.lastRetryPSN   = isAckPkt ? nreth.lastRetryPSN : expectedPsn;
-
+        rptEntry.lastRetryPSN   = nreth.lastRetryPSN;
+        rptEntry.expectedPsn    = expectedPsn;
         rptEntry.immDt          = immDT.data;
 
         if (needReportPacketMeta) begin
@@ -454,6 +454,9 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
             data:           reportEntry.immDt
         };
 
+
+        let isHasImmData = rdmaReqHasImmDt(reportEntry.opcode);
+
         let opcode = {pack(reportEntry.trans), pack(reportEntry.opcode)};
         if (state == RQReportEntryToRingbufDescStatusOutputBasicInfo) begin
             case (opcode)
@@ -466,6 +469,7 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                         reqStatus   :   reportEntry.reqStatus,
                         bth         :   bth,
                         expectedPSN :   reportEntry.lastRetryPSN,
+                        msn         :   reportEntry.msn,
                         reserved1   :   unpack(0)
                     };
                     ringbufDescPipeOutQ.enq(pack(ent));
@@ -489,14 +493,15 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                 fromInteger(valueOf(XRC_RDMA_READ_RESPONSE_ONLY)),
                 fromInteger(valueOf(DTLD_EXT_RAW_PACKET_WRITE_ONLY_WITH_IMMEDIATE)):
                 begin
-                    let ent = MeatReportQueueDescBthRethImmDT{
+                    let ent = MeatReportQueueDescBthReth{
+                        reserved1   :   unpack(0),
+                        msn         :   reportEntry.msn,
                         reqStatus   :   reportEntry.reqStatus,
                         bth         :   bth,
                         reth        :   reth,
-                        immDt       :   immDt,
                         expectedPSN :   reportEntry.lastRetryPSN
                     };
-                    if (opcode == fromInteger(valueOf(RC_RDMA_READ_REQUEST))) begin
+                    if (opcode == fromInteger(valueOf(RC_RDMA_READ_REQUEST)) || isHasImmData) begin
                         state <= RQReportEntryToRingbufDescStatusOutputExtraInfo;
                     end
                     else begin
@@ -541,13 +546,25 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                     pktReportEntryPipeInQ.deq;
                     $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "RQ send recv packet meta to host: ", fshow(ent));
                 end
+                SEND_LAST_WITH_IMMEDIATE      ,
+                SEND_ONLY_WITH_IMMEDIATE      ,
+                RDMA_WRITE_LAST_WITH_IMMEDIATE,
+                RDMA_WRITE_ONLY_WITH_IMMEDIATE: begin
+                    let ent = MeatReportQueueDescImmDT{
+                        immDt       :   immDt,
+                        reserved1   :   unpack(0)
+                    };
+                    
+                    state <= RQReportEntryToRingbufDescStatusOutputBasicInfo;
+                    ringbufDescPipeOutQ.enq(pack(ent));
+                    pktReportEntryPipeInQ.deq;
+                    $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "RQ send recv packet meta to host: ", fshow(ent));
+                end
                 default: begin
                     $display("Warn: Received Not Supported Packet, Will not report to software.");
                 end
             endcase
         end
-
-        
     endrule
 
 
