@@ -117,6 +117,7 @@ module mkRQ(RQ ifc);
         let isWriteReq           = isWriteReqRdmaOpCode(bth.opcode);
         let isWriteImmReq        = isWriteImmReqRdmaOpCode(bth.opcode);
         let isReadReq            = isReadReqRdmaOpCode(bth.opcode);
+        let isReadResp            = isReadRespRdmaOpCode(bth.opcode);
         let isAtomicReq          = isAtomicReqRdmaOpCode(bth.opcode);
         let isFirstOrOnlyPkt     = isFirstOrOnlyRdmaOpCode(bth.opcode);
         let isLastOrOnlyPkt      = isLastOrOnlyRdmaOpCode(bth.opcode);
@@ -132,15 +133,18 @@ module mkRQ(RQ ifc);
         
         // for ACK/NACK, no need to check
         if (rdmaOpCodeNeedQueryMrTable) begin
-            case ({ pack(isSendReq || isWriteReq), pack(isReadReq), pack(isAtomicReq) })
-                3'b100: begin
+            case ({ pack(isSendReq || isWriteReq), pack(isReadReq), pack(isAtomicReq), pack(isReadResp) })
+                4'b1000: begin
                     isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_WRITE);
                 end
-                3'b010: begin
+                4'b0100: begin
                     isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_READ);
                 end
-                3'b001: begin
+                4'b0010: begin
                     isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_REMOTE_ATOMIC);
+                end
+                4'b0001: begin
+                    isAccCheckPass = containAccessTypeFlag(qpc.rqAccessFlags, IBV_ACCESS_LOCAL_WRITE);
                 end
                 default: begin
                     immFail(
@@ -149,7 +153,8 @@ module mkRQ(RQ ifc);
                             "isSendReq=", fshow(isSendReq),
                             ", isWriteReq=", fshow(isWriteReq),
                             ", isReadReq=", fshow(isReadReq),
-                            ", isAtomicReq=", fshow(isAtomicReq)
+                            ", isAtomicReq=", fshow(isAtomicReq),
+                            ", bth=", fshow(bth)
                         )
                     );
                 end
