@@ -48,7 +48,6 @@ typedef union tagged {
 } ImmOrRKey deriving(Bits, FShow);
 
 typedef struct {
-    // WorkReqID id; // TODO: remove it
     PKEY pkey;
     WorkReqOpCode opcode;
     FlagsType#(WorkReqSendFlag) flags;
@@ -78,6 +77,7 @@ instance FShow#(WorkQueueElem);
             "WorkQueueElem { opcode=", fshow(wqe.opcode),
             ", flags=", fshow(wqe.flags),
             ", qpType=", fshow(wqe.qpType),
+            ", msn(pkey)=", fshow(wqe.pkey),
             ", psn=%h", wqe.psn,
             ", pmtu=", fshow(wqe.pmtu),
             ", dqpIP=", fshow(wqe.dqpIP),
@@ -274,7 +274,6 @@ function Tuple3#(PktLen, PktLen, PktNum) stepThreeCalcPktNumAndPktLenByAddrAndPM
     let totalPktNum = truncatedPktNum + zeroExtend(pktNumAddOne);
     let firstPktLen = (notFullPkt && !hasExtraPkt) ? lenLowPart : maxFirstPktLen;
     let lastPktLen  = hasResidue ? tmpLastPktLen : (notFullPkt ? lenLowPart : pmtuLen);
-    // let lastPktLen  = notFullPkt ? (hasExtraPkt ? tmpLastPktLen : lenLowPart) : (hasResidue ? tmpLastPktLen : pmtuLen);
 
     return tuple3(firstPktLen, lastPktLen, totalPktNum);
 endfunction
@@ -641,7 +640,7 @@ module mkAddrChunkSrv#(Bool clearAll)(AddrChunkSrv);
             remainingPktNum = sgePktNum;
         end
 
-        let isLastChunk = isOneR(remainingPktNum);
+        let isLastChunk = remainingPktNum == 1;
         if (isLastChunk) begin
             calcAddrChunkRespQ.deq;
         end
@@ -2162,7 +2161,22 @@ typedef struct {
     Bool         isOnlyPkt;
     Bool         isZeroPayloadLen;
     Bool         shouldAddPadding;
-} TmpPayloadGenRespData deriving(Bits);
+} TmpPayloadGenRespDataStep1 deriving(Bits);
+
+typedef struct {
+    ADDR         remoteAddr;
+    PktLen       firstPktLen;
+    PktLen       lastPktLen;
+    PktLen       pmtuLen;
+    PAD          firstPktPadCnt;
+    PAD          lastPktPadCnt;
+    Bool         isFirstPkt;
+    Bool         isLastPkt;
+    ByteEnBitNum firstPktLastFragValidByteNumWithPadding;
+    ByteEnBitNum lastPktLastFragValidByteNumWithPadding;
+    Bool         isZeroPayloadLen;
+    Bool         shouldAddPadding;
+} TmpPayloadGenRespDataStep2 deriving(Bits);
 
 typedef struct {
     ByteEn       firstPktLastFragByteEnWithPadding;
@@ -2191,7 +2205,8 @@ module mkPayloadGenerator#(
     FIFOF#(Tuple2#(PayloadGenReqSG, TmpPayloadGenMetaData)) adjustReqPktLenQ <- mkFIFOF;
     FIFOF#(TmpAdjustFirstAndLastPktLen) adjustFirstAndLastPktLenQ <- mkFIFOF;
     FIFOF#(TmpAdjustTotalPayloadMetaData) adjustTotalPayloadMetaDataQ <- mkFIFOF;
-    FIFOF#(TmpPayloadGenRespData) genPayloadRespQ <- mkFIFOF;
+    FIFOF#(TmpPayloadGenRespDataStep1) genPayloadRespStep1Q <- mkFIFOF;
+    FIFOF#(TmpPayloadGenRespDataStep2) genPayloadRespStep2Q <- mkFIFOF;
     FIFOF#(Tuple2#(PayloadGenRespSG, TmpPaddingData)) addPaddingDataQ <- mkSizedFIFOF(10);
     FIFOF#(AdjustedTotalPayloadMetaData) adjustedTotalPayloadMetaDataQ <- mkFIFOF;
     FIFOF#(DataStream) bramQueueTimingFixStageQ <- mkFIFOF;
@@ -2253,8 +2268,8 @@ module mkPayloadGenerator#(
     //     if (!adjustTotalPayloadMetaDataQ.notFull) begin
     //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator adjustTotalPayloadMetaDataQ");
     //     end
-    //     if (!genPayloadRespQ.notFull) begin
-    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator genPayloadRespQ");
+    //     if (!genPayloadRespStep1Q.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator genPayloadRespStep1Q");
     //     end
     //     if (!addPaddingDataQ.notFull) begin
     //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkPayloadGenerator addPaddingDataQ");
@@ -2277,7 +2292,7 @@ module mkPayloadGenerator#(
         adjustReqPktLenQ.clear;
         adjustFirstAndLastPktLenQ.clear;
         adjustTotalPayloadMetaDataQ.clear;
-        genPayloadRespQ.clear;
+        genPayloadRespStep1Q.clear;
         addPaddingDataQ.clear;
         adjustedTotalPayloadMetaDataQ.clear;
 
@@ -2292,13 +2307,7 @@ module mkPayloadGenerator#(
         // );
     endrule
 
-    (* conflict_free = "recvReq, \
-                        recvDmaReadCntrlResp, \
-                        issueDmaReadCntrlReq, \
-                        adjustFirstAndLastPktLen, \
-                        calcAdjustedTotalPayloadMetaData, \
-                        genPayloadGenResp, \
-                        outputAndAddPadding" *)
+
     rule recvReq if (!clearAll);
         let payloadGenReq = payloadGenReqQ.first;
         payloadGenReqQ.deq;
@@ -2372,10 +2381,6 @@ module mkPayloadGenerator#(
     rule issueDmaReadCntrlReq if (!clearAll);
         let { payloadGenReq, tmpPayloadGenMetaData } = adjustReqPktLenQ.first;
         adjustReqPktLenQ.deq;
-
-        // let totalLen             = tmpPayloadGenMetaData.totalLen;
-        // let origRemoteAddr       = tmpPayloadGenMetaData.origRemoteAddr;
-        // let pmtu                 = tmpPayloadGenMetaData.pmtu;
         let pmtuMask             = tmpPayloadGenMetaData.pmtuMask;
         let addrAndLenLowPartSum = tmpPayloadGenMetaData.addrAndLenLowPartSum;
         let pmtuLen              = tmpPayloadGenMetaData.pmtuLen;
@@ -2390,8 +2395,6 @@ module mkPayloadGenerator#(
                 sglDmaReadMetaData: DmaReadMetaDataSGL {
                     sgl           : payloadGenReq.sgl,
                     totalLen      : payloadGenReq.totalLen
-                    // sqpn          : payloadGenReq.sqpn, // TODO: remove it
-                    // wrID          : payloadGenReq.wrID  // TODO: remove it
                 },
                 pmtu              : payloadGenReq.pmtu
             };
@@ -2562,7 +2565,7 @@ module mkPayloadGenerator#(
             );
         end
 
-        let tmpPayloadGenRespData = TmpPayloadGenRespData {
+        let tmpPayloadGenRespData = TmpPayloadGenRespDataStep1 {
             firstRemoteAddr                        : firstRemoteAddr,
             secondRemoteAddr                       : secondRemoteAddr,
             firstPktLen                            : firstPktLen,
@@ -2578,7 +2581,7 @@ module mkPayloadGenerator#(
             isZeroPayloadLen                       : isZeroPayloadLen,
             shouldAddPadding                       : shouldAddPadding
         };
-        genPayloadRespQ.enq(tmpPayloadGenRespData);
+        genPayloadRespStep1Q.enq(tmpPayloadGenRespData);
 
         let totalMetaData = PayloadGenTotalMetaData {
             // totalLen        : totalLen,
@@ -2599,8 +2602,8 @@ module mkPayloadGenerator#(
         // );
     endrule
 
-    rule genPayloadGenResp if (!clearAll);
-        let tmpPayloadGenRespData = genPayloadRespQ.first;
+    rule genPayloadGenRespStep1 if (!clearAll);
+        let tmpPayloadGenRespData = genPayloadRespStep1Q.first;
 
         let firstRemoteAddr                         = tmpPayloadGenRespData.firstRemoteAddr;
         let secondRemoteAddr                        = tmpPayloadGenRespData.secondRemoteAddr;
@@ -2640,9 +2643,55 @@ module mkPayloadGenerator#(
         end
 
         let isFirstPkt = isFirstPktReg;
-        let isLastPkt  = isOnlyPkt || (!isFirstPktReg && isOneR(remainingPktNumReg));
-        let pktLen = isFirstPkt ? firstPktLen    : (isLastPkt ? lastPktLen : pmtuLen);
+        let isLastPkt  = isOnlyPkt || (!isFirstPktReg && remainingPktNumReg == 1);
+        
+
+        isFirstPktReg      <= isLastPkt;
+        pktRemoteAddrReg   <= nextRemoteAddr;
+        remainingPktNumReg <= remainingPktNum;
+
+        if (isLastPkt) begin
+            genPayloadRespStep1Q.deq;
+        end
+
+        genPayloadRespStep2Q.enq(TmpPayloadGenRespDataStep2{
+            remoteAddr                              :   remoteAddr,
+            firstPktLen                             :   firstPktLen,
+            lastPktLen                              :   lastPktLen,
+            pmtuLen                                 :   pmtuLen,
+            firstPktPadCnt                          :   firstPktPadCnt,
+            lastPktPadCnt                           :   lastPktPadCnt,
+            isFirstPkt                              :   isFirstPkt,
+            isLastPkt                               :   isLastPkt,
+            firstPktLastFragValidByteNumWithPadding :   firstPktLastFragValidByteNumWithPadding,
+            lastPktLastFragValidByteNumWithPadding  :   lastPktLastFragValidByteNumWithPadding,
+            isZeroPayloadLen                        :   isZeroPayloadLen,
+            shouldAddPadding                        :   shouldAddPadding
+        });
+
+    endrule
+
+    rule genPayloadGenRespStep2 if (!clearAll);
+
+        let tmpPayloadGenRespData = genPayloadRespStep2Q.first;
+        genPayloadRespStep2Q.deq;
+
+        let shouldAddPadding = tmpPayloadGenRespData.shouldAddPadding;
+        let remoteAddr = tmpPayloadGenRespData.remoteAddr;
+        let isFirstPkt = tmpPayloadGenRespData.isFirstPkt;
+        let isLastPkt = tmpPayloadGenRespData.isLastPkt;
+        let firstPktLastFragValidByteNumWithPadding = tmpPayloadGenRespData.firstPktLastFragValidByteNumWithPadding;
+        let lastPktLastFragValidByteNumWithPadding = tmpPayloadGenRespData.lastPktLastFragValidByteNumWithPadding;
+        let isZeroPayloadLen = tmpPayloadGenRespData.isZeroPayloadLen;
+        let firstPktPadCnt = tmpPayloadGenRespData.firstPktPadCnt;
+        let lastPktPadCnt = tmpPayloadGenRespData.lastPktPadCnt;
+        let firstPktLen = tmpPayloadGenRespData.firstPktLen;
+        let lastPktLen = tmpPayloadGenRespData.lastPktLen;
+        let pmtuLen = tmpPayloadGenRespData.pmtuLen;
+
         let padCnt = shouldAddPadding ? (isFirstPkt ? firstPktPadCnt : (isLastPkt ? lastPktPadCnt : 0)) : 0;
+
+        let pktLen = isFirstPkt ? firstPktLen    : (isLastPkt ? lastPktLen : pmtuLen);
 
         let payloadGenResp = PayloadGenRespSG {
             raddr           : remoteAddr,
@@ -2655,8 +2704,6 @@ module mkPayloadGenerator#(
         let firstPktLastFragByteEnWithPadding = genByteEn(firstPktLastFragValidByteNumWithPadding);
         let lastPktLastFragByteEnWithPadding  = genByteEn(lastPktLastFragValidByteNumWithPadding);
         let tmpPaddingData = TmpPaddingData {
-            // firstPktLastFragValidByteNumWithPadding: firstPktLastFragValidByteNumWithPadding,
-            // lastPktLastFragValidByteNumWithPadding : lastPktLastFragValidByteNumWithPadding,
             firstPktLastFragByteEnWithPadding      : firstPktLastFragByteEnWithPadding,
             lastPktLastFragByteEnWithPadding       : lastPktLastFragByteEnWithPadding,
             isZeroPayloadLen                       : isZeroPayloadLen,
@@ -2677,14 +2724,8 @@ module mkPayloadGenerator#(
             );
         end
 
-        isFirstPktReg      <= isLastPkt;
-        pktRemoteAddrReg   <= nextRemoteAddr;
-        remainingPktNumReg <= remainingPktNum;
-        if (isLastPkt) begin
-            genPayloadRespQ.deq;
-        end
         // $display(
-        //     "time=%0t: genPayloadGenResp", $time,
+        //     "time=%0t: genPayloadGenRespStep2", $time,
         //     ", payloadGenResp=", fshow(payloadGenResp),
         //     ", isFirstPkt=", fshow(isFirstPkt),
         //     ", isLastPkt=", fshow(isLastPkt),
@@ -2698,13 +2739,9 @@ module mkPayloadGenerator#(
     rule outputAndAddPadding if (!clearAll);
         let { payloadGenResp, tmpPaddingData } = addPaddingDataQ.first;
 
-        // let firstPktLastFragValidByteNumWithPadding = tmpPaddingData.firstPktLastFragValidByteNumWithPadding;
-        // let lastPktLastFragValidByteNumWithPadding  = tmpPaddingData.lastPktLastFragValidByteNumWithPadding;
         let firstPktLastFragByteEnWithPadding = tmpPaddingData.firstPktLastFragByteEnWithPadding;
         let lastPktLastFragByteEnWithPadding  = tmpPaddingData.lastPktLastFragByteEnWithPadding;
         let isZeroPayloadLen = tmpPaddingData.isZeroPayloadLen;
-        // let firstPktLastFragByteEnWithPadding = genByteEn(firstPktLastFragValidByteNumWithPadding);
-        // let lastPktLastFragByteEnWithPadding  = genByteEn(lastPktLastFragValidByteNumWithPadding);
 
         let isFirstPkt = payloadGenResp.isFirst;
         let isLastPkt  = payloadGenResp.isLast;
