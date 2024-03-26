@@ -975,31 +975,8 @@ function PktLen pktLenAddFragLen(PktLen pktLen, ByteEnBitNum fragLen);
         { higherPartPktLen, lowerPartFragLen };
 endfunction
 
-// Addr: 11111000, 11111100
-// Len :     1000,      100
-// End : 11111111, 11111111
 function Bool checkAddrAndLenWithinRange(ADDR laddr, Length dlen, ADDR raddr, Length rlen);
-    // Integer addrMSB        = valueOf(ADDR_WIDTH) - 1;
-    // Integer addrMidHighBit = valueOf(ADDR_WIDTH) - valueOf(RDMA_MAX_LEN_WIDTH);
-    // Integer addrMidLowBit  = valueOf(ADDR_WIDTH) - valueOf(RDMA_MAX_LEN_WIDTH) - 1;
-
-    Bit#(TSub#(ADDR_WIDTH, RDMA_MAX_LEN_WIDTH)) lAddrHighPart = truncateLSB(laddr); // [addrMSB : addrMidHighBit];
-    Bit#(TSub#(ADDR_WIDTH, RDMA_MAX_LEN_WIDTH)) rAddrHighPart = truncateLSB(raddr); // [addrMSB : addrMidHighBit];
-    Bit#(TSub#(ADDR_WIDTH, RDMA_MAX_LEN_WIDTH)) lAddrLowPart = truncate(laddr); // [addrMidLowBit : 0];
-    Bit#(TSub#(ADDR_WIDTH, RDMA_MAX_LEN_WIDTH)) rAddrLowPart = truncate(raddr); // [addrMidLowBit : 0];
-
-    // 32-bit comparison
-    let addrHighPartEq = lAddrHighPart == rAddrHighPart;
-    let addrLowPartMatch = lAddrLowPart >= rAddrLowPart;
-
-    // 33-bit addition
-    let lAddrLenSum = { 1'b0, lAddrLowPart } + { 1'b0, dlen };
-    let rAddrLenSum = { 1'b0, rAddrLowPart } + { 1'b0, rlen };
-
-    // 33-bit comparison
-    let addrLenMatch = rAddrLenSum >= lAddrLenSum;
-
-    return addrHighPartEq && addrLowPartMatch && addrLenMatch;
+    return laddr >= raddr && (laddr + zeroExtend(dlen) <= raddr + zeroExtend(rlen));
 endfunction
 
 function Maybe#(TransType) qpType2TransType(TypeQP qpt);

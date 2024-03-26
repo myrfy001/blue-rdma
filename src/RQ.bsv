@@ -381,7 +381,7 @@ module mkRQ(RQ ifc);
 
         rptEntry.code           = aeth.code;
         rptEntry.value          = aeth.value;
-        rptEntry.msn            = aeth.msn;
+        rptEntry.msn            = isAckPkt ? aeth.msn : zeroExtend(bth.pkey);
         rptEntry.lastRetryPSN   = nreth.lastRetryPSN;
         rptEntry.expectedPsn    = expectedPsn;
         rptEntry.immDt          = immDT.data;
