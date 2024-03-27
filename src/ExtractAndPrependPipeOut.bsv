@@ -348,7 +348,7 @@ module mkPrependHeader2PipeOut#(
             headerPipeIn.deq;
 
 
-            let rightShiftHeaderLastFragData = curHeaderDataStreamFrag.data >> getFragEnBitNumByByteEnNum(headerLastFragInvalidByteNum);
+            let rightShiftHeaderLastFragData = curHeaderDataStreamFrag.data >> getFragEnBitNumByByteEnNum(truncate(headerLastFragInvalidByteNum));
             let rightShiftHeaderLastFragByteEn = curHeaderDataStreamFrag.byteEn >> headerLastFragInvalidByteNum;
             let outputDataStream = curHeaderDataStreamFrag;
 
@@ -418,7 +418,7 @@ module mkPrependHeader2PipeOut#(
 
             if (curHeaderDataStreamFrag.isLast) begin
                 curHeaderDataStreamFrag.byteEn = curHeaderDataStreamFrag.byteEn << headerLastFragInvalidByteNum;
-                curHeaderDataStreamFrag.data = curHeaderDataStreamFrag.data << getFragEnBitNumByByteEnNum(headerLastFragInvalidByteNum);
+                curHeaderDataStreamFrag.data = curHeaderDataStreamFrag.data << getFragEnBitNumByByteEnNum(truncate(headerLastFragInvalidByteNum));
             end
 
             dataStreamOutQ.enq(curHeaderDataStreamFrag);
@@ -440,7 +440,7 @@ module mkPrependHeader2PipeOut#(
             ByteEn lastFragByteEn = truncate(firstDataStreamFrag.byteEn << headerLastFragInvalidByteNum);
             let noExtraLastFrag = isZeroByteEn(lastFragByteEn);
 
-            let tmpData = { curHeaderDataStreamFrag.data, firstDataStreamFrag.data } >> getFragEnBitNumByByteEnNum(headerLastFragValidByteNum);
+            let tmpData = { curHeaderDataStreamFrag.data, firstDataStreamFrag.data } >> getFragEnBitNumByByteEnNum(truncate(headerLastFragValidByteNum));
             let tmpByteEn = { curHeaderDataStreamFrag.byteEn, firstDataStreamFrag.byteEn } >> headerLastFragValidByteNum;
 
             preDataStreamReg <= firstDataStreamFrag;
@@ -479,7 +479,7 @@ module mkPrependHeader2PipeOut#(
         let noExtraLastFrag = isZeroByteEn(lastFragByteEn);
         // let noExtraLastFrag = isZero(lastFragByteEn); // If 256-bit bus, this is 32-bit and reduction
 
-        let tmpData = { preDataStreamReg.data, curDataStreamFrag.data } >> getFragEnBitNumByByteEnNum(headerLastFragValidByteNum);
+        let tmpData = { preDataStreamReg.data, curDataStreamFrag.data } >> getFragEnBitNumByByteEnNum(truncate(headerLastFragValidByteNum));
         let tmpByteEn = { preDataStreamReg.byteEn, curDataStreamFrag.byteEn } >> headerLastFragValidByteNum;
 
         let outDataStream = DataStream {
@@ -514,7 +514,7 @@ module mkPrependHeader2PipeOut#(
         let {headerLastFragValidByteNum,
              headerLastFragInvalidByteNum, headerHasPayload, isEmptyHeader} = calculatedMetasAfterHeaderRightShiftQ.first;
         
-        DATA leftShiftData = truncate(preDataStreamReg.data << getFragEnBitNumByByteEnNum(headerLastFragInvalidByteNum));
+        DATA leftShiftData = truncate(preDataStreamReg.data << getFragEnBitNumByByteEnNum(truncate(headerLastFragInvalidByteNum)));
         ByteEn leftShiftByteEn = truncate(preDataStreamReg.byteEn << headerLastFragInvalidByteNum);
         let extraLastDataStream = DataStream {
             data   : leftShiftData,
@@ -637,7 +637,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         // But this rule is hard to split into two rules.
         let isHeaderLastBeat = curHeaderFragCounter[0] == 1;
 
-        let leftShiftedPayloadData = inDataStreamFrag.data << getFragEnBitNumByByteEnNum(headerLastFragValidByteNum);
+        let leftShiftedPayloadData = inDataStreamFrag.data << getFragEnBitNumByByteEnNum(truncate(headerLastFragValidByteNum));
         let leftShiftedPayloadByteEn = inDataStreamFrag.byteEn << headerLastFragValidByteNum;
 
         if (!isHeaderLastBeat) begin // case 1
@@ -710,7 +710,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         let noExtraLastFrag = isZeroByteEn(shiftedCurDataFragByteEn);
         
 
-        let outData   = { preDataStreamReg.data, curDataStreamFrag.data } >> getFragEnBitNumByByteEnNum(headerLastFragInvalidByteNum);
+        let outData   = { preDataStreamReg.data, curDataStreamFrag.data } >> getFragEnBitNumByByteEnNum(truncate(headerLastFragInvalidByteNum));
         let outByteEn = { preDataStreamReg.byteEn, curDataStreamFrag.byteEn } >> headerLastFragInvalidByteNum;
         let isLast = curDataStreamFrag.isLast && noExtraLastFrag;
         let outDataStream = DataStreamFragMetaData {
@@ -747,7 +747,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
     rule extraLastFrag if (stageReg == EXTRA_LAST_FRAG_OUTPUT);
         let {headerLastFragValidByteNum, headerLastFragInvalidByteNum, headerMetaData, headerLastFragByteEn} = calculatedMetasQ.first;
 
-        DATA leftShiftData      = truncate(preDataStreamReg.data << getFragEnBitNumByByteEnNum(headerLastFragValidByteNum));
+        DATA leftShiftData      = truncate(preDataStreamReg.data << getFragEnBitNumByByteEnNum(truncate(headerLastFragValidByteNum)));
         ByteEn leftShiftByteEn  = truncate(preDataStreamReg.byteEn << headerLastFragValidByteNum);
         let extraLastDataStream = DataStreamFragMetaData {
             bufIdx : ?,

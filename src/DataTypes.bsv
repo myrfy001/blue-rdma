@@ -108,6 +108,9 @@ typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) BusByteWidthMask; // 5
 typedef Bit#(TAdd#(1, DATA_BUS_BIT_NUM_WIDTH))  BusBitNum; // 9
 typedef Bit#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH)) ByteEnBitNum; // 6
 
+typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ShiftBitNum; // 8
+typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ShiftByteNum; // 5
+
 // typedef Bit#(TLog#(TAdd#(1, MAX_QP_WR)))        PendingReqCnt;
 // typedef Bit#(TLog#(TAdd#(1, MAX_QP_RD_ATOM)))   PendingReadAtomicReqCnt;
 // typedef Bit#(PENDING_READ_ATOMIC_REQ_CNT_WIDTH) PendingReadAtomicReqCnt;
