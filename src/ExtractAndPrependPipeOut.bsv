@@ -343,7 +343,7 @@ module mkPrependHeader2PipeOut#(
             ", calculatedMetasQ.first=", fshow(calculatedMetasQ.first)
         );
 
-        if (!isEmptyHeader) begin
+        if (!isEmptyHeader && headerPipeIn.notEmpty) begin
             let curHeaderDataStreamFrag = headerPipeIn.first;
             headerPipeIn.deq;
 
