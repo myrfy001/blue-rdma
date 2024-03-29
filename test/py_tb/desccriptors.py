@@ -255,6 +255,33 @@ class WorkReqOpCode:
     IBV_WR_DRIVER1 = 11
 
 
+class RdmaOpCode:
+    SEND_FIRST = 0x00
+    SEND_MIDDLE = 0x01
+    SEND_LAST = 0x02
+    SEND_LAST_WITH_IMMEDIATE = 0x03
+    SEND_ONLY = 0x04
+    SEND_ONLY_WITH_IMMEDIATE = 0x05
+    RDMA_WRITE_FIRST = 0x06
+    RDMA_WRITE_MIDDLE = 0x07
+    RDMA_WRITE_LAST = 0x08
+    RDMA_WRITE_LAST_WITH_IMMEDIATE = 0x09
+    RDMA_WRITE_ONLY = 0x0a
+    RDMA_WRITE_ONLY_WITH_IMMEDIATE = 0x0b
+    RDMA_READ_REQUEST = 0x0c
+    RDMA_READ_RESPONSE_FIRST = 0x0d
+    RDMA_READ_RESPONSE_MIDDLE = 0x0e
+    RDMA_READ_RESPONSE_LAST = 0x0f
+    RDMA_READ_RESPONSE_ONLY = 0x10
+    ACKNOWLEDGE = 0x11
+    ATOMIC_ACKNOWLEDGE = 0x12
+    COMPARE_SWAP = 0x13
+    FETCH_ADD = 0x14
+    RESYNC = 0x15
+    SEND_LAST_WITH_INVALIDATE = 0x16
+    SEND_ONLY_WITH_INVALIDATE = 0x17
+
+
 class WorkReqSendFlag:
     IBV_SEND_NO_FLAGS = 0  # Not defined in rdma-core
     IBV_SEND_FENCE = 1
@@ -268,3 +295,54 @@ def is_power_of_2(x):
     if x <= 0:
         return False
     return (x & (x-1)) == 0
+
+
+class MeatReportQueueDescFragBTH(Structure):
+    _pack_ = 1
+    _fields_ = [("F_TRANS", c_int, 3),
+                ("F_OPCODE", c_int, 5),
+
+                ("F_DQPN", c_int, 24),
+                ("F_PSN", c_int, 24),
+
+                ("F_SOLICITED", c_int, 1),
+                ("F_ACK_REQ", c_int, 1),
+                ("F_PAD_CNT", c_int, 2),
+                ("F_RESERVED_1", c_int, 4),
+                ]
+
+
+class MeatReportQueueDescFragRETH(Structure):
+    _pack_ = 1
+    _fields_ = [("F_VA", c_longlong, 64),
+                ("F_RKEY", c_int, 32),
+
+                ("F_DLEN", c_int, 32),
+                ]
+
+
+class MeatReportQueueDescFragSecondaryRETH(Structure):
+    _pack_ = 1
+    _fields_ = [("F_ADDR", c_longlong, 64),
+                ("F_RKEY", c_int, 32),
+                ]
+
+
+class MeatReportQueueDescBthReth(Structure):
+    _pack_ = 1
+    _fields_ = [("F_EXPECTED_PSN", c_int, 24),
+                ("F_REQ_STATUS", c_int, 8),
+                ("F_BTH", MeatReportQueueDescFragBTH),
+                ("F_RETH", MeatReportQueueDescFragRETH),
+                ("F_MSN", c_int, 24),
+                ("F_RESERVED_1", c_int, 8),
+                ]
+
+
+class MeatReportQueueDescSecondaryReth(Structure):
+    _pack_ = 1
+    _fields_ = [("F_SEC_RETH", MeatReportQueueDescFragSecondaryRETH),
+                ("F_RESERVED_1", c_int),
+                ("F_RESERVED_2", c_longlong),
+                ("F_RESERVED_3", c_longlong),
+                ]

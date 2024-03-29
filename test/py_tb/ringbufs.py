@@ -270,4 +270,4 @@ class RingbufMetaReportQueue:
         return self.rb.deq()
 
     def deq_blocking(self):
-        self.rb.deq_blocking()
+        return self.rb.deq_blocking()
