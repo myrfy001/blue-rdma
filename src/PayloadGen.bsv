@@ -1102,18 +1102,12 @@ module mkMergePayloadEachSGE#(
             firstPktLastFragInvalidByteNum,
             firstPktLastFragInvalidBitNum
         } = calcFragBitNumAndByteNum(firstPktLastFragValidByteNum);
-        // let {
-        //     lastPktLastFragValidBitNum,
-        //     lastPktLastFragInvalidByteNum,
-        //     lastPktLastFragInvalidBitNum
-        // } = calcFragBitNumAndByteNum(lastPktLastFragValidByteNum);
 
         let sgeHasJustTwoPkts = isTwoR(sgePktMetaData.sgePktNum);
         let sgeHasOnlyPkt     = isLessOrEqOneR(sgePktMetaData.sgePktNum);
 
         let hasExtraFrag = lastPktLastFragValidByteNum > firstPktLastFragInvalidByteNum;
 
-        // sgeFirstPktLastFragValidByteNumReg   <= firstPktLastFragValidByteNum;
         sgeCurPktMetaDataQ.enq(tuple5(
             firstPktLastFragInvalidByteNum,
             sgePktMetaData.sgePktNum, sgeHasJustTwoPkts, sgeHasOnlyPkt, hasExtraFrag
@@ -1459,14 +1453,10 @@ module mkMergePayloadAllSGE#(
         if (!sgeIsFirst) begin
             hasLessFrag = preInvalidByteNumReg >= lastFragValidByteNum;
 
-            // let sumValidByteNum   = preValidByteNumReg   + lastFragValidByteNum;
             let sumInvalidByteNum = preInvalidByteNumReg + lastFragInvalidByteNum;
 
-
-            // curValidByteNum   = preValidByteNumReg;
             curInvalidByteNum = preInvalidByteNumReg;
 
-            // preValidByteNum   = sumValidByteNum   & zeroExtend(busByteNumMask);
             preInvalidByteNum = sumInvalidByteNum & zeroExtend(busByteNumMask);
         end
 
@@ -2237,19 +2227,6 @@ module mkPayloadGenerator#(
             );
         end
 
-        // if (!isZeroPayloadLen) begin
-        //     let dmaReadCntrlReq = DmaReadCntrlReq {
-        //         sglDmaReadMetaData: DmaReadMetaDataSGL {
-        //             sgl           : payloadGenReq.sgl,
-        //             totalLen      : payloadGenReq.totalLen,
-        //             sqpn          : payloadGenReq.sqpn,
-        //             wrID          : payloadGenReq.wrID
-        //         },
-        //         pmtu              : payloadGenReq.pmtu
-        //     };
-        //     dmaReadCntrl.srvPort.request.put(dmaReadCntrlReq);
-        // end
-
         let {
             pmtuMask, addrAndLenLowPartSum, pmtuLen, lenLowPart,
             maxFirstPktLen, truncatedPktNum, pmtuAlignedStartAddr
@@ -2258,9 +2235,6 @@ module mkPayloadGenerator#(
         );
 
         let tmpPayloadGenMetaData = TmpPayloadGenMetaData {
-            // totalLen            : payloadGenReq.totalLen,
-            // origRemoteAddr      : payloadGenReq.raddr,
-            // pmtu                : payloadGenReq.pmtu,
             pmtuMask            : pmtuMask,
             addrAndLenLowPartSum: addrAndLenLowPartSum,
             pmtuLen             : pmtuLen,
@@ -2269,7 +2243,6 @@ module mkPayloadGenerator#(
             truncatedPktNum     : truncatedPktNum,
             pmtuAlignedStartAddr: pmtuAlignedStartAddr,
             isZeroPayloadLen    : isZeroPayloadLen
-            // shouldAddPadding    : payloadGenReq.addPadding
         };
         adjustReqPktLenQ.enq(tuple2(payloadGenReq, tmpPayloadGenMetaData));
         // $display(
@@ -2424,7 +2397,6 @@ module mkPayloadGenerator#(
         let firstPktLastFragValidByteNum = calcLastFragValidByteNum(firstPktLen);
         let lastPktLastFragValidByteNum  = calcLastFragValidByteNum(lastPktLen);
         let firstPktFragNum = calcFragNumByPktLen(firstPktLen);
-        // let lastPktFragNum  = calcFragNumByPktLen(lastPktLen);
         let firstPktPadCnt  = calcPadCnt(firstPktLen);
         let lastPktPadCnt   = calcPadCnt(lastPktLen);
         let isOnlyPkt       = isLessOrEqOneR(totalPktNum);
@@ -2491,7 +2463,6 @@ module mkPayloadGenerator#(
         genPayloadRespStep1Q.enq(tmpPayloadGenRespData);
 
         let totalMetaData = PayloadGenTotalMetaData {
-            // totalLen        : totalLen,
             totalPktNum     : totalPktNum,
             isOnlyPkt       : isOnlyPkt,
             isZeroPayloadLen: isZeroPayloadLen
