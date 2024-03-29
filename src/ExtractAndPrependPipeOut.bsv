@@ -101,8 +101,9 @@ module mkHeader2DataStream#(
         //     $time, dataStream.data, dataStream.byteEn, leftShiftHeaderData, leftShiftHeaderByteEn
         // );
 
-        // if it is an empty header, also output a beat of header stream to make downstream pipeline easy without blocking.
-        headerDataStreamOutQ.enq(dataStream);
+        if (!curHeader.headerMetaData.isEmptyHeader) begin
+            headerDataStreamOutQ.enq(dataStream);
+        end
 
         // let bth = extractBTH(curHeader.headerData);
         // $display(
@@ -234,16 +235,14 @@ module mkDataStream2Header#(
 endmodule
 
 typedef enum {
-    IDLE_WAITING_DECIDE_NEXT,
-    ONLY_HEADER_OUTPUT,
-    HEADER_MIX_DATA_OUTPUT,
-    ONLY_DATA_OUTPUT,
+    HEADER_OUTPUT,
+    DATA_OUTPUT,
     EXTRA_LAST_FRAG_OUTPUT
 } ExtractOrPrependHeaderStage deriving(Bits, Eq, FShow);
 
-// Neither headerPipeIn nor dataPipeIn can be empty, otherwise deadlock, i.e.:
+// headerPipeIn can not be empty, otherwise deadlock, i.e.:
 //   * if isEmptyHeader is true, then must be a dummy beat in headerPipeIn
-//   * if headerHasPayload is False, then must be a dummy beat in dataPipeIn
+//   * if headerHasPayload is False, then dataPipeIn should not have beat for this packet
 module mkPrependHeader2PipeOut#(
     Bool clearAll,
     DataStreamPipeOut headerPipeIn,
@@ -258,12 +257,17 @@ module mkPrependHeader2PipeOut#(
     FIFOF#(Tuple4#(ByteEnBitNum, ByteEnBitNum, Bool, Bool)) calculatedMetasAfterHeaderRightShiftQ <- mkFIFOF;
     FIFOF#(DataStream) rightShiftedHeaderStreamQ <- mkFIFOF;
 
-    Reg#(ExtractOrPrependHeaderStage) stageReg <- mkReg(IDLE_WAITING_DECIDE_NEXT);
+    // preDataStreamReg is right aligned
+    Reg#(DataStream)                  preDataStreamReg <- mkRegU;
+    Reg#(ExtractOrPrependHeaderStage) stageReg <- mkReg(HEADER_OUTPUT);
 
     rule debug;
         if (!dataStreamOutQ.notFull) begin
             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkPrependHeader2PipeOut dataStreamOutQ");
         end
+        // if (!dataPipeIn.notEmpty) begin
+        //     $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkPrependHeader2PipeOut dataPipeIn");
+        // end
     endrule
 
 
@@ -277,7 +281,7 @@ module mkPrependHeader2PipeOut#(
     (* no_implicit_conditions, fire_when_enabled *)
     rule resetAndClear if (clearAll);
         dataStreamOutQ.clear;
-        stageReg <= IDLE_WAITING_DECIDE_NEXT;
+        stageReg <= HEADER_OUTPUT;
 
         // $display(
         //     "time=%0t: mkPrependHeader2PipeOut, resetAndClear", $time,
@@ -294,7 +298,6 @@ module mkPrependHeader2PipeOut#(
         let headerLastFragValidByteNum = headerMetaData.lastFragValidByteNum;
         let { headerLastFragValidBitNum, headerLastFragInvalidByteNum, headerLastFragInvalidBitNum } =
             calcFragBitNumAndByteNum(headerLastFragValidByteNum);
-        
         if (headerMetaData.isEmptyHeader) begin
             immAssert(
                 isZero(headerLastFragValidBitNum) && isZero(headerLastFragValidByteNum),
@@ -325,18 +328,6 @@ module mkPrependHeader2PipeOut#(
         let headerHasPayload    = headerMetaData.hasPayload;
         calculatedMetasQ.enq(tuple4(
             headerLastFragValidByteNum, headerLastFragInvalidByteNum, headerHasPayload, isEmptyHeader));
-
-
-        immAssert(
-            !isEmptyHeader || headerHasPayload,
-            "header and payload can't be empty at the same time @ mkPrependHeader2PipeOut",
-            $format(
-                "headerLastFragValidBitNum=%0d", headerLastFragValidBitNum,
-                " and headerLastFragValidByteNum=%0d", headerLastFragValidByteNum,
-                " should be zero when isEmptyHeader=",
-                fshow(headerMetaData.isEmptyHeader)
-            )
-        );
 
         $display(
             "time=%0t: mkPrependHeader2PipeOut preCalculateHeaderMetaData", $time,
@@ -370,6 +361,8 @@ module mkPrependHeader2PipeOut#(
                 headerLastFragInvalidByteNum, headerHasPayload, isEmptyHeader));
         end
 
+        // $display("time=%0t:", $time, " before shift header=", fshow(curHeaderDataStreamFrag));
+
         if (curHeaderDataStreamFrag.isLast) begin
             calculatedMetasQ.deq;
             if (headerHasPayload) begin
@@ -377,263 +370,150 @@ module mkPrependHeader2PipeOut#(
                 outputDataStream.byteEn = rightShiftHeaderLastFragByteEn;
             end     
         end
+        // $display("time=%0t:", $time, " after shift header=", fshow(curHeaderDataStreamFrag));
         rightShiftedHeaderStreamQ.enq(outputDataStream);
     endrule
 
+    // this rule is a big one since it has to handle 4 different case to achieve fully-pipeline
+    // 1. isEmptyHeader = True, in this case, it should skip header output and directly output first beat of datastream,
+    //    and decide whether goto DATA_OUTPUT stage.
+    // 2. isEmptyHeader = False, and header.isLast=False, in this case, simply output the current head fragement,
+    //    no merge is required, and keep in current stage.
+    // 3. isEmptyHeader = False, header.isLast=True, and has no payload, in this case, simply output the current head fragement,
+    //    no merge is required, and keep in  current stage.
+    // 4. isEmptyHeader = False, header.isLast=True, and has payload, in this case, we should merge head and data,
+    //    and decide whether goto DATA_OUTPUT stage.
+    rule outputHeader if (!clearAll && stageReg == HEADER_OUTPUT);
+        let {headerLastFragValidByteNum,
+             headerLastFragInvalidByteNum, headerHasPayload, isEmptyHeader} = calculatedMetasAfterHeaderRightShiftQ.first;
+        let curHeaderDataStreamFrag = rightShiftedHeaderStreamQ.first;
+        rightShiftedHeaderStreamQ.deq;
 
-    Reg#(DataStream) prevHeaderBeatReg <- mkRegU;
-    Reg#(DataStream) prevDataBeatReg <- mkRegU;
+        $display("time=%0t:", $time, " headerDataStream=", fshow(curHeaderDataStreamFrag));
+        // let bth = extractBTH(zeroExtendLSB(curHeaderDataStreamFrag.data));
+        // if (bth.opcode == ACKNOWLEDGE) begin
+        //     $display(
+        //         "time=%0t: mkPrependHeader2PipeOut outputHeader", $time,
+        //         ", bth.psn=%h, bth.opcode=", bth.psn, fshow(bth.opcode)
+        //     );
+        // end
 
-    Reg#(ByteEnBitNum) headerLastFragValidByteNumReg <- mkRegU;
-    Reg#(ByteEnBitNum) headerLastFragInvalidByteNumReg <- mkRegU;
-    Reg#(Bool) headerHasPayloadReg <- mkRegU;
-    Reg#(Bool) isEmptyHeaderReg <- mkRegU;
 
-
-
-    
-
-    function ActionValue#(DataStream) moveDataFragToReg(String debugName);
-        actionvalue
+        if (isEmptyHeader) begin  // case 1
             let dataStreamFirstBeat = dataPipeIn.first;
             dataPipeIn.deq;
-            prevDataBeatReg <= dataStreamFirstBeat;
-            $display(
-                "time=%0t: mkPrependHeader2PipeOut moveDataFragToReg", $time,
-                ", debugName=", fshow(debugName),
-                ", nextBeatNewData=", fshow(dataStreamFirstBeat)
-            );
-            return dataStreamFirstBeat;
-        endactionvalue
-    endfunction
-    
 
-    function Action prepareAndDecideNextStateForNewPacket();
-        action
-            let {headerLastFragValidByteNum,
-                 headerLastFragInvalidByteNum, headerHasPayload, isEmptyHeader} = calculatedMetasAfterHeaderRightShiftQ.first;
-            calculatedMetasAfterHeaderRightShiftQ.deq;
+            dataStreamOutQ.enq(dataStreamFirstBeat);
+            $display("time=%0t: ", $time, "mkPrependHeader2PipeOut case1==", fshow(dataStreamFirstBeat));
 
-            headerLastFragValidByteNumReg <= headerLastFragValidByteNum;
-            headerLastFragInvalidByteNumReg <= headerLastFragInvalidByteNum;
-            headerHasPayloadReg <= headerHasPayload;
-            isEmptyHeaderReg <= isEmptyHeader;
-
-            let headerStreamFirstBeat = rightShiftedHeaderStreamQ.first;
-            rightShiftedHeaderStreamQ.deq;
-            prevHeaderBeatReg <= headerStreamFirstBeat;
-
-            let _ <- moveDataFragToReg("1");
-
-            if (isEmptyHeader) begin 
-                stageReg <= ONLY_DATA_OUTPUT;
-                $display("time=%0t: mkPrependHeader2PipeOut nextState=ONLY_DATA_OUTPUT", $time);
+            if (dataStreamFirstBeat.isLast) begin
+                calculatedMetasAfterHeaderRightShiftQ.deq;
             end
             else begin
-                if (!headerStreamFirstBeat.isLast) begin
-                    stageReg <= ONLY_HEADER_OUTPUT;
-                    $display("time=%0t: mkPrependHeader2PipeOut nextState=ONLY_HEADER_OUTPUT", $time);
-                end
-                else if (headerHasPayload) begin
-                    if (headerLastFragInvalidByteNum == 0) begin
-                        stageReg <= ONLY_HEADER_OUTPUT;
-                        $display("time=%0t: mkPrependHeader2PipeOut nextState=ONLY_HEADER_OUTPUT", $time);
-                    end 
-                    else begin
-                        stageReg <= HEADER_MIX_DATA_OUTPUT;
-                        $display("time=%0t: mkPrependHeader2PipeOut nextState=HEADER_MIX_DATA_OUTPUT", $time);
-                    end
-                end
-                else begin
-                    stageReg <= ONLY_HEADER_OUTPUT;
-                    $display("time=%0t: mkPrependHeader2PipeOut nextState=ONLY_HEADER_OUTPUT", $time);
-                end
-            end
-        endaction 
-    endfunction
-
-
-    function Action decideNextNewPacketOrGoToIdle;
-        action
-            if (calculatedMetasAfterHeaderRightShiftQ.notEmpty) begin
-                prepareAndDecideNextStateForNewPacket;
-                // if (dataPipeIn.notEmpty && rightShiftedHeaderStreamQ.notEmpty) begin
-                //     prepareAndDecideNextStateForNewPacket;
-                // end
-                // else begin
-                //     $display(
-                //         "time=%0t: mkPrependHeader2PipeOut decideNextNewPacketOrGoToIdle Find buble in pipeline", $time,
-                //         ", dataPipeIn.notEmpty=", fshow(dataPipeIn.notEmpty),
-                //         ", rightShiftedHeaderStreamQ.notEmpty=", fshow(rightShiftedHeaderStreamQ.notEmpty)
-                //     );
-                // end
-            end
-            else begin
-                stageReg <= IDLE_WAITING_DECIDE_NEXT;
-                $display("time=%0t: mkPrependHeader2PipeOut nextState=IDLE_WAITING_DECIDE_NEXT", $time);
-            end
-        endaction
-    endfunction
-
-    rule decideNextStepForNewPacketWhenIdle if (!clearAll && stageReg == IDLE_WAITING_DECIDE_NEXT);
-        prepareAndDecideNextStateForNewPacket;
-        $display(
-            "time=%0t: mkPrependHeader2PipeOut decideNextStepForNewPacketWhenIdle", $time
-        );
-    endrule
-
-
-    rule outputOnlyHeaderFrag if (!clearAll && stageReg == ONLY_HEADER_OUTPUT);
-        let prevHeaderBeat = prevHeaderBeatReg;
-        if (prevHeaderBeat.isLast) begin
-            if (!headerHasPayloadReg) begin
-                decideNextNewPacketOrGoToIdle;
-            end
-            else begin
-                // since need to concat payload after it, mark it not the last frag.
-                prevHeaderBeat.isLast = False;
-                stageReg <= ONLY_DATA_OUTPUT;
-                $display("time=%0t: mkPrependHeader2PipeOut nextState=ONLY_DATA_OUTPUT", $time);
+                stageReg <= DATA_OUTPUT;
             end
         end
-        else begin
-            if (rightShiftedHeaderStreamQ.notEmpty) begin
-                let headerStreamCurBeat = rightShiftedHeaderStreamQ.first;
-                rightShiftedHeaderStreamQ.deq;
+        else if (!curHeaderDataStreamFrag.isLast || (curHeaderDataStreamFrag.isLast && !headerHasPayload)) begin // case 2 & 3
+            dataStreamOutQ.enq(curHeaderDataStreamFrag);
+            $display("time=%0t: ", $time, "mkPrependHeader2PipeOut case2,3==", fshow(curHeaderDataStreamFrag));
+        end 
+        else begin  // case 4
+           
+            // $display(
+            //     "time=%0t: mkPrependHeader2PipeOut outputHeader", $time,
+            //     ", headerHasPayload=", fshow(headerHasPayload),
+            //     ", headerLastFragValidByteNum=%0d", headerLastFragValidByteNum,
+            //     ", headerLastFragInvalidByteNum=%0d", headerLastFragInvalidByteNum,
+            //     ", headerLastFragDataStream=", fshow(headerLastFragDataStream)
+            // );
+            
+            let firstDataStreamFrag = dataPipeIn.first;
+            dataPipeIn.deq;
 
-                prevHeaderBeatReg <= headerStreamCurBeat;
-
-                if (headerLastFragInvalidByteNumReg == 0) begin
-                    stageReg <= ONLY_DATA_OUTPUT;
-                    $display("time=%0t: mkPrependHeader2PipeOut nextState=ONLY_DATA_OUTPUT", $time);
-                end
-                else begin
-                    stageReg <= HEADER_MIX_DATA_OUTPUT;
-                    $display("time=%0t: mkPrependHeader2PipeOut nextState=HEADER_MIX_DATA_OUTPUT", $time);
-                end
-            end
-            else begin
-                immAssert(
-                    False,
-                    "Should not reach here, buble in pipeline! @ outputOnlyHeaderFrag ",
-                    $format("Should not reach here, buble in pipeline!")
-                );
-            end
-        end
-
-        dataStreamOutQ.enq(prevHeaderBeat);
-        $display(
-            "time=%0t: mkPrependHeader2PipeOut outputOnlyHeaderFrag ", $time,
-            "prevHeaderBeat=", fshow(prevHeaderBeat)
-        );
-    endrule
-
-    rule outputHeaderMixDataFrag if (!clearAll && stageReg == HEADER_MIX_DATA_OUTPUT);
-
-        let prevDataBeat = prevDataBeatReg;
-
-        let tmpData = { prevHeaderBeatReg.data, prevDataBeat.data } >> getFragEnBitNumByByteEnNum(truncate(headerLastFragValidByteNumReg));
-        let tmpByteEn = { prevHeaderBeatReg.byteEn, prevDataBeat.byteEn } >> headerLastFragValidByteNumReg;
-
-        ByteEn lastFragByteEn = prevDataBeat.byteEn << headerLastFragInvalidByteNumReg;
-        let noExtraLastFrag = isZeroByteEn(lastFragByteEn);
-
-        if (noExtraLastFrag) begin
-            decideNextNewPacketOrGoToIdle;
-        end
-        else begin
-            if (prevDataBeat.isLast) begin
-                stageReg <= EXTRA_LAST_FRAG_OUTPUT;
-                $display("time=%0t: mkPrependHeader2PipeOut nextState=EXTRA_LAST_FRAG_OUTPUT", $time);
-            end
-            else begin
-                stageReg <= ONLY_DATA_OUTPUT;
-                $display("time=%0t: mkPrependHeader2PipeOut nextState=ONLY_DATA_OUTPUT", $time);
-            end
-        end
-
-        let headerLastFragDataStreamMergedWithPayload = DataStream {
-            data: truncate(tmpData),
-            byteEn: truncate(tmpByteEn),
-            isFirst: prevHeaderBeatReg.isFirst,
-            isLast: noExtraLastFrag
-        };
-        dataStreamOutQ.enq(headerLastFragDataStreamMergedWithPayload);
-        $display(
-            "time=%0t: mkPrependHeader2PipeOut outputHeaderMixDataFrag ", $time,
-            "headerLastFragDataStreamMergedWithPayload=", fshow(headerLastFragDataStreamMergedWithPayload)
-        );
-    endrule
-
-    rule outputOnlyDataFrag if (!clearAll && stageReg == ONLY_DATA_OUTPUT);
-
-        let prevDataBeat = prevDataBeatReg;
-
-        // TODO: Can we try to set EmptyHeader's metadata's headerLastFragValidByteNum to 32?
-        // If its ok, then we can merge the following if branch into one ?
-        if (isEmptyHeaderReg) begin
-            if (prevDataBeat.isLast) begin
-                decideNextNewPacketOrGoToIdle;
-            end
-            else begin
-                let _ <- moveDataFragToReg("7");
-            end
-            dataStreamOutQ.enq(prevDataBeat);
-            $display(
-                "time=%0t: mkPrependHeader2PipeOut outputOnlyDataFrag ", $time,
-                "prevDataBeat=", fshow(prevDataBeat)
-            );
-        end
-        else begin
-
-            let curDataStreamFrag = dataPipeIn.first;
-
-            let tmpData = { prevDataBeat.data, curDataStreamFrag.data } >> getFragEnBitNumByByteEnNum(truncate(headerLastFragValidByteNumReg));
-            let tmpByteEn = { prevDataBeat.byteEn, curDataStreamFrag.byteEn } >> headerLastFragValidByteNumReg;
-
-            ByteEn lastFragByteEn = prevDataBeat.byteEn << headerLastFragInvalidByteNumReg;
+            ByteEn lastFragByteEn = truncate(firstDataStreamFrag.byteEn << headerLastFragInvalidByteNum);
             let noExtraLastFrag = isZeroByteEn(lastFragByteEn);
 
-            if (curDataStreamFrag.isLast) begin
-                if (noExtraLastFrag) begin
-                    // since we merged some data with header, so we really go fast and must wait for a beat.
-                    stageReg <= IDLE_WAITING_DECIDE_NEXT;
-                end
-                else begin
-                    stageReg <= EXTRA_LAST_FRAG_OUTPUT;
-                    $display(
-                        "time=%0t: mkPrependHeader2PipeOut nextState=EXTRA_LAST_FRAG_OUTPUT ", $time, 
-                        ", prevDataBeat.data=", fshow(prevDataBeat.data),
-                        ", prevDataBeat.byteEn=", fshow(prevDataBeat.byteEn),
-                        ", curDataStreamFrag.data=", fshow(curDataStreamFrag.data),
-                        ", curDataStreamFrag.byteEn=", fshow(curDataStreamFrag.byteEn)
-                    );
-                end
-                prevDataBeatReg <= curDataStreamFrag;
-                dataPipeIn.deq;
-            end
-            else begin
-                let _ <- moveDataFragToReg("8");
-            end
+            let tmpData = { curHeaderDataStreamFrag.data, firstDataStreamFrag.data } >> getFragEnBitNumByByteEnNum(truncate(headerLastFragValidByteNum));
+            let tmpByteEn = { curHeaderDataStreamFrag.byteEn, firstDataStreamFrag.byteEn } >> headerLastFragValidByteNum;
 
-            let dataStreamFrag = DataStream {
+            preDataStreamReg <= firstDataStreamFrag;
+
+            let headerLastFragDataStreamMergedWithPayload = DataStream {
                 data: truncate(tmpData),
                 byteEn: truncate(tmpByteEn),
-                isFirst: False,
+                isFirst: curHeaderDataStreamFrag.isFirst,
                 isLast: noExtraLastFrag
             };
-            dataStreamOutQ.enq(dataStreamFrag);
+            dataStreamOutQ.enq(headerLastFragDataStreamMergedWithPayload);
+            $display("time=%0t: ", $time, "mkPrependHeader2PipeOut case 4==", fshow(headerLastFragDataStreamMergedWithPayload));
 
-            $display(
-                "time=%0t: mkPrependHeader2PipeOut outputOnlyDataFrag ", $time,
-                "dataStreamFrag=", fshow(dataStreamFrag)
-            );
+            if (firstDataStreamFrag.isLast) begin
+                if (!noExtraLastFrag) begin
+                    stageReg <= EXTRA_LAST_FRAG_OUTPUT;
+                end
+                else begin
+                    calculatedMetasAfterHeaderRightShiftQ.deq;
+                end
+            end 
+            else begin
+                stageReg <= DATA_OUTPUT;
+            end
         end
     endrule
 
-    rule outputExtraLastDataFrag if (!clearAll && stageReg == EXTRA_LAST_FRAG_OUTPUT);
-        DATA leftShiftData = prevDataBeatReg.data << getFragEnBitNumByByteEnNum(truncate(headerLastFragInvalidByteNumReg));
-        ByteEn leftShiftByteEn = prevDataBeatReg.byteEn << headerLastFragInvalidByteNumReg;
+    rule outputData if (!clearAll && stageReg == DATA_OUTPUT);
+        let {headerLastFragValidByteNum,
+             headerLastFragInvalidByteNum, headerHasPayload, isEmptyHeader} = calculatedMetasAfterHeaderRightShiftQ.first;
+        
+        let curDataStreamFrag = dataPipeIn.first;
+        dataPipeIn.deq;
+
+        preDataStreamReg <= curDataStreamFrag;
+
+
+        // Check the last data fragment has less than headerLastFragInvalidByteNum valid bytes,
+        // If no, then extra last fragment, otherwise none.
+        ByteEn lastFragByteEn = truncate(curDataStreamFrag.byteEn << headerLastFragInvalidByteNum);
+        let noExtraLastFrag = isZeroByteEn(lastFragByteEn);
+        // let noExtraLastFrag = isZero(lastFragByteEn); // If 256-bit bus, this is 32-bit and reduction
+
+        let tmpData = { preDataStreamReg.data, curDataStreamFrag.data } >> getFragEnBitNumByByteEnNum(truncate(headerLastFragValidByteNum));
+        let tmpByteEn = { preDataStreamReg.byteEn, curDataStreamFrag.byteEn } >> headerLastFragValidByteNum;
+
+        let outDataStream = DataStream {
+            data: truncate(tmpData),
+            byteEn: truncate(tmpByteEn),
+            isFirst: False,
+            isLast: curDataStreamFrag.isLast && noExtraLastFrag
+        };
+        dataStreamOutQ.enq(outDataStream);
+        $display("time=%0t: ", $time, "mkPrependHeader2PipeOut data ==", fshow(outDataStream));
+
+        if (curDataStreamFrag.isLast) begin
+            if (noExtraLastFrag) begin
+                stageReg <= HEADER_OUTPUT;
+                calculatedMetasAfterHeaderRightShiftQ.deq;
+            end
+            else begin
+                stageReg <= EXTRA_LAST_FRAG_OUTPUT;
+            end
+        end
+        // $display(
+        //     "time=%0t: mkPrependHeader2PipeOut outputData", $time,
+        //     ", headerLastFragInvalidByteNum=%0d, noExtraLastFrag=",
+        //     headerLastFragInvalidByteNum, fshow(noExtraLastFrag),
+        //     ", preDataStreamReg=", fshow(preDataStreamReg),
+        //     ", curDataStreamFrag=", fshow(curDataStreamFrag),
+        //     ", outDataStream=", fshow(outDataStream)
+        // );
+    endrule
+
+    rule extraLastFrag if (!clearAll && stageReg == EXTRA_LAST_FRAG_OUTPUT);
+        let {headerLastFragValidByteNum,
+             headerLastFragInvalidByteNum, headerHasPayload, isEmptyHeader} = calculatedMetasAfterHeaderRightShiftQ.first;
+        
+        DATA leftShiftData = truncate(preDataStreamReg.data << getFragEnBitNumByByteEnNum(truncate(headerLastFragInvalidByteNum)));
+        ByteEn leftShiftByteEn = truncate(preDataStreamReg.byteEn << headerLastFragInvalidByteNum);
         let extraLastDataStream = DataStream {
             data   : leftShiftData,
             byteEn : leftShiftByteEn,
@@ -641,30 +521,11 @@ module mkPrependHeader2PipeOut#(
             isLast : True
         };
 
-        decideNextNewPacketOrGoToIdle;
         dataStreamOutQ.enq(extraLastDataStream);
-
-        $display(
-            "time=%0t: mkPrependHeader2PipeOut outputExtraLastDataFrag ", $time,
-            "extraLastDataStream=", fshow(extraLastDataStream)
-        );
-        
+        $display("time=%0t: ", $time, "mkPrependHeader2PipeOut data extra ==", fshow(extraLastDataStream));
+        stageReg <= HEADER_OUTPUT;
+        calculatedMetasAfterHeaderRightShiftQ.deq;
     endrule
-
-
-
-
-
-
-    // this rule is a big one since it has to handle 4 different case to achieve fully-pipeline
-    // 1. isEmptyHeader = True, in this case, it should skip header output and directly output first beat of datastream,
-    //    and decide whether goto ONLY_DATA_OUTPUT stage.
-    // 2. isEmptyHeader = False, and header.isLast=False, in this case, simply output the current head fragement,
-    //    no merge is required, and keep in current stage.
-    // 3. isEmptyHeader = False, header.isLast=True, and has no payload, in this case, simply output the current head fragement,
-    //    no merge is required, and keep in  current stage.
-    // 4. isEmptyHeader = False, header.isLast=True, and has payload, in this case, we should merge head and data,
-    //    and decide whether goto ONLY_DATA_OUTPUT stage.
 
     return toPipeOut(dataStreamOutQ);
 endmodule
@@ -694,7 +555,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
     Reg#(Bool)                      isFirstDataFragReg <- mkRegU;
     Reg#(HeaderFragNum)           headerFragCounterReg <- mkRegU;
 
-    Reg#(ExtractOrPrependHeaderStage) stageReg <- mkReg(ONLY_HEADER_OUTPUT);
+    Reg#(ExtractOrPrependHeaderStage) stageReg <- mkReg(HEADER_OUTPUT);
 /*
     rule debug if (!(
         headerDataStreamOutQ.notFull && payloadDataStreamFragPreOutQ.notFull
@@ -748,8 +609,8 @@ module mkExtractHeaderFromDataStreamPipeOut#(
     //    byteEn=0, and move to handle next packet.
     // 3. if header is last beat, and Data also is last beat, then output Header with right byteEn,
     //    and output data as well. then move on to handle next packet.
-    // 4. if header is last beat, but Data has extra beat, then only output Header and jump to ONLY_DATA_OUTPUT
-    rule outputHeader if (stageReg == ONLY_HEADER_OUTPUT);
+    // 4. if header is last beat, but Data has extra beat, then only output Header and jump to DATA_OUTPUT
+    rule outputHeader if (stageReg == HEADER_OUTPUT);
 
         let {headerLastFragValidByteNum, headerLastFragInvalidByteNum, headerMetaData, headerLastFragByteEn} = calculatedMetasQ.first;
 
@@ -827,14 +688,14 @@ module mkExtractHeaderFromDataStreamPipeOut#(
                 calculatedMetasQ.deq;  // move on to next packet
             end
             else begin
-                stageReg <= ONLY_DATA_OUTPUT;
+                stageReg <= DATA_OUTPUT;
                 preDataStreamReg <= inDataStreamFrag;
                 isFirstDataFragReg <= True;
             end
         end
     endrule
 
-    rule outputData if (stageReg == ONLY_DATA_OUTPUT);
+    rule outputData if (stageReg == DATA_OUTPUT);
 
         let {headerLastFragValidByteNum, headerLastFragInvalidByteNum, headerMetaData, headerLastFragByteEn} = calculatedMetasQ.first;
 
@@ -872,7 +733,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
 
         if (curDataStreamFrag.isLast) begin
             if (noExtraLastFrag) begin
-                stageReg <= ONLY_HEADER_OUTPUT;
+                stageReg <= HEADER_OUTPUT;
                 calculatedMetasQ.deq;  // move on to next packet
             end
             else begin
@@ -897,7 +758,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         payloadDataStreamFragPreOutQ.enq(extraLastDataStream);
         payloadStreamFragStorageInsertCltInst.putReq(leftShiftData);
 
-        stageReg <= ONLY_HEADER_OUTPUT;
+        stageReg <= HEADER_OUTPUT;
         calculatedMetasQ.deq;  // move on to next packet
     endrule
 

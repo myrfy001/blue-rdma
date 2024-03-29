@@ -141,8 +141,6 @@ typedef struct {
 typedef struct {
     ScatterGatherList sgl;
     Length totalLen;
-    // QPN sqpn; // TODO: remove it
-    // WorkReqID wrID; // TODO: remove it
 } DmaReadMetaDataSGL deriving(Bits, FShow);
 
 typedef struct {
@@ -801,7 +799,6 @@ module mkDmaReadCntrl#(
 `endif
         pendingScatterGatherElemQ.enq(tuple2(sge, dmaReadCntrlReq.pmtu));
 
-        // let curSQPN = dmaReadCntrlReq.sglDmaReadMetaData.sqpn;   // TODO: remove it
         let sgeNum = sgeNumReg;
         if (sge.isFirst) begin
             sgeNum = 1;
@@ -2626,14 +2623,6 @@ module mkPayloadGenerator#(
         if (isZeroPayloadLen) begin
             addPaddingDataQ.deq;
             payloadGenRespQ.enq(payloadGenResp);
-
-            // output a dummy beat to make downstream pipeline easy without blocking
-            bramQueueTimingFixStageQ.enq(DataStream{
-                data: ?,
-                byteEn: 0,
-                isFirst: True,
-                isLast: True
-            });
 
             immAssert(
                 isFirstPkt && isLastPkt,
