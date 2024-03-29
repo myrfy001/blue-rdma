@@ -554,7 +554,7 @@ typedef TMul#(32, 1024) WQE_SLICE_MAX_SIZE; // 32KB
 
 typedef struct {
     ADDR   remoteAddr;
-    Length totalLen;
+    Length msgTotalLen;
     PSN    curPSN;
     PktLen pktLen;
     PAD    padCnt;
@@ -768,11 +768,18 @@ module mkSendQ#(
             remoteAddr = 0;
         end
         if (shouldGenPayload) begin
+            // TODO: Fixme, this point not support SGL greater than 1 now, since using SGL,
+            // packetTotalLen should be the sum of the SGL, not the first one.
+`ifdef SUPPORT_SGL
+            $display("Error, not support SGL now");
+            $finish;
+`endif
+            let packetTotalLen = lenFirstSGE;
+
+            
             let payloadGenReq = PayloadGenReqSG {
-                // wrID      : wqe.id,   // TODO: remove it
-                // sqpn      : wqe.sqpn, // TODO: remove it
                 sgl       : wqe.sgl,
-                totalLen  : wqe.totalLen,
+                totalLen  : packetTotalLen,
                 raddr     : remoteAddr,
                 pmtu      : wqe.pmtu,
                 addPadding: shouldAddPadding
@@ -798,16 +805,16 @@ module mkSendQ#(
         let sglZeroIdx  = 0;
         let hasPayload  =  shouldGenPayload;
         let isOnlyPkt   = !shouldGenPayload;
-        let totalLen    = wqe.totalLen; // wqe.sgl[sglZeroIdx].len;
+        let msgTotalLen = wqe.totalLen; // wqe.sgl[sglZeroIdx].len;
         let totalPktNum = 1;
 
         if (!wqe.isFirst && !wqe.isLast) begin
             immAssert(
                 !isOnlyPkt &&
-                totalLen == fromInteger(valueOf(WQE_SLICE_MAX_SIZE)),
+                msgTotalLen == fromInteger(valueOf(WQE_SLICE_MAX_SIZE)),
                 "wqe slice length assertion @ mkSendQ",
                 $format(
-                    "totalLen=%0d", totalLen,
+                    "msgTotalLen=%0d", msgTotalLen,
                     " should == WQE_SLICE_MAX_SIZE=%0d", valueOf(WQE_SLICE_MAX_SIZE),
                     ", and isOnlyPkt=", fshow(isOnlyPkt),
                     " should be false when wqe.isFirst=", fshow(wqe.isFirst),
@@ -817,10 +824,10 @@ module mkSendQ#(
         end
         else if (!wqe.isFirst && wqe.isLast) begin
             immAssert(
-                fromInteger(valueOf(WQE_SLICE_MAX_SIZE)) >= totalLen,
+                fromInteger(valueOf(WQE_SLICE_MAX_SIZE)) >= msgTotalLen,
                 "wqe slice length assertion @ mkSendQ",
                 $format(
-                    "totalLen=%0d", totalLen,
+                    "msgTotalLen=%0d", msgTotalLen,
                     " should be no more than WQE_SLICE_MAX_SIZE=%0d", valueOf(WQE_SLICE_MAX_SIZE),
                     " when wqe.isFirst=", fshow(wqe.isFirst),
                     " and wqe.isLast=", fshow(wqe.isLast)
@@ -834,17 +841,16 @@ module mkSendQ#(
 
             hasPayload  = !payloadTotalMetaData.isZeroPayloadLen;
             isOnlyPkt   =  payloadTotalMetaData.isOnlyPkt;
-            // totalLen    =  payloadTotalMetaData.totalLen;
             totalPktNum =  payloadTotalMetaData.totalPktNum;
         end
         psnUpdateQ.enq(tuple7(
-            wqe, totalLen, totalPktNum, shouldGenPayload, hasPayload, isOnlyPkt, isRawPkt
+            wqe, msgTotalLen, totalPktNum, shouldGenPayload, hasPayload, isOnlyPkt, isRawPkt
         ));
         $display(
             "time=%0t: mkSendQ 2nd stage recvTotalMetaData", $time,
             ", sqpn=%h", wqe.sqpn,
             ", psn=%h", wqe.psn,
-            ", totalLen=%0d", totalLen,
+            ", msgTotalLen=%0d", msgTotalLen,
             ", totalPktNum=%0d", totalPktNum,
             ", isRawPkt=", fshow(isRawPkt),
             ", hasPayload=", fshow(hasPayload),
@@ -855,7 +861,7 @@ module mkSendQ#(
 
     rule updatePSN if (!clearAll);
         let {
-            wqe, totalLen, totalPktNum, shouldGenPayload, hasPayload, isOnlyPkt, isRawPkt
+            wqe, msgTotalLen, totalPktNum, shouldGenPayload, hasPayload, isOnlyPkt, isRawPkt
         } = psnUpdateQ.first;
 
         let curPSN = curPsnReg;
@@ -922,18 +928,18 @@ module mkSendQ#(
         let ackReq = containWorkReqFlag(wqe.flags, IBV_SEND_SIGNALED);
         let solicited = containWorkReqFlag(wqe.flags, IBV_SEND_SOLICITED);
         let headerGenInfo = HeaderGenInfo {
-            remoteAddr: remoteAddr,
-            totalLen  : totalLen,
-            curPSN    : curPSN,
-            pktLen    : pktPayloadLen,
-            padCnt    : padCnt,
-            hasPayload: hasPayload,
-            ackReq    : ackReq,
-            solicited : solicited,
-            isFirstPkt: isFirstPkt,
-            isLastPkt : isLastPkt,
-            isOnlyPkt : isOnlyPkt,
-            isRawPkt  : isRawPkt
+            remoteAddr   : remoteAddr,
+            msgTotalLen  : msgTotalLen,
+            curPSN       : curPSN,
+            pktLen       : pktPayloadLen,
+            padCnt       : padCnt,
+            hasPayload   : hasPayload,
+            ackReq       : ackReq,
+            solicited    : solicited,
+            isFirstPkt   : isFirstPkt,
+            isLastPkt    : isLastPkt,
+            isOnlyPkt    : isOnlyPkt,
+            isRawPkt     : isRawPkt
         };
         headerPrepareQ.enq(tuple2(wqe, headerGenInfo));
         $display(
@@ -954,7 +960,7 @@ module mkSendQ#(
         headerPrepareQ.deq;
 
         let remoteAddr    = headerGenInfo.remoteAddr;
-        let totalLen      = headerGenInfo.totalLen;
+        let msgTotalLen   = headerGenInfo.msgTotalLen;
         let curPSN        = headerGenInfo.curPSN;
         let pktPayloadLen = headerGenInfo.pktLen;
         let padCnt        = headerGenInfo.padCnt;
@@ -973,7 +979,7 @@ module mkSendQ#(
         else if (isFirstPkt) begin
             let maybeFirstOrOnlyPktHeaderInfo = genFirstOrOnlyPktHeader(
                 wqe, isOnlyPkt, solicited, curPSN, padCnt,
-                ackReq, remoteAddr, totalLen, hasPayload
+                ackReq, remoteAddr, msgTotalLen, hasPayload
             );
             immAssert(
                 isValid(maybeFirstOrOnlyPktHeaderInfo),
