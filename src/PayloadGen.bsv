@@ -2627,6 +2627,14 @@ module mkPayloadGenerator#(
             addPaddingDataQ.deq;
             payloadGenRespQ.enq(payloadGenResp);
 
+            // output a dummy beat to make downstream pipeline easy without blocking
+            bramQueueTimingFixStageQ.enq(DataStream{
+                data: ?,
+                byteEn: 0,
+                isFirst: True,
+                isLast: True
+            });
+
             immAssert(
                 isFirstPkt && isLastPkt,
                 "isZeroPayloadLen assertion @ mkPayloadGenerator",
