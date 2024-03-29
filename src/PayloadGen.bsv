@@ -740,7 +740,6 @@ module mkDmaReadCntrl#(
     Reg#(Bool) gracefulStopReg[2] <- mkCReg(2, False);
     Reg#(Bool)       cancelReg[2] <- mkCReg(2, False);
 
-    Reg#(Length) totalLenReg <- mkRegU;
     Reg#(NumSGE)   sgeNumReg <- mkRegU;
     Reg#(IdxSGL)   sglIdxReg <- mkReg(0);
 
@@ -803,19 +802,15 @@ module mkDmaReadCntrl#(
         pendingScatterGatherElemQ.enq(tuple2(sge, dmaReadCntrlReq.pmtu));
 
         // let curSQPN = dmaReadCntrlReq.sglDmaReadMetaData.sqpn;   // TODO: remove it
-        let totalLen = totalLenReg;
         let sgeNum = sgeNumReg;
         if (sge.isFirst) begin
-            totalLen = sge.len;
             sgeNum = 1;
         end
         else begin
-            totalLen = totalLenReg + sge.len;
             sgeNum = sgeNumReg + 1;
         end
 
         // TODO: make sure segnum will be optmized out by backend tool?
-        totalLenReg <= totalLen;
         sgeNumReg <= sgeNum;
 
         if (isZeroR(sglIdxReg)) begin
@@ -845,19 +840,9 @@ module mkDmaReadCntrl#(
 
             // let sglTotalPayloadLenMetaData = TotalPayloadLenMetaDataSGL {
             //     sqpn    : curSQPN,
-            //     totalLen: totalLen,
             //     pmtu    : dmaReadCntrlReq.pmtu
             // };
             // sglTotalPayloadLenMetaDataOutQ.enq(sglTotalPayloadLenMetaData);
-            immAssert(
-                totalLen == dmaReadCntrlReq.sglDmaReadMetaData.totalLen,
-                "totalLen assertion @ mkDmaReadCntrl",
-                $format(
-                    "dmaReadCntrlReq.sglDmaReadMetaData.totalLen=%0d",
-                    dmaReadCntrlReq.sglDmaReadMetaData.totalLen,
-                    " should == totalLen=%0d", totalLen
-                )
-            );
             // $display(
             //     "time=%0t: mkDmaReadCntrl recvReq", $time,
             //     ", sqpn=%h", curSQPN,
@@ -872,7 +857,6 @@ module mkDmaReadCntrl#(
         //     ", SGE sglIdx=%0d", sglIdx,
         //     ", sge.laddr=%h", sge.laddr,
         //     ", mergedLastPktLastFragValidByteNum=%0d", mergedLastPktLastFragValidByteNum,
-        //     ", totalLen=%0d", totalLen,
         //     ", sgeNum=%0d", sgeNum,
         //     ", sge.isFirst=", fshow(sge.isFirst),
         //     ", sge.isLast=", fshow(sge.isLast)
