@@ -101,9 +101,8 @@ module mkHeader2DataStream#(
         //     $time, dataStream.data, dataStream.byteEn, leftShiftHeaderData, leftShiftHeaderByteEn
         // );
 
-        if (!curHeader.headerMetaData.isEmptyHeader) begin
-            headerDataStreamOutQ.enq(dataStream);
-        end
+        // if it is an empty header, also output a beat of header stream to make downstream pipeline easy without blocking.
+        headerDataStreamOutQ.enq(dataStream);
 
         // let bth = extractBTH(curHeader.headerData);
         // $display(
