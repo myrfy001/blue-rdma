@@ -12,10 +12,6 @@ import QPContext :: *;
 
 import UserLogicTypes :: *;
 
-
-
-
-
 interface RQ;
     interface Put#(RdmaPktMetaDataAndQPC) pktMetaDataPipeIn;
     interface MrTableQueryClt mrTableQueryClt;
@@ -23,7 +19,6 @@ interface RQ;
     interface Client#(PayloadConReq, PayloadConResp) payloadConsumerControlPortClt;
     interface PipeOut#(C2hReportEntry) pktReportEntryPipeOut;
 endinterface
-
 
 (* synthesize *)
 module mkRQ(RQ ifc);

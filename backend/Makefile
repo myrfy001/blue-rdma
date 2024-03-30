@@ -18,6 +18,9 @@ BACKENDDIR ?= .
 MAX_NET_PATH_NUM ?= 10000
 VERILOG_TOPMODULE ?= top
 
+STUB_TOP_MODULE = mkStubTop
+STUB_TOP_FILE = ../src/stubs.bsv
+
 export TOP = $(TOPMODULE)
 export DIR_RTL = $(VLOGDIR)
 export DIR_XDC = $(TCLDIR)
@@ -33,20 +36,32 @@ export RUNTO = $(RUNTOPHASE)
 export PART = $(PARTNAME)
 export MAX_NET_PATH_NUM
 
+export DIR_BSV_GENERATED_STUB = $(BACKENDDIR)/verilog/stub
+
 gen_udp_crc_tab:
+	mkdir -p $(DIR_BSV_GENERATED)
+	
 	python3 $(BLUE_CRC_DIR)/scripts/gen_crc_tab.py \
 			$(BLUE_UDP_CRC_TABLE_GEN_INFO_DIR)/crc_ieee_32_256.json \
 			$(DIR_BSV_GENERATED)
-
-
 compile:
 	mkdir -p $(BUILDDIR)
 	bsc -elab -sim -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(TOPMODULE) $(TARGETFILE)
 
-verilog: compile gen_udp_crc_tab
+verilog: gen_udp_crc_tab compile 
 	mkdir -p $(DIR_BSV_GENERATED)
 	bsc $(VERILOGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(TRANSFLAGS) -g $(TOPMODULE) $(TARGETFILE)
 	bluetcl listVlogFiles.tcl -bdir $(BUILDDIR) -vdir $(BUILDDIR) $(TOPMODULE) $(TOPMODULE) | grep -i '\.v' | xargs -I {} cp {} $(DIR_BSV_GENERATED)
+
+compile_stub:
+	mkdir -p $(BUILDDIR)
+	bsc -elab -sim -verbose $(BLUESIMFLAGS) $(DEBUGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(SCHEDFLAGS) $(TRANSFLAGS) -g $(STUB_TOP_MODULE) $(STUB_TOP_FILE)
+
+verilog_stub: compile_stub
+	mkdir -p $(BUILDDIR)
+	mkdir -p $(DIR_BSV_GENERATED_STUB)
+	bsc $(VERILOGFLAGS) $(DIRFLAGS) $(MISCFLAGS) $(RECOMPILEFLAGS) $(RUNTIMEFLAGS) $(TRANSFLAGS) -g $(STUB_TOP_MODULE) $(STUB_TOP_FILE)
+	bluetcl listVlogFiles.tcl -bdir $(BUILDDIR) -vdir $(BUILDDIR) $(STUB_TOP_MODULE) $(STUB_TOP_MODULE) | grep -i '\.v' | xargs -I {} cp {} $(DIR_BSV_GENERATED_STUB)
 
 vivado: verilog
 	vivado -mode tcl -nolog -nojournal -source ./build_top.tcl 2>&1 | tee $(LOGFILE)
@@ -55,7 +70,7 @@ vivado_ooc:
 	vivado -mode tcl -nolog -nojournal -source ./build_top.tcl 2>&1 | tee $(LOGFILE)
 
 clean:
-	rm -rf $(BUILDDIR) $(OUTPUTDIR) $(DIR_BSV_GENERATED) .Xil *.jou *.log
+	rm -rf $(BUILDDIR) $(OUTPUTDIR) $(DIR_BSV_GENERATED) $(DIR_BSV_GENERATED_STUB) .Xil *.jou *.log
 
 .PHONY: verilog vivado clean
 .DEFAULT_GOAL := verilog
