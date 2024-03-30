@@ -126,7 +126,6 @@ module mkDataStream2Header#(
     Reg#(HeaderRDMA)                  rdmaHeaderReg <- mkRegU;
     Reg#(HeaderMetaData)          headerMetaDataReg <- mkRegU;
     Reg#(HeaderByteNum) headerInvalidFragByteNumReg <- mkRegU;
-    Reg#(HeaderBitNum)   headerInvalidFragBitNumReg <- mkRegU;
     Reg#(Bool)                              busyReg <- mkReg(False);
 
     // rule debug if (!(
@@ -161,7 +160,6 @@ module mkDataStream2Header#(
         let { headerInvalidFragByteNum, headerInvalidFragBitNum } =
             calcHeaderInvalidFragByteAndBitNum(headerMetaData.headerFragNum);
         headerInvalidFragByteNumReg <= headerInvalidFragByteNum;
-        headerInvalidFragBitNumReg  <= headerInvalidFragBitNum;
     endrule
 
     rule accumulate if (busyReg);
@@ -187,7 +185,7 @@ module mkDataStream2Header#(
         end
 
         if (curDataStreamFrag.isLast) begin
-            rdmaHeader.headerData    = rdmaHeader.headerData << headerInvalidFragBitNumReg;
+            rdmaHeader.headerData    = rdmaHeader.headerData << getFragEnBitNumByByteEnNum(truncate(headerInvalidFragByteNumReg));
             rdmaHeader.headerByteEn  = rdmaHeader.headerByteEn << headerInvalidFragByteNumReg;
             let headerLastFragByteEn = genByteEn(rdmaHeader.headerMetaData.lastFragValidByteNum);
             headerOutQ.enq(rdmaHeader);
