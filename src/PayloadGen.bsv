@@ -2084,15 +2084,17 @@ interface PayloadGenerator;
     interface Server#(PayloadGenReqSG, PayloadGenRespSG) srvPort;
     interface PipeOut#(PayloadGenTotalMetaData) totalMetaDataPipeOut;
     interface DataStreamPipeOut payloadDataStreamPipeOut;
+    interface PipeOut#(PayloadMetaData) payloadMetaDataPipeOut;
     method Bool payloadNotEmpty();
 endinterface
 
 module mkPayloadGenerator#(
     Bool clearAll, DmaReadCntrl dmaReadCntrl
 )(PayloadGenerator);
-    FIFOF#(PayloadGenReqSG)            payloadGenReqQ <- mkFIFOF;
-    FIFOF#(PayloadGenRespSG)          payloadGenRespQ <- mkFIFOF;
-    FIFOF#(PayloadGenTotalMetaData) totalMetaDataOutQ <- mkFIFOF;
+    FIFOF#(PayloadGenReqSG)                       payloadGenReqQ <- mkFIFOF;
+    FIFOF#(PayloadGenRespSG)                     payloadGenRespQ <- mkFIFOF;
+    FIFOF#(PayloadGenTotalMetaData)            totalMetaDataOutQ <- mkFIFOF;
+    FIFOF#(PayloadMetaData)                  payloadMetaDataOutQ <- mkFIFOF;
 
     // Pipeline FIFO
     FIFOF#(DataStream) sgePayloadOutQ <- mkFIFOF;
@@ -2638,6 +2640,17 @@ module mkPayloadGenerator#(
             let curPayloadFrag = adjustedPayloadPipeOut.first;
             adjustedPayloadPipeOut.deq;
 
+            if (curPayloadFrag.isFirst) begin
+                BusByteWidthMask maskedPacketLen = truncate(payloadGenResp.pktLen + payloadGenResp.padCnt);
+                let lastFragValidByteNum = zeroExtend(maskedPacketLen);
+                if (isZero(maskedPacketLen)) begin
+                    lastFragValidByteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+                end
+                payloadMetaDataOutQ.enq(PayloadMetaData{
+                    lastFragValidByteNum: lastFragValidByteNum
+                });
+            end
+
             // Generate response by the end of the payload
             // Every segmented payload has a payloadGenResp
             if (curPayloadFrag.isLast) begin
@@ -2682,5 +2695,6 @@ module mkPayloadGenerator#(
     interface srvPort = toGPServer(payloadGenReqQ, payloadGenRespQ);
     interface totalMetaDataPipeOut = toPipeOut(totalMetaDataOutQ);
     interface payloadDataStreamPipeOut = payloadBufPipeOut;
+    interface payloadMetaDataPipeOut = toPipeOut(payloadMetaDataOutQ);
     method Bool payloadNotEmpty() = bramQ2PipeOut.notEmpty;
 endmodule

@@ -603,7 +603,8 @@ module mkSendQ#(
         clearAll,
         headerDataStreamAndMetaDataPipeOut.headerDataStream,
         headerDataStreamAndMetaDataPipeOut.headerMetaData,
-        payloadGenerator.payloadDataStreamPipeOut
+        payloadGenerator.payloadDataStreamPipeOut,
+        payloadGenerator.payloadMetaDataPipeOut
     );
 
 

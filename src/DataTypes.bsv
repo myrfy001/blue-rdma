@@ -237,10 +237,14 @@ typedef struct {
 typedef struct {
     HeaderByteNum headerLen;
     HeaderFragNum headerFragNum;
-    ByteEnBitNum lastFragValidByteNum;
+    ByteEnBitNum  lastFragValidByteNum;
     Bool hasPayload;
     Bool isEmptyHeader;
 } HeaderMetaData deriving(Bits, Bounded, Eq);
+
+typedef struct {
+    ByteEnBitNum lastFragValidByteNum;
+} PayloadMetaData deriving(Bits, Bounded, Eq);
 
 instance FShow#(HeaderMetaData);
     function Fmt fshow(HeaderMetaData hmd);
