@@ -2641,7 +2641,7 @@ module mkPayloadGenerator#(
             adjustedPayloadPipeOut.deq;
 
             if (curPayloadFrag.isFirst) begin
-                BusByteWidthMask maskedPacketLen = truncate(payloadGenResp.pktLen + payloadGenResp.padCnt);
+                BusByteWidthMask maskedPacketLen = truncate(payloadGenResp.pktLen + zeroExtend(payloadGenResp.padCnt));
                 let lastFragValidByteNum = zeroExtend(maskedPacketLen);
                 if (isZero(maskedPacketLen)) begin
                     lastFragValidByteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));

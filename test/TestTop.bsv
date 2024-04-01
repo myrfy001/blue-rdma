@@ -22,7 +22,6 @@ import ExtractAndPrependPipeOut :: *;
 
 import MemRegionAndAddressTranslate :: *;
 import PayloadCon :: *;
-import RecvStreamMocker :: *;
 import Headers :: *;
 import Ports :: *;
 import StreamHandler :: *;
