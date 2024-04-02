@@ -235,6 +235,7 @@ module mkDataStream2Header#(
     return toPipeOut(headerOutQ);
 endmodule
 
+// TODO: maybe split this enum to send and receive?
 typedef enum {
     STREAM_OUTPUT_IDLE,
     STREAM_OUTPUT_HEADER_OUTPUT,
@@ -255,10 +256,7 @@ module mkPrependHeader2PipeOut#(
 )(DataStreamPipeOut);
     FIFOF#(DataStream) dataStreamOutQ <- mkFIFOF;
 
-
-    FIFOF#(Tuple4#(ByteEnBitNum, ByteEnBitNum, Bool, Bool)) calculatedMetasQ <- mkFIFOF;
-
-    FIFOF#(Tuple4#(ByteEnBitNum, ByteEnBitNum, Bool, Bool)) calculatedMetasAfterHeaderRightShiftQ <- mkFIFOF;
+    FIFOF#(Tuple5#(ByteEnBitNum, ByteEnBitNum, Bool, Bool, Bool)) calculatedMetasAfterHeaderRightShiftQ <- mkFIFOF;
     FIFOF#(DataStream) rightShiftedHeaderStreamQ <- mkFIFOF;
 
     // preDataStreamReg is right aligned
@@ -269,6 +267,7 @@ module mkPrependHeader2PipeOut#(
     Reg#(ByteEnBitNum) headerLastFragInvalidByteNumReg <- mkRegU;
     Reg#(Bool) headerHasPayloadReg <- mkRegU;
     Reg#(Bool) isEmptyHeaderReg <- mkRegU;
+    Reg#(Bool) noExtraLastFragReg <- mkRegU;
     Reg#(Bool) isMixOutputHeaderOutputStageReg <- mkReg(True);
 
     rule debug;
@@ -340,10 +339,20 @@ module mkPrependHeader2PipeOut#(
         let rightShiftHeaderLastFragByteEn = curHeaderDataStreamFrag.byteEn >> headerLastFragInvalidByteNum;
         let outputDataStream = curHeaderDataStreamFrag;
 
+        let noExtraLastFrag = False;
+        if (headerHasPayload) begin
+            let dataMeta = payloadMetaDataPipeIn.first;
+            payloadMetaDataPipeIn.deq;
+            let lastBeatValidByteSum = headerLastFragValidByteNum + dataMeta.lastFragValidByteNum;
+            if (lastBeatValidByteSum <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) begin
+                noExtraLastFrag = True;
+            end
+        end
+
         // For the first beat, pass the metadata to downstream.
         if (curHeaderDataStreamFrag.isFirst) begin
-            calculatedMetasAfterHeaderRightShiftQ.enq(tuple4(headerLastFragValidByteNum,
-                headerLastFragInvalidByteNum, headerHasPayload, isEmptyHeader));
+            calculatedMetasAfterHeaderRightShiftQ.enq(tuple5(headerLastFragValidByteNum,
+                headerLastFragInvalidByteNum, headerHasPayload, isEmptyHeader, noExtraLastFrag));
             $display("time=%0t: mkPrependHeader2PipeOut preCalculateHeaderMetaData", $time,
                 "pass header at first beat");
         end
@@ -366,13 +375,14 @@ module mkPrependHeader2PipeOut#(
             let nextState = ?;
             if (calculatedMetasAfterHeaderRightShiftQ.notEmpty) begin
                 let {headerLastFragValidByteNum,
-                    headerLastFragInvalidByteNum, headerHasPayload, isEmptyHeader} = calculatedMetasAfterHeaderRightShiftQ.first;
+                    headerLastFragInvalidByteNum, headerHasPayload, isEmptyHeader, noExtraLastFrag} = calculatedMetasAfterHeaderRightShiftQ.first;
                 calculatedMetasAfterHeaderRightShiftQ.deq;
 
                 headerLastFragValidByteNumReg <= headerLastFragValidByteNum;
                 headerLastFragInvalidByteNumReg <= headerLastFragInvalidByteNum;
                 headerHasPayloadReg <= headerHasPayload;
                 isEmptyHeaderReg <= isEmptyHeader;
+                noExtraLastFragReg <= noExtraLastFrag;
                 case ({pack(headerHasPayload), pack(isEmptyHeader)}) matches
                     'b00: begin
                         nextState = STREAM_OUTPUT_HEADER_OUTPUT;
@@ -427,7 +437,6 @@ module mkPrependHeader2PipeOut#(
         dataStreamOutQ.enq(dataFrag);
         if (dataFrag.isLast) begin
             dispatchNextRule;
-            payloadMetaDataPipeIn.deq;
             rightShiftedHeaderStreamQ.deq; // deq fake header frag
         end
         $display("time=%0t: mkPrependHeader2PipeOut outputData", $time,
@@ -438,13 +447,6 @@ module mkPrependHeader2PipeOut#(
     rule outputMixed if (!clearAll && stageReg == STREAM_OUTPUT_HEADER_DATA_MIX_OUTPUT);
 
         let firstDataStreamFrag = dataPipeIn.first;
-        let dataMeta = payloadMetaDataPipeIn.first;
-
-        let lastBeatValidByteSum = headerLastFragValidByteNumReg + dataMeta.lastFragValidByteNum;
-        let noExtraLastFrag = False;
-        if ( lastBeatValidByteSum <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) begin
-            noExtraLastFrag = True;
-        end
         
         preDataStreamReg <= firstDataStreamFrag;
         let fragToOutput = ?;
@@ -452,7 +454,7 @@ module mkPrependHeader2PipeOut#(
             let headerFrag = rightShiftedHeaderStreamQ.first;
             rightShiftedHeaderStreamQ.deq;
             if (headerFrag.isLast) begin
-                if (!noExtraLastFrag) begin
+                if (!noExtraLastFragReg) begin
                     if (firstDataStreamFrag.isLast) begin
                         stageReg <= STREAM_OUTPUT_EXTRA_LAST_FRAG_OUTPUT;
                     end
@@ -462,7 +464,6 @@ module mkPrependHeader2PipeOut#(
                 end
                 else begin
                     dispatchNextRule;
-                    payloadMetaDataPipeIn.deq;
                 end
 
                 $display("time=%0t: mkPrependHeader2PipeOut outputMixed", $time,
@@ -480,7 +481,7 @@ module mkPrependHeader2PipeOut#(
                     data: truncate(tmpData),
                     byteEn: truncate(tmpByteEn),
                     isFirst: headerFrag.isFirst,
-                    isLast: noExtraLastFrag
+                    isLast: noExtraLastFragReg
                 };
                 dataPipeIn.deq;
             end
@@ -502,10 +503,9 @@ module mkPrependHeader2PipeOut#(
 
             if (firstDataStreamFrag.isLast) begin
                 isMixOutputHeaderOutputStageReg <= True;
-                fragToOutput.isLast = noExtraLastFrag;
-                if (!noExtraLastFrag) begin
+                fragToOutput.isLast = noExtraLastFragReg;
+                if (!noExtraLastFragReg) begin
                     dispatchNextRule;
-                    payloadMetaDataPipeIn.deq;
                 end
                 else begin
                     stageReg <= STREAM_OUTPUT_EXTRA_LAST_FRAG_OUTPUT;
@@ -530,7 +530,6 @@ module mkPrependHeader2PipeOut#(
         };
         dataStreamOutQ.enq(extraLastDataStream);
         dispatchNextRule;
-        payloadMetaDataPipeIn.deq;
         $display("time=%0t: mkPrependHeader2PipeOut outputMixed", $time,
                      ", output stream=", fshow(extraLastDataStream));
         
