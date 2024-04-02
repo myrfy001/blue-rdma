@@ -384,7 +384,7 @@ module mkBluerdmaDmaProxyForRQ(BluerdmaDmaProxyForRQ);
             UserLogicDmaC2hReq{
                 addr: inReq.metaData.startAddr,
                 len: zeroExtend(pack(inReq.metaData.len)),
-                dataStream: reverseStream(inReq.dataStream)
+                dataStream: dataStream2DataStreamEn(reverseStream(inReq.dataStream))
             }
         );
     endrule

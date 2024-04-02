@@ -319,7 +319,7 @@ module mkPayloadConsumer(PayloadConsumer);
                     dataStream: DataStream {
                         isFirst: payloadFragMeta.isFirst,
                         isLast: payloadFragMeta.isLast,
-                        byteEn: payloadFragMeta.byteEn,
+                        byteNum: payloadFragMeta.byteNum,
                         data: payloadData
                     }
                 };

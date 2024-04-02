@@ -137,8 +137,8 @@ module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateData
                 extractTranTypeAndRdmaOpCode(rdmaPktDataStream.data);
 
             let headerHasPayload = rdmaOpCodeHasPayload(rdmaOpCode);
-            HeaderByteNum headerLen = fromInteger(
-                calcHeaderLenByTransTypeAndRdmaOpCode(transType, rdmaOpCode)
+            ZeroBasedHeaderByteNum headerLen = fromInteger(
+                calcHeaderLenByTransTypeAndRdmaOpCode(transType, rdmaOpCode) - 1
             );
             immAssert(
                 !isZero(headerLen),
@@ -152,15 +152,15 @@ module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateData
 
             let headerMetaData = genHeaderMetaData(headerLen, headerHasPayload, isEmptyHeader);
             headerMetaDataInQ.enq(headerMetaData);
-            // $display(
-            //     "time=%0t: extractHeader", $time,
-            //     ", headerLen=%0d", headerLen,
-            //     ", rdmaOpCode=", fshow(rdmaOpCode),
-            //     ", transType=", fshow(transType),
-            //     ", rdmaPktDataStream=", fshow(rdmaPktDataStream),
-            //     ", headerHasPayload=", fshow(headerHasPayload),
-            //     ", headerMetaData=", fshow(headerMetaData)
-            // );
+            $display(
+                "time=%0t: extractHeader", $time,
+                ", headerLen=%0d", headerLen,
+                ", rdmaOpCode=", fshow(rdmaOpCode),
+                ", transType=", fshow(transType),
+                ", rdmaPktDataStream=", fshow(rdmaPktDataStream),
+                ", headerHasPayload=", fshow(headerHasPayload),
+                ", headerMetaData=", fshow(headerMetaData)
+            );
         end
         // $display("time=%0t: rdmaPktDataStream=", $time, fshow(rdmaPktDataStream));
     endrule
@@ -338,7 +338,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         let payloadFragMeta = payloadStreamFragMetaPipeInQ.first;
         payloadStreamFragMetaPipeInQ.deq;
         let payloadHasSingleFrag = payloadFragMeta.isFirst && payloadFragMeta.isLast;
-        let fragHasNoData = isZeroByteEn(payloadFragMeta.byteEn);
+        let fragHasNoData = payloadFragMeta.isEmpty;    // TODO: check is this check necessary?
 
         if (payloadFragMeta.isFirst) begin
             let rdmaHeader = rdmaHeaderPipeOut.first;
@@ -549,17 +549,22 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         
         let isRawPacket = rdmaHeader.headerMetaData.isEmptyHeader;
 
-        let payloadFragLen = calcFragByteNumFromByteEn(streamFragMeta.byteEn);
-        immAssert(
-            isValid(payloadFragLen),
-            "isValid(payloadFragLen) assertion @ mkInputRdmaPktBufAndHeaderValidation",
-            $format(
-                "payloadFragLen=", fshow(payloadFragLen), " should be valid"
-            )
-        );
-        let fragLen         = unwrapMaybe(payloadFragLen);
-        let isByteEnNonZero = !isZeroByteEn(streamFragMeta.byteEn);
-        let isByteEnAllOne  = isAllOnesR(streamFragMeta.byteEn);
+
+        // TODO: should move the following commented out length calc and check logic to the very begining
+        // of packet receive flow.
+
+        // let payloadFragLen = calcFragByteNumFromByteEn(streamFragMeta.byteEn);
+        // immAssert(
+        //     isValid(payloadFragLen),
+        //     "isValid(payloadFragLen) assertion @ mkInputRdmaPktBufAndHeaderValidation",
+        //     $format(
+        //         "payloadFragLen=", fshow(payloadFragLen), " should be valid"
+        //     )
+        // );
+
+        ByteEnBitNum fragLen = zeroExtend(streamFragMeta.byteNum) + 1;
+        let isByteEnNonZero = !streamFragMeta.isEmpty;
+        let isByteEnAllOne  = isAllOnesR(streamFragMeta.byteNum);
         ByteEnBitNum fragLenWithOutPad = fragLen - zeroExtend(bthPadCnt);
 
         payloadPktLenCalcQ.enq(tuple5(
@@ -645,7 +650,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             // ", pktMetaDataOutQ.notFull=", fshow(pktMetaDataOutQ.notFull),
             ", DATA_STREAM_FRAG_BUF_SIZE=%0d", valueOf(DATA_STREAM_FRAG_BUF_SIZE),
             ", PKT_META_DATA_BUF_SIZE=%0d", valueOf(PKT_META_DATA_BUF_SIZE),
-            ", streamFragMeta.byteEn=%h" , streamFragMeta.byteEn,
+            ", streamFragMeta.byteNum=%h" , streamFragMeta.byteNum,
             ", streamFragMeta.isFirst=", fshow(streamFragMeta.isFirst),
             ", streamFragMeta.isLast=", fshow(streamFragMeta.isLast),
             ", bth.psn=%h", bth.psn,
@@ -696,9 +701,6 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             let isLastOrOnlyPkt = pktLenCheckInfo.isLastOrOnlyPkt;
             let isMidPkt        = pktLenCheckInfo.isMidPkt;
             let pktStatus       = PKT_ST_VALID;
-
-            // fix byteEN to prevent dma write access touch unrelated bytes.
-            streamFragMeta.byteEn = streamFragMeta.byteEn << pktLenCheckInfo.padCnt;
 
             if (!rdmaHeader.headerMetaData.isEmptyHeader) begin
                 if (pktValid) begin

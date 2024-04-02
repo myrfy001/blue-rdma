@@ -306,14 +306,14 @@ module mkRingbufC2hController(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, Ri
             DataStream ds;
             ds.isLast = True;
             ds.isFirst = True;
-            ds.byteEn = genByteEn(fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)));
+            ds.byteNum = fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)-1);
             ds.data = unpack(pack(fifoCntrl.first));
             fifoCntrl.deq;
 
             dmaReqQ.enq(UserLogicDmaC2hReq{
                     addr: curWriteStartAddr,
                     len: fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
-                    dataStream: ds
+                    dataStream: dataStream2DataStreamEn(ds)
             });
 
             headShadowReg <= headShadowReg + 1;

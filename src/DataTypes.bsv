@@ -111,6 +111,12 @@ typedef Bit#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH)) ByteEnBitNum; // 6
 typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ShiftBitNum; // 8
 typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ShiftByteNum; // 5
 
+typedef BusByteWidthMask ZeroBasedByteValidNum;  // 5
+typedef BusByteWidthMask OneBasedByteInvalidNum;  // 5
+typedef TSub#(TExp#(DATA_BUS_BYTE_NUM_WIDTH), 1) ZERO_BASED_BYTE_NUM_MAX; // 31
+
+typedef Bit#(TLog#(HEADER_MAX_BYTE_EN_WIDTH)) ZeroBasedHeaderByteNum; // 6
+
 // typedef Bit#(TLog#(TAdd#(1, MAX_QP_WR)))        PendingReqCnt;
 // typedef Bit#(TLog#(TAdd#(1, MAX_QP_RD_ATOM)))   PendingReadAtomicReqCnt;
 // typedef Bit#(PENDING_READ_ATOMIC_REQ_CNT_WIDTH) PendingReadAtomicReqCnt;
@@ -226,24 +232,32 @@ typedef enum {
     RETRY_REASON_TIMEOUT
 } RetryReason deriving(Bits, Eq, FShow);
 
+// DATA are left aligned
+typedef struct {
+    DATA               data;
+    ZeroBasedByteValidNum   byteNum;
+    Bool               isFirst;
+    Bool               isLast;
+} DataStream deriving(Bits, Bounded, Eq, FShow);
+
 // DATA and ByteEn are left aligned
 typedef struct {
     DATA data;
     ByteEn byteEn;
     Bool isFirst;
     Bool isLast;
-} DataStream deriving(Bits, Bounded, Eq, FShow);
+} DataStreamEn deriving(Bits, Bounded, Eq, FShow);
 
 typedef struct {
-    HeaderByteNum headerLen;
-    HeaderFragNum headerFragNum;
-    ByteEnBitNum  lastFragValidByteNum;
-    Bool hasPayload;
-    Bool isEmptyHeader;
+    ZeroBasedHeaderByteNum headerLen;
+    HeaderFragNum            headerFragNum;
+    ZeroBasedByteValidNum       lastFragValidByteNum;
+    Bool                     hasPayload;
+    Bool                     isEmptyHeader;
 } HeaderMetaData deriving(Bits, Bounded, Eq);
 
 typedef struct {
-    ByteEnBitNum lastFragValidByteNum;
+    ZeroBasedByteValidNum lastFragValidByteNum;
 } PayloadMetaData deriving(Bits, Bounded, Eq);
 
 instance FShow#(HeaderMetaData);
@@ -257,9 +271,9 @@ endinstance
 
 // HeaderData and HeaderByteEn are left aligned
 typedef struct {
-    HeaderData     headerData;
-    HeaderByteEn   headerByteEn;
-    HeaderMetaData headerMetaData;
+    HeaderData                headerData;
+    ZeroBasedHeaderByteNum    headerByteNum;
+    HeaderMetaData            headerMetaData;
 } HeaderRDMA deriving(Bits, Bounded, FShow);
 
 typedef enum {
@@ -882,9 +896,10 @@ typedef TAdd#(1, INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH) INPUT_STREA
 typedef Bit#(INPUT_STREAM_FRAG_BUFFER_INDEX_WIDTH) InputStreamFragBufferIdx; 
 
 typedef struct {
-    ByteEn                      byteEn;
+    ZeroBasedByteValidNum       byteNum;
     Bool                        isFirst;
     Bool                        isLast;
+    Bool                        isEmpty;
     InputStreamFragBufferIdx    bufIdx;
 } DataStreamFragMetaData deriving(Bits, FShow);
 

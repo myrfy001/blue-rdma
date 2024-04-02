@@ -87,7 +87,7 @@ typedef struct {
 } UserLogicDmaH2cReq deriving(Bits, FShow);
 
 typedef struct {
-    DataStream dataStream;
+    DataStreamEn dataStream;
 } UserLogicDmaH2cResp deriving(Bits, FShow);
 
 typedef struct {
@@ -98,7 +98,7 @@ typedef struct {
 typedef struct {
     ADDR addr;
     UserLogicDmaLen len;
-    DataStream dataStream;
+    DataStreamEn dataStream;
 } UserLogicDmaC2hReq deriving(Bits, FShow);
 
 typedef struct {

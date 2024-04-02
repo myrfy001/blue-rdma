@@ -327,14 +327,14 @@ module mkMrAndPgtManager(MrAndPgtManager);
 
     rule updatePgtStateHandlePGTUpdate if (state == MrAndPgtManagerFsmStateHandlePGTUpdate);
         // since this is the control path, it's not fully pipelined to make it simple.
-        if (curBeatOfDataReg.byteEn[0] == 0) begin
+        if (isZeroR(curBeatOfDataReg.byteNum)) begin
             if (curBeatOfDataReg.isLast) begin
                 state <= MrAndPgtManagerFsmStateWaitPGTUpdateLastResp;
                 curBeatOfDataReg <= unpack(0);
                 // $display("addr translate modify second stage finished.");
             end 
             else begin
-                curBeatOfDataReg <= dmaReadRespQ.first.dataStream;
+                curBeatOfDataReg <= dataStreamEn2DataStream(dmaReadRespQ.first.dataStream);
                 dmaReadRespQ.deq;
             end
         end 
@@ -350,7 +350,9 @@ module mkMrAndPgtManager(MrAndPgtManager);
             // $display("addr translate modify second stage:", fshow(modifyReq));
             curSecondStagePgtWriteIdxReg <= curSecondStagePgtWriteIdxReg + 1;
             let t = curBeatOfDataReg;
-            t.byteEn = t.byteEn >> bytesPerPgtSecondStageEntryRequest;
+
+            let {subResult, _} = satSubByteNum(t.byteNum, fromInteger(bytesPerPgtSecondStageEntryRequest));
+            t.byteNum = subResult;
             t.data = t.data >> (bytesPerPgtSecondStageEntryRequest * valueOf(BYTE_WIDTH));
             curBeatOfDataReg <= t;
         end
@@ -476,7 +478,7 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
 
         let resp = DmaReadResp{
             isRespErr   : False,
-            dataStream  : reverseStream(inResp.dataStream)
+            dataStream  : dataStreamEn2DataStream(reverseStreamEn(inResp.dataStream))
         };
         readRespOutQ.enq(resp);
         // $display("time=%0t: ", $time, "mkDmaReadReqAddrTranslator, forwardResponseDMA, resp=", fshow(resp));

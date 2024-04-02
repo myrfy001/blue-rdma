@@ -138,7 +138,7 @@ module mkSimDmaReadSrvAndReqRespPipeOut(DmaReadSrvAndReqRespPipeOut);
         let { totalFragCnt, lastFragByteEn, lastFragValidByteNum } =
             calcTotalFragNumByLength(zeroExtend(dmaReadReq.len));
         let { lastFragValidBitNum, lastFragInvalidByteNum, lastFragInvalidBitNum } =
-            calcFragBitNumAndByteNum(lastFragValidByteNum);
+            calcFragInvalidByteNum(lastFragValidByteNum);
 
         remainingFragNumReg <= isZeroLen ? 0 : totalFragCnt - 1;
         lastFragByteEnReg <= lastFragByteEn;

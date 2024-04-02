@@ -347,59 +347,93 @@ endfunction
 
 // ByteEn related
 
-function ByteEn genByteEn(ByteEnBitNum fragValidByteNum);
-    return reverseBits((1 << fragValidByteNum) - 1);
+function ByteEn genByteEn(ZeroBasedByteValidNum fragValidByteNum);
+    return reverseBits(((1 << fragValidByteNum) << 1) - 1);
 endfunction
 
-function ByteEnBitNum calcLastFragValidByteNum(Bit#(nSz) len) provisos(
+function ZeroBasedByteValidNum calcLastFragValidByteNum(Bit#(nSz) len) provisos(
     Add#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH), anysizeK, nSz),
     Add#(DATA_BUS_BYTE_NUM_WIDTH, anysizeJ, nSz)
 );
-    BusByteWidthMask lastFragByteNumResidue = truncate(len);
-    Bit#(TSub#(nSz, DATA_BUS_BYTE_NUM_WIDTH)) truncatedLen = truncateLSB(len);
-
-    ByteEnBitNum lastFragValidByteNum = zeroExtend(lastFragByteNumResidue);
-    // TODO: think whether input len will be 0? if input can't be 0, then no need to check truncatedLen
-    if (isZeroR(lastFragByteNumResidue) && !isZeroR(truncatedLen)) begin
-    // BusByteWidthMask busByteWidthMask = maxBound;
-    // ByteEnBitNum lastFragValidByteNum = zeroExtend(truncate(len) & busByteWidthMask);
-    // if (isZero(lastFragValidByteNum) && !isZero(len)) begin
-        lastFragValidByteNum = fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
-    end
-    return lastFragValidByteNum;
+    return truncate(len);
 endfunction
 
-function Tuple3#(BusBitNum, ByteEnBitNum, BusBitNum) calcFragBitNumAndByteNum(
-    ByteEnBitNum fragValidByteNum
+function OneBasedByteInvalidNum calcFragInvalidByteNum(
+    ZeroBasedByteValidNum fragValidByteNum
 );
-    BusBitNum fragValidBitNum = zeroExtend(fragValidByteNum) << 3;
-    ByteEnBitNum fragInvalidByteNum =
-        fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - fragValidByteNum;
-    BusBitNum fragInvalidBitNum = zeroExtend(fragInvalidByteNum) << 3;
+    return fromInteger(valueOf(ZERO_BASED_BYTE_NUM_MAX)) - fragValidByteNum;
+endfunction
 
-    return tuple3(fragValidBitNum, fragInvalidByteNum, fragInvalidBitNum);
+
+function Tuple2#(ZeroBasedByteValidNum, Bool) satAddByteNum(ZeroBasedByteValidNum v1, ZeroBasedByteValidNum v2);
+    let sumWithCarryBit = {1'b0, pack(v1)};
+    sumWithCarryBit = sumWithCarryBit + zeroExtend(pack(v2)) + 1;
+    Bool isOverflow = msb(sumWithCarryBit) == 1;
+    ZeroBasedByteValidNum ret = isOverflow ? -1 : truncate(sumWithCarryBit);
+    return tuple2(ret, isOverflow);
+endfunction
+
+function Tuple2#(ZeroBasedByteValidNum, Bool) satSubByteNum(ZeroBasedByteValidNum v1, OneBasedByteInvalidNum v2);
+    let sumWithCarryBit = {1'b0, pack(v1)};
+    sumWithCarryBit = sumWithCarryBit - zeroExtend(pack(v2));
+    Bool isOverflow = msb(sumWithCarryBit) == 1;
+    ZeroBasedByteValidNum ret = isOverflow ? 0 : truncate(sumWithCarryBit);
+    return tuple2(ret, isOverflow);
+endfunction
+
+function Bool isValidPlusInvalidByteNumOverflow(ZeroBasedByteValidNum v1, OneBasedByteInvalidNum v2);
+    let sumWithCarryBit = {1'b0, pack(v1)};
+    sumWithCarryBit = sumWithCarryBit + zeroExtend(pack(v2));
+    Bool isOverflow = msb(sumWithCarryBit) == 1;
+    return isOverflow;
+endfunction
+
+function Bool isTwoValidByteNumSumOverflow(ZeroBasedByteValidNum v1, ZeroBasedByteValidNum v2);
+    let sumWithCarryBit = {1'b0, pack(v1)};
+    sumWithCarryBit = sumWithCarryBit + zeroExtend(pack(v2)) + 1;
+    Bool isOverflow = msb(sumWithCarryBit) == 1;
+    return isOverflow;
+endfunction
+
+
+function DataStreamEn dataStream2DataStreamEn(DataStream inStream);
+    return DataStreamEn{
+        data: inStream.data,
+        byteEn: genByteEn(inStream.byteNum),
+        isFirst: inStream.isFirst,
+        isLast: inStream.isLast
+    };
+endfunction
+
+function DataStream dataStreamEn2DataStream(DataStreamEn inStream);
+    return DataStream{
+        data: inStream.data,
+        byteNum: fromMaybe(?, calcFragByteNumFromByteEn(inStream.byteEn)),
+        isFirst: inStream.isFirst,
+        isLast: inStream.isLast
+    };
 endfunction
 
 // TODO: should we change ByteEnBitNum and BusBitNum into ShiftBitNum and ShiftByteNum to save an bit?
-function BusBitNum getFragEnBitNumByByteEnNum(ByteEnBitNum byteEnNum);
+function BusBitNum getFragEnBitNumByByteEnNum(BusByteWidthMask byteEnNum);
     return zeroExtend(byteEnNum) << 3;
 endfunction
 
 // TODO: check timing of the for loop
 // TODO: refactor the for loop using case statement
-function Maybe#(ByteEnBitNum) calcFragByteNumFromByteEn(ByteEn fragByteEn);
+function Maybe#(ZeroBasedByteValidNum) calcFragByteNumFromByteEn(ByteEn fragByteEn);
     let rightAlignedByteEn = reverseBits(fragByteEn);
-    Maybe#(ByteEnBitNum) byteEnBitNum = tagged Invalid;
+    Maybe#(ZeroBasedByteValidNum) byteEnBitNum = tagged Invalid;
     // let step = valueOf(FRAG_MIN_VALID_BYTE_NUM);
     let step = 1;
     // Bool matched = False;
     for (
-        Integer idx = 0;
+        Integer idx = 1;
         idx <= valueOf(DATA_BUS_BYTE_WIDTH);
         idx = idx + step
     ) begin
         if (rightAlignedByteEn == (fromInteger(1) << idx) - 1) begin
-            byteEnBitNum = tagged Valid fromInteger(idx);
+            byteEnBitNum = tagged Valid fromInteger(idx-1);
             // matched = True;
         end
     end
@@ -473,31 +507,23 @@ endfunction
 
 // Header related
 
-function HeaderByteEn genHeaderByteEn(HeaderByteNum headerLen);
-    return reverseBits((1 << headerLen) - 1);
+function HeaderByteEn genHeaderByteEn(ZeroBasedHeaderByteNum headerLen);
+    return reverseBits( ((1 << headerLen) << 1) - 1);
 endfunction
 
-function Tuple2#(HeaderFragNum, ByteEnBitNum) calcHeaderFragNumAndLastFragValidByeNum(
-    HeaderByteNum headerLen
+function Tuple2#(HeaderFragNum, ZeroBasedByteValidNum) calcHeaderFragNumAndLastFragValidByeNum(
+    ZeroBasedHeaderByteNum headerLen
 ) provisos(
     Add#(HEADER_FRAG_NUM_WIDTH, DATA_BUS_BYTE_NUM_WIDTH, HEADER_MAX_BYTE_NUM_WIDTH)
 );
     let headerLastFragValidByteNum = calcLastFragValidByteNum(headerLen);
-    // BusByteWidthMask busByteWidthMask = maxBound;
-    // let headerLastFragByteEnBitNum = truncate(headerLen) & busByteWidthMask;
-    // HeaderFragNum headerFragNum =
-    //     truncate(headerLen >> valueOf(DATA_BUS_BYTE_NUM_WIDTH)) +
-    //     zeroExtend(pack(!isZero(headerLastFragByteEnBitNum)));
-    BusByteWidthMask headerLastFragByteNumResidue = truncate(headerLen);
-    Bit#(TSub#(HEADER_MAX_BYTE_NUM_WIDTH, DATA_BUS_BYTE_NUM_WIDTH)) truncatedHeaderLen =
-        truncateLSB(headerLen);
-    HeaderFragNum headerFragNum =
-        truncatedHeaderLen + zeroExtend(pack(!isZeroR(headerLastFragByteNumResidue)));
+    HeaderFragNum headerFragNum = truncate(headerLen >> valueOf(DATA_BUS_BYTE_NUM_WIDTH));
+    headerFragNum = headerFragNum + 1;
     return tuple2(headerFragNum, headerLastFragValidByteNum);
 endfunction
 
 function HeaderMetaData genHeaderMetaData(
-    HeaderByteNum headerLen,
+    ZeroBasedHeaderByteNum headerLen,
     Bool hasPayload,
     Bool isEmptyHeader
 );
@@ -515,14 +541,13 @@ endfunction
 
 function HeaderRDMA genHeaderRDMA(
     HeaderData headerData,
-    HeaderByteNum headerLen,
+    ZeroBasedHeaderByteNum headerLen,
     Bool hasPayload
 );
-    let headerByteEn = genHeaderByteEn(headerLen);
     let headerMetaData = genHeaderMetaData(headerLen, hasPayload, False);
     return HeaderRDMA {
         headerData    : headerData,
-        headerByteEn  : headerByteEn,
+        headerByteNum  : headerLen,
         headerMetaData: headerMetaData
     };
 endfunction
@@ -537,7 +562,7 @@ function HeaderRDMA genEmptyHeaderRDMA(Bool hasPayload);
     };
     return HeaderRDMA {
         headerData    : dontCareValue,
-        headerByteEn  : 0,
+        headerByteNum  : 0,
         headerMetaData: emptyHeaderMetaData
     };
 endfunction
@@ -568,7 +593,7 @@ function DataStream genFakeHeaderSingleBeatStreamForRawPacketReceiveProcessing(A
 
     let fakeHeaderStream = DataStream{
         data: zeroExtendLSB({ pack(bth), pack(reth) }),
-        byteEn: genByteEn(fromInteger(calcHeaderLenByTransTypeAndRdmaOpCode(TRANS_TYPE_DTLD_EXTENDED, RDMA_WRITE_ONLY_WITH_IMMEDIATE))),
+        byteNum: fromInteger(calcHeaderLenByTransTypeAndRdmaOpCode(TRANS_TYPE_DTLD_EXTENDED, RDMA_WRITE_ONLY_WITH_IMMEDIATE)-1),
         isFirst: True,
         isLast: False
     };
@@ -1998,8 +2023,15 @@ function Bit#(width) swapEndianBit(Bit#(width) data) provisos(Mul#(1, byteNum, w
     return pack(reverse(dataVec));
 endfunction
 
+
 function DataStream reverseStream(DataStream st);
     st.data = swapEndian(st.data);
-    st.byteEn = swapEndianBit(st.byteEn);
+    // st.byteEn = swapEndianBit(st.byteEn);
+    return st;
+endfunction
+
+function DataStreamEn reverseStreamEn(DataStreamEn st);
+    st.data = swapEndian(st.data);
+    // st.byteEn = swapEndianBit(st.byteEn);
     return st;
 endfunction

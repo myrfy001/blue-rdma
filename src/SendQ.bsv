@@ -20,14 +20,14 @@ typedef struct {
 } PktInfo4UDP deriving(Bits, FShow);
 
 typedef struct {
-    HeaderData    headerData;
-    HeaderByteNum headerLen;
-    Bool          hasPayload;
-    Bool          hasHeader;
+    HeaderData                 headerData;
+    ZeroBasedHeaderByteNum     headerLen;
+    Bool                       hasPayload;
+    Bool                       hasHeader;
 } PktHeaderInfo deriving(Bits, FShow);
 
 function PktHeaderInfo genPktHeaderInfo(
-    HeaderData headerData, HeaderByteNum headerLen, Bool hasPayload
+    HeaderData headerData, ZeroBasedHeaderByteNum headerLen, Bool hasPayload
 );
     return PktHeaderInfo {
         headerData: headerData,

@@ -418,7 +418,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     rule forawrdTxStream;
         rdma.sqRdmaDataStreamPipeOut.deq;
-        let data = rdma.sqRdmaDataStreamPipeOut.first;
+        let data = dataStream2DataStreamEn(rdma.sqRdmaDataStreamPipeOut.first);
         $display("time=%0t: ", $time,"rdma put data to udp = ", fshow(data));
         udpTxStreamBufQ.enq(Ports::DataStream{
             data: swapEndian(data.data),
@@ -471,12 +471,12 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 udp.netTxRxIfc.macMetaDataRxOut.deq;
                 let data = udp.netTxRxIfc.dataStreamRxOut.first;
                 udp.netTxRxIfc.dataStreamRxOut.deq;
-                let outData = DataTypes::DataStream {
+                let outData = dataStreamEn2DataStream(DataTypes::DataStreamEn {
                     data: swapEndian(data.data),
                     byteEn: swapEndianBit(data.byteEn),
                     isLast: data.isLast,
                     isFirst: data.isFirst
-                };
+                });
                 udpRxStreamBufQ.enq(tuple2(outData, False));
                 $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData));
 
@@ -488,12 +488,12 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
                 let data = udp.netTxRxIfc.rawPktStreamRxOut.first;
                 udp.netTxRxIfc.rawPktStreamRxOut.deq;
-                let outData = DataTypes::DataStream {
+                let outData = dataStreamEn2DataStream(DataTypes::DataStreamEn {
                     data: swapEndian(data.data),
                     byteEn: swapEndianBit(data.byteEn),
                     isLast: data.isLast,
                     isFirst: data.isFirst
-                };
+                });
                 udpRxStreamBufQ.enq(tuple2(outData, True));
                 $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData));
 
@@ -505,12 +505,12 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
         else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRdmaData) begin
             let data = udp.netTxRxIfc.dataStreamRxOut.first;
             udp.netTxRxIfc.dataStreamRxOut.deq;
-            let outData = DataTypes::DataStream {
+            let outData = dataStreamEn2DataStream(DataTypes::DataStreamEn {
                 data: swapEndian(data.data),
                 byteEn: swapEndianBit(data.byteEn),
                 isLast: data.isLast,
                 isFirst: data.isFirst
-            };
+            });
             udpRxStreamBufQ.enq(tuple2(outData, False));
             $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData));
             if (data.isLast) begin
@@ -520,12 +520,12 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
         else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRawData) begin
             let data = udp.netTxRxIfc.rawPktStreamRxOut.first;
             udp.netTxRxIfc.rawPktStreamRxOut.deq;
-            let outData = DataTypes::DataStream {
+            let outData = dataStreamEn2DataStream(DataTypes::DataStreamEn {
                 data: swapEndian(data.data),
                 byteEn: swapEndianBit(data.byteEn),
                 isLast: data.isLast,
                 isFirst: data.isFirst
-            };
+            });
             udpRxStreamBufQ.enq(tuple2(outData, True));
             $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData));
             if (data.isLast) begin

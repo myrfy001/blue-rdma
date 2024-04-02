@@ -691,11 +691,11 @@ module mkTestSimGenRdmaResp(Empty);
         rdmaRespHeaderPipeOut4HeaderCmpRef.deq;
 
         immAssert(
-            rdmaHeader.headerByteEn == refHeader.headerByteEn,
-            "rdmaHeader.headerByteEn assertion @ mkTestRdmaRespGenInSim",
+            rdmaHeader.headerByteNum == refHeader.headerByteNum,
+            "rdmaHeader.headerByteNum assertion @ mkTestRdmaRespGenInSim",
             $format(
-                "rdmaHeader.headerByteEn=%h should == refHeader.headerByteEn=%h",
-                rdmaHeader.headerByteEn, refHeader.headerByteEn
+                "rdmaHeader.headerByteNum=%h should == refHeader.headerByteNum=%h",
+                rdmaHeader.headerByteNum, refHeader.headerByteNum
             )
         );
 
@@ -709,8 +709,8 @@ module mkTestSimGenRdmaResp(Empty);
             $format(
                 "rdmaHeader.headerData=%h should == refHeader.headerData=%h",
                 rdmaHeader.headerData, refHeader.headerData,
-                ", rdmaHeader.headerByteEn=%h should == refHeader.headerByteEn=%h",
-                rdmaHeader.headerByteEn, refHeader.headerByteEn
+                ", rdmaHeader.headerByteNum=%h should == refHeader.headerByteNum=%h",
+                rdmaHeader.headerByteNum, refHeader.headerByteNum
             )
         );
     endrule
