@@ -91,7 +91,11 @@ module mkRQ(RQ ifc);
 
         reqStatusCheckStep1PipeQ.enq(tuple2(pktMetaDataAndQpc, rdmaOpCodeNeedQueryMrTable));
 
-        $display("time=%0t: ", $time, "queryMemoryRegionTable pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc));
+        $display("time=%0t: ", $time, "queryMemoryRegionTable",
+                 ", bth=",  fshow(bth),
+                 ", reth=",  fshow(reth),
+                 ", pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc)
+        );
         
     endrule
 
@@ -280,7 +284,11 @@ module mkRQ(RQ ifc);
 
         psnContinuityCheckPipeQ.enq(tuple3(pktMetaDataAndQpc, reqStatus, needIssueDMARequest));
 
-        $display("time=%0t: ", $time, "recvAddrTransRespAndIssueDMA pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc));
+        $display("time=%0t: ", $time, "recvAddrTransRespAndIssueDMA",
+                 ", needWaitForPGTResponse=",  fshow(needWaitForPGTResponse),
+                 ", needIssueDMARequest=",  fshow(needIssueDMARequest),
+                 ", pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc)
+        );
     endrule
 
     rule checkPsnContinuityAndDecideIfNeedReportPacketMeta;

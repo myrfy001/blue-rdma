@@ -415,7 +415,7 @@ function DataStream dataStreamEn2DataStream(DataStreamEn inStream);
 endfunction
 
 // TODO: should we change ByteEnBitNum and BusBitNum into ShiftBitNum and ShiftByteNum to save an bit?
-function BusBitNum getFragEnBitNumByByteEnNum(BusByteWidthMask byteEnNum);
+function BusBitNum getFragEnBitNumByByteEnNum(ByteEnBitNum byteEnNum);
     return zeroExtend(byteEnNum) << 3;
 endfunction
 
@@ -2026,12 +2026,11 @@ endfunction
 
 function DataStream reverseStream(DataStream st);
     st.data = swapEndian(st.data);
-    // st.byteEn = swapEndianBit(st.byteEn);
     return st;
 endfunction
 
 function DataStreamEn reverseStreamEn(DataStreamEn st);
     st.data = swapEndian(st.data);
-    // st.byteEn = swapEndianBit(st.byteEn);
+    st.byteEn = swapEndianBit(st.byteEn);
     return st;
 endfunction

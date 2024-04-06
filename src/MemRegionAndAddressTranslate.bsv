@@ -481,7 +481,7 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
             dataStream  : dataStreamEn2DataStream(reverseStreamEn(inResp.dataStream))
         };
         readRespOutQ.enq(resp);
-        // $display("time=%0t: ", $time, "mkDmaReadReqAddrTranslator, forwardResponseDMA, resp=", fshow(resp));
+        $display("time=%0t: ", $time, "mkDmaReadReqAddrTranslator, forwardResponseDMA, resp=", fshow(resp), ", origin resp = ", fshow(inResp));
     endrule
 
 

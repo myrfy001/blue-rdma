@@ -478,7 +478,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                     isFirst: data.isFirst
                 });
                 udpRxStreamBufQ.enq(tuple2(outData, False));
-                $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData));
+                $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData), ", origin data = ", fshow(data));
 
                 if (!data.isLast) begin
                     isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRdmaData;
@@ -495,7 +495,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                     isFirst: data.isFirst
                 });
                 udpRxStreamBufQ.enq(tuple2(outData, True));
-                $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData));
+                $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData), ", origin data = ", fshow(data));
 
                 if (!data.isLast) begin
                     isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRawData;
@@ -512,7 +512,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isFirst: data.isFirst
             });
             udpRxStreamBufQ.enq(tuple2(outData, False));
-            $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData));
+            $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData), ", origin data = ", fshow(data));
             if (data.isLast) begin
                 isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
             end
@@ -527,7 +527,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isFirst: data.isFirst
             });
             udpRxStreamBufQ.enq(tuple2(outData, True));
-            $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData));
+            $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData), ", origin data = ", fshow(data));
             if (data.isLast) begin
                 isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
             end
@@ -545,13 +545,3 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     interface csrWriteSrv = rdma.csrWriteSrv;
     interface csrReadSrv = rdma.csrReadSrv;
 endmodule
-
-function Bit#(width) swapEndian(Bit#(width) data) provisos(Mul#(8, byteNum, width));
-    Vector#(byteNum, Bit#(BYTE_WIDTH)) dataVec = unpack(data);
-    return pack(reverse(dataVec));
-endfunction
-
-function Bit#(width) swapEndianBit(Bit#(width) data) provisos(Mul#(1, byteNum, width));
-    Vector#(byteNum, Bit#(1)) dataVec = unpack(data);
-    return pack(reverse(dataVec));
-endfunction

@@ -570,7 +570,8 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         payloadPktLenCalcQ.enq(tuple5(
             streamFragMeta, fragLen, fragLenWithOutPad, isByteEnNonZero, isByteEnAllOne
         ));
-        // $display("time=%0t: 5th stage calcFraglen", $time);
+        $display("time=%0t: 5th stage calcFraglen", $time, 
+            ", streamFragMeta=", fshow(streamFragMeta));
     endrule
 
     rule calcPktLen;

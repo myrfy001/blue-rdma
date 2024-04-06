@@ -51,6 +51,7 @@ typedef TDiv#(HEADER_MAX_BYTE_LENGTH, DATA_BUS_BYTE_WIDTH) HEADER_MAX_FRAG_NUM; 
 typedef TMul#(DATA_BUS_WIDTH, HEADER_MAX_FRAG_NUM)         HEADER_MAX_DATA_WIDTH; // 512
 typedef TMul#(DATA_BUS_BYTE_WIDTH, HEADER_MAX_FRAG_NUM)    HEADER_MAX_BYTE_EN_WIDTH; // 64
 typedef TLog#(TAdd#(1, HEADER_MAX_BYTE_EN_WIDTH))          HEADER_MAX_BYTE_NUM_WIDTH; // 7
+typedef TLog#(TAdd#(1, HEADER_MAX_DATA_WIDTH))             HEADER_MAX_BIT_NUM_WIDTH;  // 10
 typedef TLog#(TAdd#(1, HEADER_MAX_FRAG_NUM))               HEADER_FRAG_NUM_WIDTH; // 2 (bus 256b), 1 (bus 512b)
 
 typedef TLog#(MAX_PMTU)                      MAX_PMTU_WIDTH; // 12
@@ -98,7 +99,7 @@ typedef Bit#(SGE_NUM_WIDTH) NumSGE;
 typedef Bit#(HEADER_MAX_DATA_WIDTH)           HeaderData;
 typedef Bit#(HEADER_MAX_BYTE_EN_WIDTH)        HeaderByteEn;
 typedef Bit#(HEADER_MAX_BYTE_NUM_WIDTH)       HeaderByteNum;
-typedef Bit#(TAdd#(1, HEADER_MAX_DATA_WIDTH)) HeaderBitNum;
+typedef Bit#(HEADER_MAX_BIT_NUM_WIDTH)        HeaderBitNum;
 typedef Bit#(HEADER_FRAG_NUM_WIDTH)           HeaderFragNum;
 
 typedef Bit#(DATA_BUS_BIT_NUM_WIDTH)  BusBitWidthMask; // 8
@@ -117,21 +118,15 @@ typedef TSub#(TExp#(DATA_BUS_BYTE_NUM_WIDTH), 1) ZERO_BASED_BYTE_NUM_MAX; // 31
 
 typedef Bit#(TLog#(HEADER_MAX_BYTE_EN_WIDTH)) ZeroBasedHeaderByteNum; // 6
 
-// typedef Bit#(TLog#(TAdd#(1, MAX_QP_WR)))        PendingReqCnt;
-// typedef Bit#(TLog#(TAdd#(1, MAX_QP_RD_ATOM)))   PendingReadAtomicReqCnt;
-// typedef Bit#(PENDING_READ_ATOMIC_REQ_CNT_WIDTH) PendingReadAtomicReqCnt;
 typedef Bit#(QP_CAP_CNT_WIDTH) PendingReqCnt;
 typedef Bit#(QP_CAP_CNT_WIDTH) InlineDataSize;
 typedef Bit#(QP_CAP_CNT_WIDTH) ScatterGatherElemCnt;
 
-// typedef Bit#(PMTU_VALUE_MAX_WIDTH) PmtuValueWidth;
 typedef Bit#(MAX_PMTU_WIDTH)       ResiduePMTU;
 typedef Bit#(TOTAL_FRAG_NUM_WIDTH) TotalFragNum;
 typedef Bit#(PMTU_FRAG_NUM_WIDTH)  PktFragNum;
 typedef Bit#(PKT_NUM_WIDTH)        PktNum;
 typedef Bit#(PKT_LEN_WIDTH)        PktLen;
-
-// typedef Bit#(WR_ID_WIDTH)     WorkReqID;  // TODO: remove it
 
 typedef Bit#(RETRY_CNT_WIDTH) RetryCnt;
 typedef Bit#(TIMER_WIDTH)     TimeOutTimer;
