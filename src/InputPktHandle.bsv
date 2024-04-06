@@ -571,7 +571,8 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             streamFragMeta, fragLen, fragLenWithOutPad, isByteEnNonZero, isByteEnAllOne
         ));
         $display("time=%0t: 5th stage calcFraglen", $time, 
-            ", streamFragMeta=", fshow(streamFragMeta));
+            ", streamFragMeta=", fshow(streamFragMeta),
+            ", ");
     endrule
 
     rule calcPktLen;
@@ -703,6 +704,9 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             let isMidPkt        = pktLenCheckInfo.isMidPkt;
             let pktStatus       = PKT_ST_VALID;
 
+            // fix byteNum to prevent dma write access touch unrelated bytes.
+            streamFragMeta.byteNum = streamFragMeta.byteNum - zeroExtend(pktLenCheckInfo.padCnt);
+
             if (!rdmaHeader.headerMetaData.isEmptyHeader) begin
                 if (pktValid) begin
                     pktValid =  (isFirstOrMidPkt && !isPktLenGtPMTU) ||
@@ -797,7 +801,7 @@ module mkReceivedStreamFragStorage(ReceivedStreamFragStorage);
     BRAM_Configure cfg = defaultValue;
     BRAM2Port#(InputStreamFragBufferIdxWithoutGuard, DATA) bramBuffer <- mkBRAM2Server (cfg);
     Reg#(InputStreamFragBufferIdx) idxGenerator <- mkReg(0);
-    Reg#(InputStreamFragBufferIdx) lastConsumeIdx <- mkReg(0);
+    Reg#(InputStreamFragBufferIdx) lastConsumeIdxReg <- mkReg(0);
 
 
     rule handleInsertReq;
@@ -814,22 +818,22 @@ module mkReceivedStreamFragStorage(ReceivedStreamFragStorage);
 
         // if the substruct result's highest bit is one, the overflow
         immAssert(
-            ((idxGenerator - lastConsumeIdx) >> valueOf(INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH)) == 0,
+            ((idxGenerator - lastConsumeIdxReg) >> valueOf(INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH)) == 0,
             "receive data fragment buf overfllow @ mkReceivedStreamFragStorage",
             $format(
-                "idxGenerator=", fshow(idxGenerator), " lastConsumeIdx=", fshow(lastConsumeIdx)
+                "idxGenerator=", fshow(idxGenerator), " lastConsumeIdxReg=", fshow(lastConsumeIdxReg)
             )
         );
 
         $display(
             "time=%0t:", $time, "rx frag buffer new input packet, idxGenerator=", fshow(idxGenerator),
-            " lastConsumeIdx=", fshow(lastConsumeIdx) 
+            " lastConsumeIdxReg=", fshow(lastConsumeIdxReg) 
         );
     endrule
 
     rule handleReadReq;
         let {addr, isOnlyUpadteFragBufLastConsumeIndex} <- readFragSrvInst.getReq;
-        lastConsumeIdx <= addr;
+        lastConsumeIdxReg <= addr;
         if (!isOnlyUpadteFragBufLastConsumeIndex) begin
             bramBuffer.portB.request.put(BRAMRequest{
                 write: False,
@@ -840,8 +844,8 @@ module mkReceivedStreamFragStorage(ReceivedStreamFragStorage);
         end
 
         $display(
-            "time=%0t:", $time, "rx frag buffer new output packet,  lastConsumeIdx=", 
-            fshow(lastConsumeIdx) , " isOnlyUpadteFragBufLastConsumeIndex=", fshow(isOnlyUpadteFragBufLastConsumeIndex)
+            "time=%0t:", $time, " rx frag buffer new output packet,  lastConsumeIdxReg=", 
+            fshow(lastConsumeIdxReg) , " isOnlyUpadteFragBufLastConsumeIndex=", fshow(isOnlyUpadteFragBufLastConsumeIndex)
         );
 
     endrule

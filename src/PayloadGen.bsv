@@ -367,7 +367,7 @@ function DataStream leftShiftAndMergeFragData(
     ShiftByteNum leftShiftByteNum
 );
     let resultFrag    = preFrag;
-    let {outByteNum, isByteSumOverflow} = satAddByteNum(preFrag.byteNum, curFrag.byteNum);
+    let {outByteNum, isByteSumOverflow} = satAddTwoValidByteNum(preFrag.byteNum, curFrag.byteNum);
 
     resultFrag.byteNum = outByteNum;
     resultFrag.data   = truncateLSB({ preFrag.data, curFrag.data } << getFragEnBitNumByByteEnNum(unpack(zeroExtend(leftShiftByteNum))));
@@ -781,16 +781,8 @@ module mkDmaReadCntrl#(
         );
 
         let mergedLastPktLastFragValidByteNum =
-            calcLastFragValidByteNum(sge.len);
-        immAssert(
-            !isZero(mergedLastPktLastFragValidByteNum),
-            "mergedLastPktLastFragValidByteNum assertion @ mkDmaReadCntrl",
-            $format(
-                "mergedLastPktLastFragValidByteNum=%0d", mergedLastPktLastFragValidByteNum,
-                " should not be zero when sge.len=%0d", sge.len,
-                " and sglIdxReg=%0d", sglIdxReg
-            )
-        );
+            calcLastFragValidByteNum(sge.len-1);
+        
 `ifdef SUPPORT_SGL
         let sgeMergedMetaData = MergedMetaDataSGE {
             lastFragValidByteNum: mergedLastPktLastFragValidByteNum,
@@ -1090,8 +1082,8 @@ module mkMergePayloadEachSGE#(
         let sgePktMetaData = sgePktMetaDataPipeIn.first;
         sgePktMetaDataPipeIn.deq;
 
-        let firstPktLastFragValidByteNum = calcLastFragValidByteNum(sgePktMetaData.firstPktLen);
-        let lastPktLastFragValidByteNum  = calcLastFragValidByteNum(sgePktMetaData.lastPktLen);
+        let firstPktLastFragValidByteNum = calcLastFragValidByteNum(sgePktMetaData.firstPktLen-1);
+        let lastPktLastFragValidByteNum  = calcLastFragValidByteNum(sgePktMetaData.lastPktLen-1);
 
         let firstPktLastFragInvalidByteNum = calcFragInvalidByteNum(firstPktLastFragValidByteNum);
 
@@ -2400,9 +2392,9 @@ module mkPayloadGenerator#(
         let isZeroPayloadLen = adjustTotalPayloadMetaData.isZeroPayloadLen;
         let shouldAddPadding = adjustTotalPayloadMetaData.shouldAddPadding;
 
-        let origLastFragValidByteNum     = calcLastFragValidByteNum(totalLen);
-        let firstPktLastFragValidByteNum = calcLastFragValidByteNum(firstPktLen);
-        let lastPktLastFragValidByteNum  = calcLastFragValidByteNum(lastPktLen);
+        let origLastFragValidByteNum     = calcLastFragValidByteNum(totalLen-1);
+        let firstPktLastFragValidByteNum = calcLastFragValidByteNum(firstPktLen-1);
+        let lastPktLastFragValidByteNum  = calcLastFragValidByteNum(lastPktLen-1);
         let firstPktFragNum = calcFragNumByPktLen(firstPktLen);
         let firstPktPadCnt  = calcPadCnt(firstPktLen);
         let lastPktPadCnt   = calcPadCnt(lastPktLen);
@@ -2434,21 +2426,6 @@ module mkPayloadGenerator#(
         };
         if (!isZeroPayloadLen) begin
             adjustedTotalPayloadMetaDataQ.enq(adjustedTotalPayloadMetaData);
-
-            immAssert(
-                !isZero(origLastFragValidByteNum)     &&
-                !isZero(firstPktLastFragValidByteNum) &&
-                !isZero(lastPktLastFragValidByteNum),
-                "lastFragValidByteNum assertion @ mkPayloadGenerator",
-                $format(
-                    "origLastFragValidByteNum=%0d", origLastFragValidByteNum,
-                    ", firstPktLastFragValidByteNum=%0d", firstPktLastFragValidByteNum,
-                    ", and lastPktLastFragValidByteNum=%0d", lastPktLastFragValidByteNum,
-                    " should not be zero, when totalLen=%0d", totalLen,
-                    ", firstPktLen=%0d", firstPktLen,
-                    " and lastPktLen=%0d", lastPktLen
-                )
-            );
         end
 
         let tmpPayloadGenRespData = TmpPayloadGenRespDataStep1 {
@@ -2647,7 +2624,7 @@ module mkPayloadGenerator#(
             adjustedPayloadPipeOut.deq;
 
             if (curPayloadFrag.isFirst) begin
-                BusByteWidthMask maskedPacketLen = truncate(payloadGenResp.pktLen + zeroExtend(payloadGenResp.padCnt));
+                BusByteWidthMask maskedPacketLen = truncate(payloadGenResp.pktLen + zeroExtend(payloadGenResp.padCnt) - 1);
                 let lastFragValidByteNum = zeroExtend(maskedPacketLen);
                 if (isZero(maskedPacketLen)) begin
                     lastFragValidByteNum = fromInteger(valueOf(ZERO_BASED_BYTE_NUM_MAX));

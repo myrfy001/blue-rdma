@@ -380,13 +380,14 @@ module mkBluerdmaDmaProxyForRQ(BluerdmaDmaProxyForRQ);
     rule forwardReq;
         blueSideReqQ.deq;
         let inReq = blueSideReqQ.first;
-        userLogicSideReqQ.enq(
-            UserLogicDmaC2hReq{
-                addr: inReq.metaData.startAddr,
-                len: zeroExtend(pack(inReq.metaData.len)),
-                dataStream: dataStream2DataStreamEn(reverseStream(inReq.dataStream))
-            }
-        );
+        let outReq = UserLogicDmaC2hReq{
+            addr: inReq.metaData.startAddr,
+            len: zeroExtend(pack(inReq.metaData.len)),
+            dataStream: dataStream2DataStreamEn(reverseStream(inReq.dataStream))
+        };
+        outReq.dataStream.byteEn = swapEndianBit(outReq.dataStream.byteEn);
+
+        userLogicSideReqQ.enq(outReq);
     endrule
 
     rule forwardResp;
@@ -833,7 +834,7 @@ module mkFakeXdma(Integer id, Clock cmacRxTxClk, Reset cmacRxTxRst, FakeXdma ifc
                 address: unpack(truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))))),
                 datain: outData
             });
-            $display("time=%0t: ", $time, "MockBram write address 1:", fshow(curAddr));
+            $display("time=%0t: ", $time, "MockBram write address 1:", fshow(curAddr), ", outData=", fshow(outData), ", byteEn=", fshow(byteEn));
 
             currentAddrC2hReg <= curAddr + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
             prevMemWriteReqReg <= tuple2(stream.data, FakeXdmaMemWriteBeatExtraInfo{isFirst: stream.isFirst, isLast: stream.isLast, byteEn: stream.byteEn});
@@ -851,7 +852,7 @@ module mkFakeXdma(Integer id, Clock cmacRxTxClk, Reset cmacRxTxRst, FakeXdma ifc
                 address: unpack(truncate(curAddr >> fromInteger(valueOf(TLog#(SizeOf#(ByteEnWide)))))),
                 datain: outData
             });
-            $display("time=%0t: ", $time, "MockBram write address 2:", fshow(curAddr));
+            $display("time=%0t: ", $time, "MockBram write address 2:", fshow(curAddr), ", outData=", fshow(outData), ", byteEn=", fshow(byteEn));
 
             currentAddrC2hReg <= currentAddrC2hReg + fromInteger(valueOf(FAKE_XDMA_BEAT_DATA_BYTE_WIDTH));
             prevMemWriteReqReg <= tuple2(stream.data, FakeXdmaMemWriteBeatExtraInfo{isFirst: stream.isFirst, isLast: stream.isLast, byteEn: stream.byteEn});

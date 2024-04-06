@@ -2,7 +2,7 @@ from mock_host import *
 from test_case_common import *
 
 
-PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_4096
+PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_256
 
 RECV_SIDE_IP = NIC_CONFIG_IPADDR
 RECE_SIDE_MAC = NIC_CONFIG_MACADDR
@@ -105,7 +105,7 @@ def test_case():
     send_queue.sync_pointers()
     report = meta_report_queue.deq_blocking()
 
-    if src_mem[0] != dst_mem[0]:
+    if src_mem[0] != dst_mem[0] or src_mem[1] == dst_mem[1]:
         print("Error: Error at single byte write test")
     else:
         print("PASS-1")
@@ -185,6 +185,44 @@ def test_case():
               f"expected={hex(sgl[0].F_LADDR)}")
     else:
         print("PASS-4")
+
+    # ================================
+    # 4th case, write 1024 byte
+    # ================================
+    sgl = [
+        SendQueueReqDescFragSGE(
+            F_LKEY=SEND_SIDE_KEY, F_LEN=32, F_LADDR=REQ_SIDE_VA_ADDR),
+    ]
+
+    send_queue.put_work_request(
+        opcode=WorkReqOpCode.IBV_WR_RDMA_WRITE,
+        is_first=True,
+        is_last=True,
+        sgl=sgl,
+        r_va=RESP_SIDE_VA_ADDR,
+        r_key=RECV_SIDE_KEY,
+        r_ip=RECV_SIDE_IP,
+        r_mac=RECE_SIDE_MAC,
+        dqpn=RECV_SIDE_QPN,
+        psn=SEND_SIDE_PSN,
+        pmtu=PMTU_VALUE_FOR_TEST,
+    )
+
+    send_queue.sync_pointers()
+    report = meta_report_queue.deq_blocking()
+
+    if src_mem[0:1024] != dst_mem[0:1024]:
+        print("Error: Error at 1024 byte write test")
+        for idx in range(len(src_mem[0:64])):
+            if src_mem[idx] != dst_mem[idx]:
+                print("id:", idx,
+                      "src: ", hex(src_mem[idx]),
+                      "dst: ", hex(dst_mem[idx])
+                      )
+    else:
+        print("PASS-5")
+
+    dst_mem[0:1024] = b'\0' * 1024
 
     mock_nic.stop()
 

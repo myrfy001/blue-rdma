@@ -365,7 +365,7 @@ function OneBasedByteInvalidNum calcFragInvalidByteNum(
 endfunction
 
 
-function Tuple2#(ZeroBasedByteValidNum, Bool) satAddByteNum(ZeroBasedByteValidNum v1, ZeroBasedByteValidNum v2);
+function Tuple2#(ZeroBasedByteValidNum, Bool) satAddTwoValidByteNum(ZeroBasedByteValidNum v1, ZeroBasedByteValidNum v2);
     let sumWithCarryBit = {1'b0, pack(v1)};
     sumWithCarryBit = sumWithCarryBit + zeroExtend(pack(v2)) + 1;
     Bool isOverflow = msb(sumWithCarryBit) == 1;
@@ -376,6 +376,14 @@ endfunction
 function Tuple2#(ZeroBasedByteValidNum, Bool) satSubByteNum(ZeroBasedByteValidNum v1, OneBasedByteInvalidNum v2);
     let sumWithCarryBit = {1'b0, pack(v1)};
     sumWithCarryBit = sumWithCarryBit - zeroExtend(pack(v2));
+    Bool isOverflow = msb(sumWithCarryBit) == 1;
+    ZeroBasedByteValidNum ret = isOverflow ? 0 : truncate(sumWithCarryBit);
+    return tuple2(ret, isOverflow);
+endfunction
+
+function Tuple2#(ZeroBasedByteValidNum, Bool) satAddValidAndInvalidByteNum(ZeroBasedByteValidNum v1, OneBasedByteInvalidNum v2);
+    let sumWithCarryBit = {1'b0, pack(v1)};
+    sumWithCarryBit = sumWithCarryBit + zeroExtend(pack(v2));
     Bool isOverflow = msb(sumWithCarryBit) == 1;
     ZeroBasedByteValidNum ret = isOverflow ? 0 : truncate(sumWithCarryBit);
     return tuple2(ret, isOverflow);

@@ -305,6 +305,11 @@ module mkPrependHeader2PipeOut#(
         let headerFragNum = headerMetaData.headerFragNum;
         let headerLastFragValidByteNum = headerMetaData.lastFragValidByteNum;
         let headerLastFragInvalidByteNum = calcFragInvalidByteNum(headerLastFragValidByteNum);
+
+        $display("time=%0t: mkPrependHeader2PipeOut preCalculateHeaderMetaData", $time,
+                    ", headerLastFragValidByteNum=", fshow(headerLastFragValidByteNum),
+                    ", headerLastFragInvalidByteNum=", fshow(headerLastFragInvalidByteNum));
+
         if (!headerMetaData.isEmptyHeader) begin
             immAssert(
                 !isZero(headerMetaData.headerLen),
@@ -330,7 +335,15 @@ module mkPrependHeader2PipeOut#(
         if (headerHasPayload) begin
             let dataMeta = payloadMetaDataPipeIn.first;
             payloadMetaDataPipeIn.deq;
-            if (!isValidPlusInvalidByteNumOverflow(headerLastFragInvalidByteNum, dataMeta.lastFragValidByteNum)) begin
+
+            $display("time=%0t: mkPrependHeader2PipeOut preCalculateHeaderMetaData", $time,
+                ", headerLastFragInvalidByteNum=", fshow(headerLastFragInvalidByteNum),
+                ", dataMeta.lastFragValidByteNum=", fshow(dataMeta.lastFragValidByteNum)
+                );
+
+            let {tmpByteNum, isByteSumOverflow} = satAddTwoValidByteNum(headerLastFragValidByteNum, dataMeta.lastFragValidByteNum);
+
+            if (!isByteSumOverflow) begin
                 noExtraLastFrag = True;
             end
         end
@@ -339,11 +352,12 @@ module mkPrependHeader2PipeOut#(
         if (curHeaderDataStreamFrag.isFirst) begin
             calculatedMetasAfterHeaderRightShiftQ.enq(tuple5(headerLastFragValidByteNum,
                 headerLastFragInvalidByteNum, headerHasPayload, isEmptyHeader, noExtraLastFrag));
-            $display("time=%0t: mkPrependHeader2PipeOut preCalculateHeaderMetaData", $time,
-                "pass header at first beat");
+            $display("time=%0t: mkPrependHeader2PipeOut preCalculateHeaderMetaData pass header at first beat", $time);
         end
         if (curHeaderDataStreamFrag.isLast) begin
             headerMetaDataPipeIn.deq;
+            $display("time=%0t: mkPrependHeader2PipeOut preCalculateHeaderMetaData handle last beat", $time,
+                ", non-shifted stream=", fshow(outputDataStream));
             if (headerHasPayload) begin
                 outputDataStream.data = rightShiftHeaderLastFragData;
             end   
@@ -435,6 +449,12 @@ module mkPrependHeader2PipeOut#(
         
         preDataStreamReg <= firstDataStreamFrag;
         let fragToOutput = ?;
+
+        $display("time=%0t: mkPrependHeader2PipeOut outputMixed", $time,
+            ", noExtraLastFragReg=", fshow(noExtraLastFragReg),
+            ", isMixOutputHeaderOutputStageReg=", fshow(isMixOutputHeaderOutputStageReg)
+        );
+
         if (isMixOutputHeaderOutputStageReg) begin
             let headerFrag = rightShiftedHeaderStreamQ.first;
             rightShiftedHeaderStreamQ.deq;
@@ -449,6 +469,7 @@ module mkPrependHeader2PipeOut#(
                 end
                 else begin
                     dispatchNextRule;
+                    $display("time=%0t: mkPrependHeader2PipeOut outputMixed 4444444444444444444", $time);
                 end
 
                 $display("time=%0t: mkPrependHeader2PipeOut outputMixed", $time,
@@ -459,8 +480,9 @@ module mkPrependHeader2PipeOut#(
                      ", headerLastFragValidByteNumReg=", fshow(headerLastFragValidByteNumReg)
                      );
 
-                let tmpData = { headerFrag.data, firstDataStreamFrag.data } >> getFragEnBitNumByByteEnNum(zeroExtend(headerLastFragValidByteNumReg));
-                let {tmpByteNum, isByteSumOverflow} = satAddByteNum(headerLastFragValidByteNumReg, firstDataStreamFrag.byteNum);
+                // shift additional BYTE_WIDTH since valid num is zero based.
+                let tmpData = ({ headerFrag.data, firstDataStreamFrag.data } >> valueOf(BYTE_WIDTH)) >> getFragEnBitNumByByteEnNum(zeroExtend(headerLastFragValidByteNumReg));
+                let {tmpByteNum, isByteSumOverflow} = satAddTwoValidByteNum(headerLastFragValidByteNumReg, firstDataStreamFrag.byteNum);
 
                 fragToOutput = DataStream {
                     data: truncate(tmpData),
@@ -475,8 +497,10 @@ module mkPrependHeader2PipeOut#(
             end
         end
         else begin
-            let tmpData = { preDataStreamReg.data, firstDataStreamFrag.data } >> getFragEnBitNumByByteEnNum(zeroExtend(headerLastFragValidByteNumReg));
-            let {tmpByteNum, isByteSumOverflow} = satAddByteNum(firstDataStreamFrag.byteNum, headerLastFragValidByteNumReg);
+
+            // shift additional BYTE_WIDTH since valid num is zero based.
+            let tmpData = ({ preDataStreamReg.data, firstDataStreamFrag.data } >> valueOf(BYTE_WIDTH)) >> getFragEnBitNumByByteEnNum(zeroExtend(headerLastFragValidByteNumReg));
+            let {tmpByteNum, isByteSumOverflow} = satAddTwoValidByteNum(firstDataStreamFrag.byteNum, headerLastFragValidByteNumReg);
 
             fragToOutput = DataStream {
                 data: truncate(tmpData),
@@ -486,10 +510,14 @@ module mkPrependHeader2PipeOut#(
             };
             dataPipeIn.deq;
 
+            $display("time=%0t: mkPrependHeader2PipeOut outputMixed 11111111111111111111111", $time);
+
             if (firstDataStreamFrag.isLast) begin
+                $display("time=%0t: mkPrependHeader2PipeOut outputMixed 22222222222222", $time);
                 isMixOutputHeaderOutputStageReg <= True;
                 fragToOutput.isLast = noExtraLastFragReg;
-                if (!noExtraLastFragReg) begin
+                if (noExtraLastFragReg) begin
+                    $display("time=%0t: mkPrependHeader2PipeOut outputMixed 3333333333333333333", $time);
                     dispatchNextRule;
                 end
                 else begin
@@ -500,7 +528,9 @@ module mkPrependHeader2PipeOut#(
 
         dataStreamOutQ.enq(fragToOutput);
         $display("time=%0t: mkPrependHeader2PipeOut outputMixed", $time,
-                     ", output stream=", fshow(fragToOutput));
+                 ", isMixOutputHeaderOutputStageReg=", fshow(isMixOutputHeaderOutputStageReg),
+                 ", noExtraLastFragReg=", fshow(noExtraLastFragReg),
+                 ", output stream=", fshow(fragToOutput));
     endrule
 
     rule extraLastFrag if (!clearAll && stageReg == STREAM_OUTPUT_EXTRA_LAST_FRAG_OUTPUT);
@@ -516,7 +546,9 @@ module mkPrependHeader2PipeOut#(
         dataStreamOutQ.enq(extraLastDataStream);
         dispatchNextRule;
         $display("time=%0t: mkPrependHeader2PipeOut extraLastFrag", $time,
-                     ", output stream=", fshow(extraLastDataStream));
+                    ", preDataStreamReg.byteNum=", fshow(preDataStreamReg.byteNum),
+                    ", headerLastFragInvalidByteNumReg=", fshow(headerLastFragInvalidByteNumReg),
+                    ", output stream=", fshow(extraLastDataStream));
         
     endrule
 
@@ -627,8 +659,9 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         // But this rule is hard to split into two rules.
         let isHeaderLastBeat = curHeaderFragCounter[0] == 1;
 
-        let leftShiftedPayloadData = inDataStreamFrag.data << getFragEnBitNumByByteEnNum(zeroExtend(headerLastFragValidByteNum));
-        let leftShiftedPayloadByteNum = inDataStreamFrag.byteNum - headerLastFragValidByteNum;
+        // shift additional BYTE_WIDTH since valid num is zero based.
+        let leftShiftedPayloadData = inDataStreamFrag.data << valueOf(BYTE_WIDTH) << getFragEnBitNumByByteEnNum(zeroExtend(headerLastFragValidByteNum));
+        let leftShiftedPayloadByteNum = inDataStreamFrag.byteNum - headerLastFragValidByteNum - 1;
 
         if (!isHeaderLastBeat) begin // case 1
             immAssert(
@@ -711,7 +744,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         isFirstDataFragReg <= False;
         
         let outData   = { preDataStreamReg.data, curDataStreamFrag.data } >> getFragEnBitNumByByteEnNum(zeroExtend(headerLastFragInvalidByteNum));
-        let {outByteNum, isByteSumOverflow} = satAddByteNum(curDataStreamFrag.byteNum, headerLastFragInvalidByteNum);
+        let {outByteNum, isByteSumOverflow} = satAddValidAndInvalidByteNum(curDataStreamFrag.byteNum, headerLastFragInvalidByteNum);
         let noExtraLastFrag = !isByteSumOverflow;
 
         let isLast = curDataStreamFrag.isLast && noExtraLastFrag;
@@ -760,7 +793,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
             isEmpty: False
         };
 
-        // $display("time=%0t: extraLastDataStream=", $time, fshow(extraLastDataStream));
+        $display("time=%0t: extraLastDataStream=", $time, fshow(extraLastDataStream));
         payloadDataStreamFragPreOutQ.enq(extraLastDataStream);
         payloadStreamFragStorageInsertCltInst.putReq(leftShiftData);
 

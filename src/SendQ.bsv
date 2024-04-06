@@ -219,12 +219,12 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
                     IBV_QPT_RC,
                     IBV_QPT_UC: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(reth)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     IBV_QPT_XRC_SEND: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)), pack(unwrapMaybe(reth)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     default: tagged Invalid;
@@ -238,8 +238,8 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(reth)), pack(unwrapMaybe(immDt))}) :
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(reth))}),
                         isOnlyReqPkt ?
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH)) :
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH)),
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH) - 1) :
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     IBV_QPT_XRC_SEND: tagged Valid genPktHeaderInfo(
@@ -247,8 +247,8 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)), pack(unwrapMaybe(reth)), pack(unwrapMaybe(immDt)) }) :
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)), pack(unwrapMaybe(reth)) }),
                         isOnlyReqPkt ?
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH)) :
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH)),
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH) - 1) :
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     default: tagged Invalid;
@@ -259,17 +259,17 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
                     IBV_QPT_RC,
                     IBV_QPT_UC: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB(pack(bth)),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     IBV_QPT_UD: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(deth)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(DETH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(DETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     IBV_QPT_XRC_SEND: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     default: tagged Invalid;
@@ -283,14 +283,14 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(immDt)) }) :
                             zeroExtendLSB(pack(bth)),
                         isOnlyReqPkt ?
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH)) :
-                            fromInteger(valueOf(BTH_BYTE_WIDTH)),
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH) - 1) :
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     IBV_QPT_UD: tagged Valid genPktHeaderInfo(
                         // UD always has only pkt
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(deth)), pack(unwrapMaybe(immDt)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(DETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(DETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     IBV_QPT_XRC_SEND: tagged Valid genPktHeaderInfo(
@@ -298,8 +298,8 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)), pack(unwrapMaybe(immDt)) }) :
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)) }),
                         isOnlyReqPkt ?
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH)) :
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH)),
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH) - 1) :
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     default: tagged Invalid;
@@ -312,8 +312,8 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(ieth)) }) :
                             zeroExtendLSB(pack(bth)),
                         isOnlyReqPkt ?
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(IETH_BYTE_WIDTH)) :
-                            fromInteger(valueOf(BTH_BYTE_WIDTH)),
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(IETH_BYTE_WIDTH) - 1) :
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     IBV_QPT_XRC_SEND: tagged Valid genPktHeaderInfo(
@@ -321,8 +321,8 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)), pack(unwrapMaybe(ieth)) }) :
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)) }),
                         isOnlyReqPkt ?
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(IETH_BYTE_WIDTH)) :
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH)),
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(IETH_BYTE_WIDTH) - 1) :
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     default: tagged Invalid;
@@ -332,12 +332,12 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
                 return case (wqe.qpType)
                     IBV_QPT_RC: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(reth)), pack(unwrapMaybe(leth)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) - 1),
                         False // Read requests have no payload
                     );
                     IBV_QPT_XRC_SEND: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)), pack(unwrapMaybe(reth)), pack(unwrapMaybe(leth)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) - 1),
                         False // Read requests have no payload
                     );
                     default: tagged Invalid;
@@ -348,12 +348,12 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
                 return case (wqe.qpType)
                     IBV_QPT_RC: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(atomicEth)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(ATOMIC_ETH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(ATOMIC_ETH_BYTE_WIDTH) - 1),
                         False // Atomic requests have no payload
                     );
                     IBV_QPT_XRC_SEND: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)), pack(unwrapMaybe(atomicEth)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(ATOMIC_ETH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(ATOMIC_ETH_BYTE_WIDTH) - 1),
                         False // Atomic requests have no payload
                     );
                     default: tagged Invalid;
@@ -365,7 +365,7 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
                     IBV_QPT_XRC_SEND,
                     IBV_QPT_XRC_RECV: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(reth)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     default         : tagged Invalid;
@@ -420,12 +420,12 @@ function Maybe#(PktHeaderInfo) genMiddleOrLastPktHeader(
                     IBV_QPT_RC,
                     IBV_QPT_UC: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(reth)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     IBV_QPT_XRC_SEND: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)), pack(unwrapMaybe(reth)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     default: tagged Invalid;
@@ -439,8 +439,8 @@ function Maybe#(PktHeaderInfo) genMiddleOrLastPktHeader(
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(reth)), pack(unwrapMaybe(immDt))}) :
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(reth)) }),
                         isLastReqPkt ?
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH)) :
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH)),
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH) - 1) :
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     IBV_QPT_XRC_SEND: tagged Valid genPktHeaderInfo(
@@ -448,8 +448,8 @@ function Maybe#(PktHeaderInfo) genMiddleOrLastPktHeader(
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)), pack(unwrapMaybe(reth)), pack(unwrapMaybe(immDt)) }) :
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)), pack(unwrapMaybe(reth)) }),
                         isLastReqPkt ?
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH)) :
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH)),
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH) - 1) :
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     default: tagged Invalid;
@@ -460,12 +460,12 @@ function Maybe#(PktHeaderInfo) genMiddleOrLastPktHeader(
                     IBV_QPT_RC,
                     IBV_QPT_UC: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB(pack(bth)),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     IBV_QPT_XRC_SEND: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     default: tagged Invalid;
@@ -479,8 +479,8 @@ function Maybe#(PktHeaderInfo) genMiddleOrLastPktHeader(
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(immDt)) }) :
                             zeroExtendLSB(pack(bth)),
                         isLastReqPkt ?
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH)) :
-                            fromInteger(valueOf(BTH_BYTE_WIDTH)),
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH) - 1) :
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     IBV_QPT_XRC_SEND: tagged Valid genPktHeaderInfo(
@@ -488,8 +488,8 @@ function Maybe#(PktHeaderInfo) genMiddleOrLastPktHeader(
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)), pack(unwrapMaybe(immDt)) }) :
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)) }),
                         isLastReqPkt ?
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH)) :
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH)),
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(IMM_DT_BYTE_WIDTH) - 1) :
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     default: tagged Invalid;
@@ -502,8 +502,8 @@ function Maybe#(PktHeaderInfo) genMiddleOrLastPktHeader(
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(ieth)) }) :
                             zeroExtendLSB(pack(bth)),
                         isLastReqPkt ?
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(IETH_BYTE_WIDTH)) :
-                            fromInteger(valueOf(BTH_BYTE_WIDTH)),
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(IETH_BYTE_WIDTH) - 1) :
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     IBV_QPT_XRC_SEND: tagged Valid genPktHeaderInfo(
@@ -511,8 +511,8 @@ function Maybe#(PktHeaderInfo) genMiddleOrLastPktHeader(
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)), pack(unwrapMaybe(ieth)) }) :
                             zeroExtendLSB({ pack(bth), pack(unwrapMaybe(xrceth)) }),
                         isLastReqPkt ?
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(IETH_BYTE_WIDTH)) :
-                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH)),
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) + valueOf(IETH_BYTE_WIDTH) - 1) :
+                            fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(XRCETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     default: tagged Invalid;
@@ -524,7 +524,7 @@ function Maybe#(PktHeaderInfo) genMiddleOrLastPktHeader(
                     IBV_QPT_XRC_SEND,
                     IBV_QPT_XRC_RECV: tagged Valid genPktHeaderInfo(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(reth)) }),
-                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH)),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH) - 1),
                         hasPayload
                     );
                     default         : tagged Invalid;
@@ -1056,7 +1056,7 @@ module mkSendQ#(
             let udpPktInfo = PktInfo4UDP {
                 macAddr : macAddr,
                 ipAddr  : ipAddr,
-                pktLen  : pktLenWithPadCnt + zeroExtend(headerLen),
+                pktLen  : pktLenWithPadCnt + zeroExtend(headerLen) + 1,
                 isRawPkt: isRawPkt
             };
 

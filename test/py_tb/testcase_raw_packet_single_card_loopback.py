@@ -98,6 +98,28 @@ def test_case():
     udp_layer = UDP(dport=1111, sport=2222)
 
     bytes_to_send = bytes(ip_layer/udp_layer/"mmmmmmmmmmmmmmmmmmmmmmmmmmmmm")
+
+    # 3#########################################
+
+    ip_header = IP(bytes_to_send)
+    print(ip_header)
+
+    # 打印IP包头信息
+    print("IP Header:")
+    print("Source IP:", ip_header.src)
+    print("Destination IP:", ip_header.dst)
+    print("Protocol:", ip_header.proto)
+
+    # 获取UDP包头
+    udp_header = UDP(bytes(ip_header.payload))
+
+    # 打印UDP包头信息
+    print("UDP Header:")
+    print("Source Port:", udp_header.sport)
+    print("Destination Port:", udp_header.dport)
+    print("Length:", udp_header.len)
+    # #####################################################
+
     print("bytes_to_send=", bytes_to_send)
     host_mem.buf[REQ_SIDE_VA_ADDR:REQ_SIDE_VA_ADDR +
                  len(bytes_to_send)] = bytes_to_send
