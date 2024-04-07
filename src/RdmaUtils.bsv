@@ -385,7 +385,7 @@ function Tuple2#(ZeroBasedByteValidNum, Bool) satAddValidAndInvalidByteNum(ZeroB
     let sumWithCarryBit = {1'b0, pack(v1)};
     sumWithCarryBit = sumWithCarryBit + zeroExtend(pack(v2));
     Bool isOverflow = msb(sumWithCarryBit) == 1;
-    ZeroBasedByteValidNum ret = isOverflow ? 0 : truncate(sumWithCarryBit);
+    ZeroBasedByteValidNum ret = isOverflow ? -1 : truncate(sumWithCarryBit);
     return tuple2(ret, isOverflow);
 endfunction
 

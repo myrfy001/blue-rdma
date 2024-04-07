@@ -562,7 +562,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         //     )
         // );
 
-        ByteEnBitNum fragLen = zeroExtend(streamFragMeta.byteNum) + 1;
+        ByteEnBitNum fragLen = streamFragMeta.isEmpty ? 0 : zeroExtend(streamFragMeta.byteNum) + 1;
         let isByteEnNonZero = !streamFragMeta.isEmpty;
         let isByteEnAllOne  = isAllOnesR(streamFragMeta.byteNum);
         ByteEnBitNum fragLenWithOutPad = fragLen - zeroExtend(bthPadCnt);
@@ -648,8 +648,6 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             ", pktLen=%0d, pktFragNum=%0d", pktLen, pktFragNum,
             ", isByteEnAllOne=", fshow(isByteEnAllOne),
             ", pktValid=", fshow(pktValid),
-            // ", payloadOutQ.notFull=", fshow(payloadOutQ.notFull),
-            // ", pktMetaDataOutQ.notFull=", fshow(pktMetaDataOutQ.notFull),
             ", DATA_STREAM_FRAG_BUF_SIZE=%0d", valueOf(DATA_STREAM_FRAG_BUF_SIZE),
             ", PKT_META_DATA_BUF_SIZE=%0d", valueOf(PKT_META_DATA_BUF_SIZE),
             ", streamFragMeta.byteNum=%h" , streamFragMeta.byteNum,
@@ -844,8 +842,10 @@ module mkReceivedStreamFragStorage(ReceivedStreamFragStorage);
         end
 
         $display(
-            "time=%0t:", $time, " rx frag buffer new output packet,  lastConsumeIdxReg=", 
-            fshow(lastConsumeIdxReg) , " isOnlyUpadteFragBufLastConsumeIndex=", fshow(isOnlyUpadteFragBufLastConsumeIndex)
+            "time=%0t:", $time, " rx frag buffer new output packet",
+            ", reqIdx=", fshow(addr),
+            ", lastConsumeIdxReg=", fshow(lastConsumeIdxReg),
+            ", isOnlyUpadteFragBufLastConsumeIndex=", fshow(isOnlyUpadteFragBufLastConsumeIndex)
         );
 
     endrule

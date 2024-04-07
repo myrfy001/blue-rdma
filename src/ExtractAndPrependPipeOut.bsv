@@ -703,7 +703,7 @@ module mkExtractHeaderFromDataStreamPipeOut#(
                     isEmpty: True
                 };
                 payloadDataStreamFragPreOutQ.enq(outDataStreamFragMeta);
-                payloadStreamFragStorageInsertCltInst.putReq(leftShiftedPayloadData);
+                // payloadStreamFragStorageInsertCltInst.putReq(leftShiftedPayloadData);
 
                 calculatedMetasQ.deq;  // move on to next packet
 
@@ -807,8 +807,10 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         let fragMeta = payloadDataStreamFragPreOutQ.first;
         payloadDataStreamFragPreOutQ.deq;
 
-        let bufIdx <- payloadStreamFragStorageInsertCltInst.getResp;
-        fragMeta.bufIdx = bufIdx;
+        if (!fragMeta.isEmpty) begin
+            let bufIdx <- payloadStreamFragStorageInsertCltInst.getResp;
+            fragMeta.bufIdx = bufIdx;
+        end
         payloadDataStreamFragOutQ.enq(fragMeta);
 
         $display(

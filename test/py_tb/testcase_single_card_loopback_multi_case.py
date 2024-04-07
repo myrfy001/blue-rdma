@@ -191,7 +191,7 @@ def test_case():
     # ================================
     sgl = [
         SendQueueReqDescFragSGE(
-            F_LKEY=SEND_SIDE_KEY, F_LEN=32, F_LADDR=REQ_SIDE_VA_ADDR),
+            F_LKEY=SEND_SIDE_KEY, F_LEN=1024, F_LADDR=REQ_SIDE_VA_ADDR),
     ]
 
     send_queue.put_work_request(

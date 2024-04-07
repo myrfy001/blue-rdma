@@ -227,6 +227,10 @@ module mkPayloadConsumer(PayloadConsumer);
             tagged WriteReqInfo .writeReqInfo: begin
                 let payloadFragMeta = payloadBufPipeOut.first;
                 payloadBufPipeOut.deq;
+                $display(
+                    "time=%0t: consumePayload", $time,
+                    ", payloadFragMeta=", fshow(payloadFragMeta)
+                );
                 if (isFragNumLessOrEqOne) begin
                     checkIsOnlyPayloadFragment(payloadFragMeta, consumeReq.consumeInfo);
                     $display(

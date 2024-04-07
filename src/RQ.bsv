@@ -259,7 +259,8 @@ module mkRQ(RQ ifc);
 
         Bool needIssueDMARequest = (
             needWaitForPGTResponse          && 
-            reqStatus == RDMA_REQ_ST_NORMAL
+            reqStatus == RDMA_REQ_ST_NORMAL &&
+            !isZeroPayloadLen
         );
 
         if (needIssueDMARequest) begin
@@ -287,6 +288,7 @@ module mkRQ(RQ ifc);
         $display("time=%0t: ", $time, "recvAddrTransRespAndIssueDMA",
                  ", needWaitForPGTResponse=",  fshow(needWaitForPGTResponse),
                  ", needIssueDMARequest=",  fshow(needIssueDMARequest),
+                 ", isZeroPayloadLen=", fshow(isZeroPayloadLen),
                  ", pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc)
         );
     endrule
