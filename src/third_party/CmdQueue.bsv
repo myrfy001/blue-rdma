@@ -82,13 +82,13 @@ module mkCommandQueueController(CommandQueueController ifc);
             end
             CmdQueueOpcodeSetNetworkParam: begin
                 CmdQueueReqDescSetNetworkParam reqDesc = unpack(rawDesc);
-                setNetworkParamReqQ.enq(UdpConfig{
+                let udpConfig = UdpConfig{
                         macAddr :   reqDesc.macAddr,
                         ipAddr  :   reqDesc.ipAddr,
                         netMask :   reqDesc.netMask,
                         gateWay :   reqDesc.gateWay
-                });
-
+                };
+                setNetworkParamReqQ.enq(udpConfig);
                 CmdQueueRespDescOnlyCommonHeader respDesc = unpack(pack(reqDesc));
                 respDesc.commonHeader.isSuccessOrNeedSignalCplt = True;
                 respDesc.commonHeader.valid = True;

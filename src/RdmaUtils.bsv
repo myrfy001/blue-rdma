@@ -1009,10 +1009,6 @@ function PktLen pktLenAddFragLen(PktLen pktLen, ByteEnBitNum fragLen);
         { higherPartPktLen, lowerPartFragLen };
 endfunction
 
-function Bool checkAddrAndLenWithinRange(ADDR laddr, Length dlen, ADDR raddr, Length rlen);
-    return laddr >= raddr && (laddr + zeroExtend(dlen) <= raddr + zeroExtend(rlen));
-endfunction
-
 function Maybe#(TransType) qpType2TransType(TypeQP qpt);
     return case (qpt)
         IBV_QPT_RC        : tagged Valid TRANS_TYPE_RC;

@@ -334,7 +334,7 @@ module mkMrAndPgtManager(MrAndPgtManager);
                 // $display("addr translate modify second stage finished.");
             end 
             else begin
-                curBeatOfDataReg <= dataStreamEn2DataStream(dmaReadRespQ.first.dataStream);
+                curBeatOfDataReg <= dataStreamEn2DataStream(reverseStreamEn(dmaReadRespQ.first.dataStream));
                 dmaReadRespQ.deq;
             end
         end 

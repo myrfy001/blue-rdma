@@ -12,6 +12,20 @@ import QPContext :: *;
 
 import UserLogicTypes :: *;
 
+typedef struct {
+    RdmaPktMetaDataAndQPC   pktMetaDataAndQpc;
+    RdmaReqStatus           reqStatus;
+    Bool                    rdmaOpCodeNeedQueryMrTable;
+    Bool                    lowerAddrBoundOk;
+    ADDR                    mrUpperAddrBound;
+    ADDR                    reqUpperAddrBound;
+    Bool                    isMrValid;
+    Bool                    needWaitForPGTResponse;
+    Bool                    isMrKeyMatch;
+    Bool                    isAccTypeMatch;
+} ReqStatusCheckStep3PipeInfo deriving(Bits, FShow);
+
+
 interface RQ;
     interface Put#(RdmaPktMetaDataAndQPC) pktMetaDataPipeIn;
     interface MrTableQueryClt mrTableQueryClt;
@@ -32,11 +46,13 @@ module mkRQ(RQ ifc);
     ExpectedPsnManager expectedPsnManager <- mkExpectedPsnManager;
 
     // Pipeline FIFOs
-    FIFOF#(Tuple2#(RdmaPktMetaDataAndQPC, Bool))                                                         reqStatusCheckStep1PipeQ <- mkSizedFIFOF(5);
-    FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, FlagsType#(MemAccessTypeFlag), RETH))   reqStatusCheckStep2PipeQ   <- mkFIFOF;
-    FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool))                                        getPGTQueryRespPipeQ <- mkSizedFIFOF(5);
-    FIFOF#(Tuple3#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool))                                           psnContinuityCheckPipeQ <- mkFIFOF;
-    FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, PSN, Bool, Bool))                                       waitDMARespPipeQ <- mkFIFOF;
+    FIFOF#(Tuple2#(RdmaPktMetaDataAndQPC, Bool))                                                             reqStatusCheckStep1PipeQ   <- mkSizedFIFOF(5);
+    FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, FlagsType#(MemAccessTypeFlag), RETH))         reqStatusCheckStep2PipeQ   <- mkFIFOF;
+    FIFOF#(ReqStatusCheckStep3PipeInfo)                                                                      reqStatusCheckStep3PipeQ   <- mkFIFOF;
+
+    FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool))                                              getPGTQueryRespPipeQ <- mkSizedFIFOF(5);
+    FIFOF#(Tuple3#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool))                                                 psnContinuityCheckPipeQ <- mkFIFOF;
+    FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, PSN, Bool, Bool))                                             waitDMARespPipeQ <- mkFIFOF;
 
 
 
@@ -186,31 +202,36 @@ module mkRQ(RQ ifc);
         reqStatusCheckStep2PipeQ.deq;
 
         let pktMetaData = pktMetaDataAndQpc.metadata;
-        let pktValid =  pktMetaData.pktValid;
 
 
-        let needWaitForPGTResponse = False;
+        let needWaitForPGTResponse  = False;
+        let isMrValid               = False;
+        let lowerAddrBoundOk        = False;
+        let mrUpperAddrBound        = ?;
+        let reqUpperAddrBound       = ?;
+        let isMrKeyMatch            = False;
+        let isAccTypeMatch          = False;
+
         if (rdmaOpCodeNeedQueryMrTable) begin
         
-            let isMrKeyMatch           = False;
-            let isAccTypeMatch         = False;
-            let isAccessRangeCheckPass = False;
+
             
         
             let mrMaybe <- mrTableQueryCltInst.getResp;
             $display("mrMaybe=", fshow(mrMaybe));
+
+            isMrValid = isValid(mrMaybe);
 
             if (mrMaybe matches tagged Valid .mr) begin
                 isMrKeyMatch    = (truncate(reth.rkey) == mr.keyPart);
                 
                 isAccTypeMatch  = compareAccessTypeFlags(mr.accFlags, reqAccFlags);
 
-                isAccessRangeCheckPass = checkAddrAndLenWithinRange(
-                    reth.va,
-                    zeroExtend(pktMetaData.pktPayloadLen),
-                    mr.baseVA,
-                    mr.len
-                );
+                
+                lowerAddrBoundOk = reth.va >= mr.baseVA;
+
+                mrUpperAddrBound = mr.baseVA + zeroExtend(mr.len);
+                reqUpperAddrBound = reth.va + zeroExtend(pktMetaData.pktPayloadLen);
 
                 $display(
                     "reth.va=", fshow(reth.va), 
@@ -223,6 +244,52 @@ module mkRQ(RQ ifc);
                     addrToTrans: reth.va
                 });
                 needWaitForPGTResponse = True;
+            end
+        end
+
+        
+
+        let reqStatusCheckStep3PipeInfo = ReqStatusCheckStep3PipeInfo {
+            pktMetaDataAndQpc           :   pktMetaDataAndQpc,
+            reqStatus                   :   reqStatus,
+            rdmaOpCodeNeedQueryMrTable  :   rdmaOpCodeNeedQueryMrTable,
+            lowerAddrBoundOk            :   lowerAddrBoundOk,
+            mrUpperAddrBound            :   mrUpperAddrBound,
+            reqUpperAddrBound           :   reqUpperAddrBound,
+            isMrValid                   :   isMrValid,
+            needWaitForPGTResponse      :   needWaitForPGTResponse,
+            isMrKeyMatch                :   isMrKeyMatch,
+            isAccTypeMatch              :   isAccTypeMatch
+        };
+
+        reqStatusCheckStep3PipeQ.enq(reqStatusCheckStep3PipeInfo);
+
+    endrule
+
+
+    rule getMRQueryRespAndReqStatusCheckStep3;
+        let reqStatusCheckStep3PipeInfo = reqStatusCheckStep3PipeQ.first;
+        reqStatusCheckStep3PipeQ.deq;
+
+        let pktMetaDataAndQpc           = reqStatusCheckStep3PipeInfo.pktMetaDataAndQpc;
+        let reqStatus                   = reqStatusCheckStep3PipeInfo.reqStatus;
+        let rdmaOpCodeNeedQueryMrTable  = reqStatusCheckStep3PipeInfo.rdmaOpCodeNeedQueryMrTable;
+        let lowerAddrBoundOk            = reqStatusCheckStep3PipeInfo.lowerAddrBoundOk;
+        let mrUpperAddrBound            = reqStatusCheckStep3PipeInfo.mrUpperAddrBound;
+        let reqUpperAddrBound           = reqStatusCheckStep3PipeInfo.reqUpperAddrBound;
+        let isMrValid                   = reqStatusCheckStep3PipeInfo.isMrValid;
+        let needWaitForPGTResponse      = reqStatusCheckStep3PipeInfo.needWaitForPGTResponse;
+        let isMrKeyMatch                = reqStatusCheckStep3PipeInfo.isMrKeyMatch;
+        let isAccTypeMatch              = reqStatusCheckStep3PipeInfo.isAccTypeMatch;
+
+        let pktMetaData = pktMetaDataAndQpc.metadata;
+        let pktValid =  pktMetaData.pktValid;
+        let isAccessRangeCheckPass = False;
+
+        if (rdmaOpCodeNeedQueryMrTable) begin
+
+            if (isMrValid) begin
+                isAccessRangeCheckPass = lowerAddrBoundOk && mrUpperAddrBound >= reqUpperAddrBound;
             end
 
             if (!pktValid) begin
