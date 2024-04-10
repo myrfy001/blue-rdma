@@ -60,8 +60,8 @@ module mkHeader2DataStream#(
         if (!headerValidReg) begin
             headerMetaDataOutQ.enq(curHeader.headerMetaData);
         end
-        let remainingHeaderLen =
-            curHeader.headerMetaData.headerLen - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        let remainingHeaderLenZb =
+            curHeader.headerMetaData.headerLenZb - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
         let remainingHeaderFragNum = curHeader.headerMetaData.headerFragNum - 1;
 
         HeaderData leftShiftHeaderData = truncate(curHeader.headerData << valueOf(DATA_BUS_WIDTH));
@@ -71,7 +71,7 @@ module mkHeader2DataStream#(
             headerData    : leftShiftHeaderData,
             headerByteNum  : leftShiftHeaderByteNum,
             headerMetaData: HeaderMetaData {
-                headerLen           : remainingHeaderLen,
+                headerLenZb         : remainingHeaderLenZb,
                 headerFragNum       : remainingHeaderFragNum,
                 lastFragValidByteNum: curHeader.headerMetaData.lastFragValidByteNum,
                 hasPayload          : curHeader.headerMetaData.hasPayload,
@@ -147,11 +147,11 @@ module mkDataStream2Header#(
         headerMetaDataReg <= headerMetaData;
 
         immAssert(
-            !isZero(headerMetaData.headerLen),
-            "headerMetaData.headerLen non-zero assertion @ mkDataStream2Header",
+            !isZero(headerMetaData.headerLenZb),
+            "headerMetaData.headerLenZb non-zero assertion @ mkDataStream2Header",
             $format(
-                "headerMetaData.headerLen=%h should not be zero",
-                headerMetaData.headerLen
+                "headerMetaData.headerLenZb=%h should not be zero",
+                headerMetaData.headerLenZb
             )
         );
 
@@ -209,8 +209,8 @@ module mkDataStream2Header#(
                 headerLastFragByteNum == curDataStreamFrag.byteNum,
                 "headerLastFragByteNum assertion @ mkDataStream2Header",
                 $format(
-                    "headerLastFragByteNum=%h should == curDataStreamFrag.byteNum=%h, headerLen=%0d",
-                    headerLastFragByteNum, curDataStreamFrag.byteNum, rdmaHeader.headerMetaData.headerLen
+                    "headerLastFragByteNum=%h should == curDataStreamFrag.byteNum=%h, headerLenZb=%0d",
+                    headerLastFragByteNum, curDataStreamFrag.byteNum, rdmaHeader.headerMetaData.headerLenZb
                 )
             );
             immAssert(
@@ -312,10 +312,10 @@ module mkPrependHeader2PipeOut#(
 
         if (!headerMetaData.isEmptyHeader) begin
             immAssert(
-                !isZero(headerMetaData.headerLen),
-                "headerMetaData.headerLen non-zero assertion @ mkPrependHeader2PipeOut",
+                !isZero(headerMetaData.headerLenZb),
+                "headerMetaData.headerLenZb non-zero assertion @ mkPrependHeader2PipeOut",
                 $format(
-                    "headerLen=%0d", headerMetaData.headerLen,
+                    "headerLenZb=%0d", headerMetaData.headerLenZb,
                     " should not be zero when isEmptyHeader=",
                     fshow(headerMetaData.isEmptyHeader)
                 )
@@ -597,11 +597,11 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         let headerMetaData = headerMetaDataPipeIn.first;
         headerMetaDataPipeIn.deq;
         immAssert(
-            !isZero(headerMetaData.headerLen),
-            "headerMetaData.headerLen non-zero assertion @ mkExtractHeaderFromDataStreamPipeOut",
+            !isZero(headerMetaData.headerLenZb),
+            "headerMetaData.headerLenZb non-zero assertion @ mkExtractHeaderFromDataStreamPipeOut",
             $format(
-                "headerMetaData.headerLen=%h should not be zero, headerMetaData=",
-                headerMetaData.headerLen, fshow(headerMetaData)
+                "headerMetaData.headerLenZb=%h should not be zero, headerMetaData=",
+                headerMetaData.headerLenZb, fshow(headerMetaData)
             )
         );
 

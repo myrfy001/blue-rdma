@@ -137,24 +137,24 @@ module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateData
                 extractTranTypeAndRdmaOpCode(rdmaPktDataStream.data);
 
             let headerHasPayload = rdmaOpCodeHasPayload(rdmaOpCode);
-            ZeroBasedHeaderByteNum headerLen = fromInteger(
+            ZeroBasedHeaderByteNum headerLenZb = fromInteger(
                 calcHeaderLenByTransTypeAndRdmaOpCode(transType, rdmaOpCode) - 1
             );
             immAssert(
-                !isZero(headerLen),
-                "!isZero(headerLen) assertion @ mkExtractHeaderFromRdmaPktPipeOut",
+                !isZero(headerLenZb),
+                "!isZero(headerLenZb) assertion @ mkExtractHeaderFromRdmaPktPipeOut",
                 $format(
-                    "headerLen=%0d should not be zero, transType=",
-                    headerLen, fshow(transType),
+                    "headerLenZb=%0d should not be zero, transType=",
+                    headerLenZb, fshow(transType),
                     ", rdmaOpCode=", fshow(rdmaOpCode)
                 )
             );
 
-            let headerMetaData = genHeaderMetaData(headerLen, headerHasPayload, isEmptyHeader);
+            let headerMetaData = genHeaderMetaData(headerLenZb, headerHasPayload, isEmptyHeader);
             headerMetaDataInQ.enq(headerMetaData);
             $display(
                 "time=%0t: extractHeader", $time,
-                ", headerLen=%0d", headerLen,
+                ", headerLenZb=%0d", headerLenZb,
                 ", rdmaOpCode=", fshow(rdmaOpCode),
                 ", transType=", fshow(transType),
                 ", rdmaPktDataStream=", fshow(rdmaPktDataStream),

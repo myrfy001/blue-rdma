@@ -538,7 +538,7 @@ function HeaderMetaData genHeaderMetaData(
     let { headerFragNum, lastFragValidByteNum } =
         calcHeaderFragNumAndLastFragValidByeNum(headerLen);
     let headerMetaData = HeaderMetaData {
-        headerLen: headerLen,
+        headerLenZb: headerLen,
         headerFragNum: headerFragNum,
         lastFragValidByteNum: lastFragValidByteNum,
         hasPayload: hasPayload,
@@ -562,7 +562,7 @@ endfunction
 
 function HeaderRDMA genEmptyHeaderRDMA(Bool hasPayload);
     let emptyHeaderMetaData = HeaderMetaData {
-        headerLen           : 0,
+        headerLenZb         : 0,
         headerFragNum       : 0,
         lastFragValidByteNum: 0,
         hasPayload          : hasPayload,

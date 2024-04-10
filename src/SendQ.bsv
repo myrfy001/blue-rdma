@@ -21,7 +21,7 @@ typedef struct {
 
 typedef struct {
     HeaderData                 headerData;
-    ZeroBasedHeaderByteNum     headerLen;
+    ZeroBasedHeaderByteNum     headerLenZb;
     Bool                       hasPayload;
     Bool                       hasHeader;
 } PktHeaderInfo deriving(Bits, FShow);
@@ -31,7 +31,7 @@ function PktHeaderInfo genPktHeaderInfo(
 );
     return PktHeaderInfo {
         headerData: headerData,
-        headerLen : headerLen,
+        headerLenZb : headerLen,
         hasPayload: hasPayload,
         hasHeader : True
     };
@@ -39,10 +39,10 @@ endfunction
 
 function PktHeaderInfo genEmptyPktHeaderInfo(Bool hasPayload);
     return PktHeaderInfo {
-        headerData: dontCareValue,
-        headerLen : 0,
-        hasPayload: hasPayload,
-        hasHeader : False
+        headerData  : dontCareValue,
+        headerLenZb : 0,
+        hasPayload  : hasPayload,
+        hasHeader   : False
     };
 endfunction
 
@@ -1046,18 +1046,20 @@ module mkSendQ#(
         pendingHeaderQ.deq;
 
         if (maybePktHeaderInfo matches tagged Valid .pktHeaderInfo) begin
-            let headerData = pktHeaderInfo.headerData;
-            let headerLen  = pktHeaderInfo.headerLen;
-            let hasPayload = pktHeaderInfo.hasPayload;
+            let headerData    = pktHeaderInfo.headerData;
+            let headerLenZb   = pktHeaderInfo.headerLenZb;
+            let hasPayload    = pktHeaderInfo.hasPayload;
+            let hasHeader = pktHeaderInfo.hasHeader;
             let pktHeader  = isRawPkt ?
                 genEmptyHeaderRDMA(hasPayload) :
-                genHeaderRDMA(headerData, headerLen, hasPayload);
+                genHeaderRDMA(headerData, headerLenZb, hasPayload);
 
+            let pktLen = hasHeader ? (pktLenWithPadCnt + zeroExtend(headerLenZb) + 1) : pktLenWithPadCnt;
             let udpPktInfo = PktInfo4UDP {
-                macAddr : macAddr,
-                ipAddr  : ipAddr,
-                pktLen  : pktLenWithPadCnt + zeroExtend(headerLen) + 1,
-                isRawPkt: isRawPkt
+                macAddr   : macAddr,
+                ipAddr    : ipAddr,
+                pktLen    : pktLen,
+                isRawPkt  : isRawPkt
             };
 
             pktHeaderQ.enq(pktHeader);
@@ -1073,7 +1075,7 @@ module mkSendQ#(
                 // ", sqpn=%h", wqe.sqpn,
                 // ", id=%h", wqe.id,
                 ", pktLenWithPadCnt=%0d", pktLenWithPadCnt,
-                ", headerLen=%0d", headerLen,
+                ", headerLenZb=%0d", headerLenZb,
                 ", udpPktInfo.macAddr=%h", udpPktInfo.macAddr,
                 ", udpPktInfo.ipAddr=", fshow(udpPktInfo.ipAddr),
                 ", udpPktInfo.pktLen=%0d", udpPktInfo.pktLen,

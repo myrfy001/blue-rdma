@@ -244,9 +244,9 @@ typedef struct {
 } DataStreamEn deriving(Bits, Bounded, Eq, FShow);
 
 typedef struct {
-    ZeroBasedHeaderByteNum headerLen;
+    ZeroBasedHeaderByteNum   headerLenZb;
     HeaderFragNum            headerFragNum;
-    ZeroBasedByteValidNum       lastFragValidByteNum;
+    ZeroBasedByteValidNum    lastFragValidByteNum;
     Bool                     hasPayload;
     Bool                     isEmptyHeader;
 } HeaderMetaData deriving(Bits, Bounded, Eq);
@@ -258,8 +258,8 @@ typedef struct {
 instance FShow#(HeaderMetaData);
     function Fmt fshow(HeaderMetaData hmd);
         return $format(
-            "HeaderMetaData { headerLen=%0d, headerFragNum=%0d, lastFragValidByteNum=%0d, hasPayload=",
-            hmd.headerLen, hmd.headerFragNum, hmd.lastFragValidByteNum, fshow(hmd.hasPayload), " }"
+            "HeaderMetaData { headerLenZb=%0d, headerFragNum=%0d, lastFragValidByteNum=%0d, hasPayload=",
+            hmd.headerLenZb, hmd.headerFragNum, hmd.lastFragValidByteNum, fshow(hmd.hasPayload), " }"
         );
     endfunction
 endinstance
