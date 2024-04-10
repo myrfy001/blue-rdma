@@ -331,10 +331,13 @@ module mkMrAndPgtManager(MrAndPgtManager);
             if (curBeatOfDataReg.isLast) begin
                 state <= MrAndPgtManagerFsmStateWaitPGTUpdateLastResp;
                 curBeatOfDataReg <= unpack(0);
-                // $display("addr translate modify second stage finished.");
+                $display("addr translate modify second stage finished.");
             end 
             else begin
-                curBeatOfDataReg <= dataStreamEn2DataStream(reverseStreamEn(dmaReadRespQ.first.dataStream));
+                // the data should be right aligned, but to convert byteEn to byteNum, byteEn need to be left aligned
+                let newFrag = dataStreamEn2DataStream(reverseStreamEnOnly(dmaReadRespQ.first.dataStream));
+                curBeatOfDataReg <= newFrag;
+                $display("receive dma batch page table frag=", fshow(newFrag));
                 dmaReadRespQ.deq;
             end
         end 
@@ -347,7 +350,7 @@ module mkMrAndPgtManager(MrAndPgtManager);
             };
             pgtModifyCltInst.putReq(modifyReq);
             pgtUpdateRespCounter.incr(1);
-            // $display("addr translate modify second stage:", fshow(modifyReq));
+            $display("addr translate modify second stage:", fshow(modifyReq));
             curSecondStagePgtWriteIdxReg <= curSecondStagePgtWriteIdxReg + 1;
             let t = curBeatOfDataReg;
 
@@ -478,7 +481,7 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
 
         let resp = DmaReadResp{
             isRespErr   : False,
-            dataStream  : dataStreamEn2DataStream(reverseStreamEn(inResp.dataStream))
+            dataStream  : dataStreamEn2DataStream(reverseStreamEnAndData(inResp.dataStream))
         };
         readRespOutQ.enq(resp);
         $display("time=%0t: ", $time, "mkDmaReadReqAddrTranslator, forwardResponseDMA, resp=", fshow(resp), ", origin resp = ", fshow(inResp));

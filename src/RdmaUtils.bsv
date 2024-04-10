@@ -2033,8 +2033,13 @@ function DataStream reverseStream(DataStream st);
     return st;
 endfunction
 
-function DataStreamEn reverseStreamEn(DataStreamEn st);
+function DataStreamEn reverseStreamEnAndData(DataStreamEn st);
     st.data = swapEndian(st.data);
+    st.byteEn = swapEndianBit(st.byteEn);
+    return st;
+endfunction
+
+function DataStreamEn reverseStreamEnOnly(DataStreamEn st);
     st.byteEn = swapEndianBit(st.byteEn);
     return st;
 endfunction

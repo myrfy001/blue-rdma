@@ -806,7 +806,7 @@ typedef struct {
 } WriteReqCommonQPC deriving(Bits, Eq, FShow);
 
 typedef struct {
-    Bool                            isError;            // 1 bit
+    // Bool                            isError;            // 1 bit
     KeyQP                           qpnKeyPart;         // TSub#(QPN_WIDTH, QP_INDEX_WIDTH) bits = 24-11 = 13 bits
     HandlerPD                       pdHandler;          // 24 bits
     TypeQP                          qpType;             // 4 bits
@@ -910,3 +910,9 @@ typedef struct {
 } RawPacketReceiveMeta deriving(Bits, FShow);
 
 typedef 4 FORCE_REPORT_HEADER_META_INTERVAL_MASK_WIDTH;
+
+typedef struct {
+    PSN  expectedPSN;
+    PSN  latestErrorPSN;
+    Bool psnIsContinous;
+} ExpectedPsnContextEntry deriving(Bits, FShow);

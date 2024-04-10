@@ -61,7 +61,7 @@ module mkCommandQueueController(CommandQueueController ifc);
                 CmdQueueReqDescQpManagementSeg0 desc0 = unpack(reqSegBuf[0]);
                 
                 let ent = EntryCommonQPC {
-                    isError:        desc0.isError,
+                    // isError:        desc0.isError,
                     qpnKeyPart:     getKeyQP(desc0.qpn), 
                     pdHandler:      desc0.pdHandler,
                     qpType:         desc0.qpType,

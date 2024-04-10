@@ -98,7 +98,8 @@ module mkMockHost #( BRAM_Configure cfg, Clock cmacRxTxClk, Reset cmacRxTxRst) (
 	Bits#(bar_data_t, bar_data_sz),
 	Add#(b__, bar_addr_sz, 64),
 	Add#(c__, bar_data_sz, 64),
-	FShow#(addr)
+	FShow#(addr),
+	FShow#(data)
 );
 
 	Clock srcClock <- exposeCurrentClock;
@@ -263,6 +264,10 @@ module mkMockHost #( BRAM_Configure cfg, Clock cmacRxTxClk, Reset cmacRxTxRst) (
 
 			interface Get response;
 				method ActionValue#(data) get;
+					$display(
+						"time=%0t::", $time, "mock Host Mem Port A output read result=", fshow(portRespQueueA.first)
+					);
+
 					portRespQueueA.deq;
 					return portRespQueueA.first;
 				endmethod

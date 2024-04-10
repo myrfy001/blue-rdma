@@ -9,7 +9,8 @@ import time
 from hw_consts import *
 from ringbufs import *
 import math
-import itertools
+import struct
+from scapy.all import Ether
 
 
 # Define the types we need.
@@ -231,11 +232,56 @@ class NetworkDataAgent:
         else:
             return None
 
+# we know the data is concurrent, so just count the number of 1s in the bitmask
+
+
+def get_data_with_bitmap(data: bytearray, bitmask: int):
+    count = 0
+    while bitmask:
+        count += bitmask & 1
+        bitmask >>= 1
+    return data[:count]
+
+
+def attach_mac_heaer(ip_with_payload: bytearray, src_mac: bytearray, dst_mac: bytearray):
+
+    return dst_mac + src_mac + bytearray("\x80\x00") + ip_with_payload
+
+
+def mac_str_to_bytearray(mac_str):
+    hex_strs = mac_str.split(':')
+    mac_bytes = bytearray(int(x, 16) for x in hex_strs)
+    return mac_bytes
+
+
+def split_packet_into_fragments(packet: bytearray):
+    for i in range(0, len(packet), chunk_size):
+        chunk = packet[i:i+chunk_size]
+        if len(chunk) == chunk_size:
+            bitmap = CUbyteArray8(*struct.pack("<Q", 0xFFFFFFFFFFFFFFFF))
+            is_last = False
+        else:
+            bitmap = CUbyteArray8(*struct.pack("<Q", (1 << len(chunk)) - 1))
+            is_last = True
+        array = CUbyteArray64(*chunk)
+        yield CStructRpcNetIfcRxTxPayload(
+            data=array,
+            byte_en=bitmap,
+            is_last=is_last,
+            is_valid=True
+        )
+
+
+chunk_size = 64
+CUbyteArray64 = c_ubyte * 64
+CUbyteArray8 = c_ubyte * 8
 
 # rx_packet_wait_time can be used to mimic line-rate receive, the MockHost will block simulator and wait
 # up to rx_packet_wait_time seconds. This is because tx simulator may run slower than rx simulator, so from
 # rx simulator's point of view, the packet received from network interface is non-continous. if we try to
 # block rx simulator, then it may see continous input packet data at every clock-cycle
+
+
 class MockNicAndHost:
     def __init__(self, main_memory: MockHostMem, host=HOST, port=PORT, rx_packet_wait_time=0) -> None:
         self.main_memory = main_memory
@@ -398,8 +444,8 @@ class MockNicAndHost:
 
     def get_net_ifc_tx_data_from_nic_blocking(self):
         self.pending_network_packet_tx_sema.acquire()
-        # print("tx Q len=", len(self.pending_network_packet_tx))
-        return self.pending_network_packet_tx.pop(0)
+        data = self.pending_network_packet_tx.pop(0)
+        return data
 
     def put_net_ifc_rx_data_to_nic(self, frag):
         return self.pending_network_packet_rx.append(frag)
@@ -414,8 +460,67 @@ class MockNicAndHost:
         loopback_thread.start()
 
     @staticmethod
+    def connect_to_raw_socket(nic: "MockNicAndHost", addr: str, port: int, nic_mac: str, other_mac: str):
+        def _send_proxy():
+            try:
+                s = socket.socket(
+                    socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
+                s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+            except socket.error as msg:
+                print('Socket could not be created. Error Code : ' +
+                      str(msg) + ' Message ')
+                import sys
+                sys.exit()
+            data_buf = dict()
+            while True:
+                data = nic.get_net_ifc_tx_data_from_nic_blocking()
+                bitmask = struct.unpack('<Q', bytes(data.payload.byte_en))[0]
+                print(bytes(data.payload.byte_en))
+                payload = get_data_with_bitmap(
+                    bytes(data.payload.data), bitmask)
+                if data.header.tag not in data_buf:
+                    data_buf[data.header.tag] = payload
+                else:
+                    data_buf[data.header.tag] += payload
+                if data.payload.is_last:
+                    packet = data_buf[data.header.tag]
+                    dst_ip = socket.inet_ntoa(packet[30:34])
+                    s.sendto(data_buf[data.header.tag][14:], (dst_ip, 0))
+                    del data_buf[data.header.tag]
+
+        def _receive_proxy():
+            try:
+                s = socket.socket(
+                    socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
+                s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+            except socket.error as msg:
+                print('Socket could not be created. Error Code : ' +
+                      str(msg) + ' Message ')
+                import sys
+                sys.exit()
+            s.bind((addr, port))
+            print("bind to addr:{} port:{}".format(addr, port))
+            import sys
+            sys.stdout.flush()
+            while True:
+                packet, (_ip, _port) = s.recvfrom(5120)
+                print("received packet:{}", packet)
+                import sys
+                sys.stdout.flush()
+                eth_frame = Ether(src=other_mac, dst=nic_mac, type=0x0800)
+                packet = bytes(eth_frame) + packet
+                for frag in split_packet_into_fragments(packet):
+                    nic.put_net_ifc_rx_data_to_nic(frag)
+
+        raw_socket_thread = threading.Thread(target=_send_proxy)
+        raw_socket_thread.start()
+        raw_socket_thread = threading.Thread(target=_receive_proxy)
+        raw_socket_thread.start()
+
+    @staticmethod
     def connect_two_card(nic_a, nic_b):
         def _forward_a():
+            # client_to_buf = dict()
             while True:
                 data = nic_a.get_net_ifc_tx_data_from_nic_blocking()
                 nic_b.put_net_ifc_rx_data_to_nic(data)

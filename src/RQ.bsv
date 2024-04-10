@@ -52,10 +52,7 @@ module mkRQ(RQ ifc);
 
     FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool))                                              getPGTQueryRespPipeQ <- mkSizedFIFOF(5);
     FIFOF#(Tuple3#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool))                                                 psnContinuityCheckPipeQ <- mkFIFOF;
-    FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, PSN, Bool, Bool))                                             waitDMARespPipeQ <- mkFIFOF;
-
-
-
+    FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, ExpectedPsnContextEntry, Bool, Bool))                  waitDMARespPipeQ <- mkFIFOF;
 
 
     function FlagsType#(MemAccessTypeFlag) genAccessFlagFromReqType(Bool isSend, Bool isRead, Bool isWrite, Bool isAtomic);
@@ -382,19 +379,21 @@ module mkRQ(RQ ifc);
 
         let needReportBecausePsnNotExpected = False;
         let qpIdxPart = getIndexQP(bth.dqpn);
-        let expectedPsn = expectedPsnManager.getPsn(qpIdxPart);
-        if (expectedPsn != bth.psn) begin
+        let psnContext = expectedPsnManager.getPsnContext(qpIdxPart);
+        if (psnContext.expectedPSN != bth.psn) begin
             needReportBecausePsnNotExpected = True;
         end
 
         let needUpdateExpectedPSN = !isPacketAbnormal && (isFirstPkt || isMiddlePkt || isLastPkt || isOnlyPkt);
 
         // Since the max outstanding packet number is MAX_PSN / 2
-        // if the minus result is smaller than MAX_PSN / 2, it menas (bth.psn > expectedPsn)
-        let isCurPsnGreaterOrEqualThanExpectedPSN = msb(bth.psn - expectedPsn) == 1'b0;
+        // if the minus result is smaller than MAX_PSN / 2, it menas (bth.psn > psnContext.expectedPSN)
+        let isCurPsnGreaterOrEqualThanExpectedPSN = msb(bth.psn - psnContext.expectedPSN) == 1'b0;
+        let isCurPsnGreaterOrEqualThanlatestErrorPSN    = msb(bth.psn - psnContext.latestErrorPSN)    == 1'b0;
 
         if (isCurPsnGreaterOrEqualThanExpectedPSN && needUpdateExpectedPSN) begin 
-            expectedPsnManager.updatePsn(qpIdxPart, bth.psn+1);
+            psnContext.expectedPSN = bth.psn+1;
+            expectedPsnManager.updatePsnContext(qpIdxPart, psnContext);
         end
         
         let needReportPacketMeta = (
@@ -408,11 +407,11 @@ module mkRQ(RQ ifc);
         needReportPacketMeta = True;
 
 
-        waitDMARespPipeQ.enq(tuple5(pktMetaDataAndQpc, reqStatus, expectedPsn, needIssueDMARequest, needReportPacketMeta));
+        waitDMARespPipeQ.enq(tuple5(pktMetaDataAndQpc, reqStatus, psnContext, needIssueDMARequest, needReportPacketMeta));
     endrule
 
     rule waitDMAFinishAndWriteMetaToHost;
-        let { pktMetaDataAndQpc, reqStatus, expectedPsn, needIssueDMARequest, needReportPacketMeta } = waitDMARespPipeQ.first;
+        let { pktMetaDataAndQpc, reqStatus, psnContext, needIssueDMARequest, needReportPacketMeta } = waitDMARespPipeQ.first;
         waitDMARespPipeQ.deq;
 
         let pktMetaData = pktMetaDataAndQpc.metadata;
@@ -455,7 +454,7 @@ module mkRQ(RQ ifc);
         rptEntry.value          = aeth.value;
         rptEntry.msn            = isAckPkt ? aeth.msn : zeroExtend(bth.pkey);
         rptEntry.lastRetryPSN   = nreth.lastRetryPSN;
-        rptEntry.expectedPsn    = expectedPsn;
+        rptEntry.expectedPsn    = psnContext.expectedPSN;
         rptEntry.immDt          = immDT.data;
 
         if (needReportPacketMeta) begin
@@ -464,6 +463,8 @@ module mkRQ(RQ ifc);
         $display("time=%0t: ", $time, "waitDMAFinishAndWriteMetaToHost pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc));
     endrule
 
+    rule autoSendAck;
+    endrule
 
 
     interface pktMetaDataPipeIn             = toPut(rdmaPktMetaDataInQ);

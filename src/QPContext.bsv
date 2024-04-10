@@ -87,22 +87,32 @@ module mkQPContext(QPContext);
 endmodule
 
 interface ExpectedPsnManager;
-    method Action updatePsn(IndexQP qpn, PSN psn);
-    method PSN getPsn(IndexQP qpn);
+    method Action updatePsnContext(IndexQP qpn, ExpectedPsnContextEntry psnCtx);
+    method ExpectedPsnContextEntry getPsnContext(IndexQP qpn);
     method Action resetPSN(IndexQP qpn);
 endinterface
 
 module mkExpectedPsnManager(ExpectedPsnManager);
     // Expected PSN for different Queues
-    Vector#(MAX_QP, Reg#(PSN)) expectedPSNRegVec <- replicateM(mkReg(0));
+    Vector#(MAX_QP, Reg#(ExpectedPsnContextEntry))    expectedPSNRegVec <- replicateM(mkReg(
+        ExpectedPsnContextEntry{
+            expectedPSN : 0,
+            latestErrorPSN : 0,
+            psnIsContinous : True
+        }
+    ));
     
-    RWire#(Tuple2#(IndexQP, PSN)) updatePsnReqWire <- mkRWire;
-    RWire#(IndexQP)                resetPsnReqWire <- mkRWire;
+    RWire#(Tuple2#(IndexQP, ExpectedPsnContextEntry))  updatePsnReqWire <- mkRWire;
+    RWire#(IndexQP)                                     resetPsnReqWire <- mkRWire;
 
     (* fire_when_enabled, no_implicit_conditions *)
     rule canonicalize;
         if (resetPsnReqWire.wget matches tagged Valid .qpnIdx) begin
-            expectedPSNRegVec[qpnIdx] <= 0;
+            expectedPSNRegVec[qpnIdx] <= ExpectedPsnContextEntry {
+                expectedPSN : 0,
+                latestErrorPSN : 0,
+                psnIsContinous : True
+            };
         end
         else if (updatePsnReqWire.wget matches tagged Valid .req) begin
             let {qpnIdx, psn} = req;
@@ -111,11 +121,11 @@ module mkExpectedPsnManager(ExpectedPsnManager);
     endrule
 
 
-    method Action updatePsn(IndexQP qpnIdx, PSN psn);
-        updatePsnReqWire.wset(tuple2(qpnIdx, psn));
+    method Action updatePsnContext(IndexQP qpnIdx, ExpectedPsnContextEntry psnCtx);
+        updatePsnReqWire.wset(tuple2(qpnIdx, psnCtx));
     endmethod
 
-    method PSN getPsn(IndexQP qpnIdx) = expectedPSNRegVec[qpnIdx];
+    method ExpectedPsnContextEntry getPsnContext(IndexQP qpnIdx) = expectedPSNRegVec[qpnIdx];
 
     method Action resetPSN(IndexQP qpnIdx);
         resetPsnReqWire.wset(qpnIdx);
