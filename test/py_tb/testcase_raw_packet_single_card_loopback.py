@@ -97,7 +97,7 @@ def test_case():
     ip_layer = IP(dst="17.34.51.68")
     udp_layer = UDP(dport=1111, sport=2222)
 
-    bytes_to_send = bytes(ip_layer/udp_layer/"mmmmmmmmmmmmmmmmmmmmmmmmmmmmm")
+    bytes_to_send = bytes(ip_layer/udp_layer/"abcdefghijk")
 
     # 3#########################################
 
@@ -147,11 +147,21 @@ def test_case():
     )
 
     send_queue.sync_pointers()
-    for report_idx in range(1):
-        meta_report_queue.deq_blocking()
-        print("receive meta report: ", report_idx)
 
-    dst_mem = mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR:RESP_SIDE_VA_ADDR+256]
+    report_meta = MeatReportQueueDescBthReth.from_buffer_copy(
+        meta_report_queue.deq_blocking())
+    print("receive meta report: ", report_meta)
+
+    # 14 is ETH header
+    expected_receive_len = len(bytes_to_send) + 14  # 14 is ETH header
+    received_len = report_meta.F_RETH.F_DLEN
+    if received_len != expected_receive_len:
+        print(
+            f"Error: Raw Packet Meta Length Not Match, recv={received_len}, expected={expected_receive_len}")
+        # raise SystemExit
+
+    dst_mem = mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR:
+                                       RESP_SIDE_VA_ADDR + report_meta.F_RETH.F_DLEN]
 
     print("dst_mem=", bytes(dst_mem))
 

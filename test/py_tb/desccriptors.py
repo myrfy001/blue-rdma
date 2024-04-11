@@ -316,7 +316,6 @@ class MeatReportQueueDescFragRETH(Structure):
     _pack_ = 1
     _fields_ = [("F_VA", c_longlong, 64),
                 ("F_RKEY", c_int, 32),
-
                 ("F_DLEN", c_int, 32),
                 ]
 

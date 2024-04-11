@@ -418,14 +418,15 @@ module mkRQ(RQ ifc);
         let rdmaHeader  = pktMetaData.pktHeader;
         
 
-        let bth   = extractBTH(rdmaHeader.headerData);
-        let reth  = extractPriRETH(rdmaHeader.headerData, bth.trans);
-        let rethSecondary  = extractSecRETH(rdmaHeader.headerData, bth.trans, bth.opcode);
-        let aeth  = extractAETH(rdmaHeader.headerData);
-        let nreth = extractNRETH(rdmaHeader.headerData);
-        let immDT  = extractImmDt(rdmaHeader.headerData, bth.opcode, bth.trans);
+        let bth             = extractBTH(rdmaHeader.headerData);
+        let reth            = extractPriRETH(rdmaHeader.headerData, bth.trans);
+        let rethSecondary   = extractSecRETH(rdmaHeader.headerData, bth.trans, bth.opcode);
+        let aeth            = extractAETH(rdmaHeader.headerData);
+        let nreth           = extractNRETH(rdmaHeader.headerData);
+        let immDT           = extractImmDt(rdmaHeader.headerData, bth.opcode, bth.trans);
 
-        let isAckPkt = isAckRdmaOpCode(bth.opcode);
+        let isAckPkt        = isAckRdmaOpCode(bth.opcode);
+        let isRawPacket     = rdmaHeader.headerMetaData.isEmptyHeader;
 
 
         if (needIssueDMARequest) begin
@@ -445,7 +446,7 @@ module mkRQ(RQ ifc);
 
         rptEntry.va             = reth.va;
         rptEntry.rkey           = reth.rkey;
-        rptEntry.dlen           = reth.dlen;
+        rptEntry.dlen           = isRawPacket ? zeroExtend(pktMetaData.pktPayloadLen) : reth.dlen;
 
         rptEntry.secondaryVa    = rethSecondary.va;
         rptEntry.secondaryRkey  = rethSecondary.rkey;
