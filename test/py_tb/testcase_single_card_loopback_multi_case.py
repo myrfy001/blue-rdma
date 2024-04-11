@@ -213,7 +213,7 @@ def test_case():
 
     if src_mem[0:1024] != dst_mem[0:1024]:
         print("Error: Error at 1024 byte write test")
-        for idx in range(len(src_mem[0:64])):
+        for idx in range(len(src_mem[0:1024])):
             if src_mem[idx] != dst_mem[idx]:
                 print("id:", idx,
                       "src: ", hex(src_mem[idx]),

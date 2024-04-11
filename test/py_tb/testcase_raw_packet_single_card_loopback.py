@@ -97,7 +97,8 @@ def test_case():
     ip_layer = IP(dst="17.34.51.68")
     udp_layer = UDP(dport=1111, sport=2222)
 
-    bytes_to_send = bytes(ip_layer/udp_layer/"abcdefghijk")
+    payload_to_send = "abcdefghijk"
+    bytes_to_send = bytes(ip_layer/udp_layer/payload_to_send)
 
     # 3#########################################
 
@@ -158,10 +159,10 @@ def test_case():
     if received_len != expected_receive_len:
         print(
             f"Error: Raw Packet Meta Length Not Match, recv={received_len}, expected={expected_receive_len}")
-        # raise SystemExit
+        raise SystemError
 
     dst_mem = mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR:
-                                       RESP_SIDE_VA_ADDR + report_meta.F_RETH.F_DLEN]
+                                       RESP_SIDE_VA_ADDR + received_len]
 
     print("dst_mem=", bytes(dst_mem))
 
@@ -189,16 +190,13 @@ def test_case():
     udp_payload = bytes(udp_header.payload)
     print("UDP Payload:", udp_payload)
 
-    # if src_mem != dst_mem:
-    #     print("Error: DMA Target mem is not the same as source mem")
-    #     for idx in range(len(src_mem)):
-    #         if src_mem[idx] != dst_mem[idx]:
-    #             print("id:", idx,
-    #                   "src: ", hex(src_mem[idx]),
-    #                   "dst: ", hex(dst_mem[idx])
-    #                   )
-    # else:
-    #     print("PASS")
+    if udp_payload != payload_to_send.encode("utf-8"):
+        print(
+            f"Error: recv payload not match, send={payload_to_send}, recv={udp_payload}")
+        raise SystemError
+
+    else:
+        print("PASS")
 
     mock_nic.stop()
 

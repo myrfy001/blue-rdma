@@ -353,10 +353,8 @@ module mkMrAndPgtManager(MrAndPgtManager);
             $display("addr translate modify second stage:", fshow(modifyReq));
             curSecondStagePgtWriteIdxReg <= curSecondStagePgtWriteIdxReg + 1;
             let t = curBeatOfDataReg;
-
-            let {subResult, _} = satSubByteNum(t.byteNum, fromInteger(bytesPerPgtSecondStageEntryRequest));
-            t.byteNum = subResult;
-            t.data = t.data >> (bytesPerPgtSecondStageEntryRequest * valueOf(BYTE_WIDTH));
+            t.byteNum = t.byteNum - fromInteger(bytesPerPgtSecondStageEntryRequest);
+            t.data = t.data >> valueOf(PGT_SECOND_STAGE_ENTRY_REQUEST_SIZE_PADDED);
             curBeatOfDataReg <= t;
         end
     endrule

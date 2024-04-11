@@ -98,7 +98,7 @@ typedef Bit#(SGE_NUM_WIDTH) NumSGE;
 
 typedef Bit#(HEADER_MAX_DATA_WIDTH)           HeaderData;
 typedef Bit#(HEADER_MAX_BYTE_EN_WIDTH)        HeaderByteEn;
-typedef Bit#(HEADER_MAX_BYTE_NUM_WIDTH)       HeaderByteNum;
+typedef Bit#(HEADER_MAX_BYTE_NUM_WIDTH)       HeaderByteNum;  // 7
 typedef Bit#(HEADER_MAX_BIT_NUM_WIDTH)        HeaderBitNum;
 typedef Bit#(HEADER_FRAG_NUM_WIDTH)           HeaderFragNum;
 
@@ -112,11 +112,6 @@ typedef Bit#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH)) ByteEnBitNum; // 6
 typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ShiftBitNum; // 8
 typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ShiftByteNum; // 5
 
-typedef BusByteWidthMask ZeroBasedByteValidNum;  // 5
-typedef BusByteWidthMask OneBasedByteInvalidNum;  // 5
-typedef TSub#(TExp#(DATA_BUS_BYTE_NUM_WIDTH), 1) ZERO_BASED_BYTE_NUM_MAX; // 31
-
-typedef Bit#(TLog#(HEADER_MAX_BYTE_EN_WIDTH)) ZeroBasedHeaderByteNum; // 6
 
 typedef Bit#(QP_CAP_CNT_WIDTH) PendingReqCnt;
 typedef Bit#(QP_CAP_CNT_WIDTH) InlineDataSize;
@@ -230,7 +225,7 @@ typedef enum {
 // DATA are left aligned
 typedef struct {
     DATA               data;
-    ZeroBasedByteValidNum   byteNum;
+    ByteEnBitNum       byteNum;
     Bool               isFirst;
     Bool               isLast;
 } DataStream deriving(Bits, Bounded, Eq, FShow);
@@ -244,22 +239,22 @@ typedef struct {
 } DataStreamEn deriving(Bits, Bounded, Eq, FShow);
 
 typedef struct {
-    ZeroBasedHeaderByteNum   headerLenZb;
-    HeaderFragNum            headerFragNum;
-    ZeroBasedByteValidNum    lastFragValidByteNum;
-    Bool                     hasPayload;
-    Bool                     isEmptyHeader;
+    HeaderByteNum   headerLen;
+    HeaderFragNum   headerFragNum;
+    ByteEnBitNum    lastFragValidByteNum;
+    Bool            hasPayload;
+    Bool            isEmptyHeader;
 } HeaderMetaData deriving(Bits, Bounded, Eq);
 
 typedef struct {
-    ZeroBasedByteValidNum lastFragValidByteNum;
+    ByteEnBitNum lastFragValidByteNum;
 } PayloadMetaData deriving(Bits, Bounded, Eq);
 
 instance FShow#(HeaderMetaData);
     function Fmt fshow(HeaderMetaData hmd);
         return $format(
-            "HeaderMetaData { headerLenZb=%0d, headerFragNum=%0d, lastFragValidByteNum=%0d, hasPayload=",
-            hmd.headerLenZb, hmd.headerFragNum, hmd.lastFragValidByteNum, fshow(hmd.hasPayload), " }"
+            "HeaderMetaData { headerLen=%0d, headerFragNum=%0d, lastFragValidByteNum=%0d, hasPayload=",
+            hmd.headerLen, hmd.headerFragNum, hmd.lastFragValidByteNum, fshow(hmd.hasPayload), " }"
         );
     endfunction
 endinstance
@@ -267,7 +262,7 @@ endinstance
 // HeaderData and HeaderByteEn are left aligned
 typedef struct {
     HeaderData                headerData;
-    ZeroBasedHeaderByteNum    headerByteNum;
+    HeaderByteNum              headerByteNum;
     HeaderMetaData            headerMetaData;
 } HeaderRDMA deriving(Bits, Bounded, FShow);
 
@@ -891,7 +886,7 @@ typedef TAdd#(1, INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH) INPUT_STREA
 typedef Bit#(INPUT_STREAM_FRAG_BUFFER_INDEX_WIDTH) InputStreamFragBufferIdx; 
 
 typedef struct {
-    ZeroBasedByteValidNum       byteNum;
+    ByteEnBitNum                byteNum;
     Bool                        isFirst;
     Bool                        isLast;
     Bool                        isEmpty;

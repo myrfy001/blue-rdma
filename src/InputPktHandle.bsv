@@ -137,24 +137,24 @@ module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateData
                 extractTranTypeAndRdmaOpCode(rdmaPktDataStream.data);
 
             let headerHasPayload = rdmaOpCodeHasPayload(rdmaOpCode);
-            ZeroBasedHeaderByteNum headerLenZb = fromInteger(
-                calcHeaderLenByTransTypeAndRdmaOpCode(transType, rdmaOpCode) - 1
+            HeaderByteNum headerLen = fromInteger(
+                calcHeaderLenByTransTypeAndRdmaOpCode(transType, rdmaOpCode)
             );
             immAssert(
-                !isZero(headerLenZb),
-                "!isZero(headerLenZb) assertion @ mkExtractHeaderFromRdmaPktPipeOut",
+                !isZero(headerLen),
+                "!isZero(headerLen) assertion @ mkExtractHeaderFromRdmaPktPipeOut",
                 $format(
-                    "headerLenZb=%0d should not be zero, transType=",
-                    headerLenZb, fshow(transType),
+                    "headerLen=%0d should not be zero, transType=",
+                    headerLen, fshow(transType),
                     ", rdmaOpCode=", fshow(rdmaOpCode)
                 )
             );
 
-            let headerMetaData = genHeaderMetaData(headerLenZb, headerHasPayload, isEmptyHeader);
+            let headerMetaData = genHeaderMetaData(headerLen, headerHasPayload, isEmptyHeader);
             headerMetaDataInQ.enq(headerMetaData);
             $display(
                 "time=%0t: extractHeader", $time,
-                ", headerLenZb=%0d", headerLenZb,
+                ", headerLen=%0d", headerLen,
                 ", rdmaOpCode=", fshow(rdmaOpCode),
                 ", transType=", fshow(transType),
                 ", rdmaPktDataStream=", fshow(rdmaPktDataStream),
@@ -562,9 +562,9 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         //     )
         // );
 
-        ByteEnBitNum fragLen = streamFragMeta.isEmpty ? 0 : zeroExtend(streamFragMeta.byteNum) + 1;
+        ByteEnBitNum fragLen = zeroExtend(streamFragMeta.byteNum);
         let isByteEnNonZero = !streamFragMeta.isEmpty;
-        let isByteEnAllOne  = isAllOnesR(streamFragMeta.byteNum);
+        let isByteEnAllOne  = streamFragMeta.byteNum == fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
         ByteEnBitNum fragLenWithOutPad = fragLen - zeroExtend(bthPadCnt);
 
         payloadPktLenCalcQ.enq(tuple5(

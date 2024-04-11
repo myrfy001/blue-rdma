@@ -306,7 +306,7 @@ module mkRingbufC2hController(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, Ri
             DataStream ds;
             ds.isLast = True;
             ds.isFirst = True;
-            ds.byteNum = fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)-1);
+            ds.byteNum = fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH));
             ds.data = unpack(pack(fifoCntrl.first));
             fifoCntrl.deq;
 

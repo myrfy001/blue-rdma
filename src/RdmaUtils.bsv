@@ -347,60 +347,33 @@ endfunction
 
 // ByteEn related
 
-function ByteEn genByteEn(ZeroBasedByteValidNum fragValidByteNum);
-    return reverseBits(((1 << fragValidByteNum) << 1) - 1);
+function ByteEn genByteEn(ByteEnBitNum fragValidByteNum);
+    return reverseBits((1 << fragValidByteNum) - 1);
 endfunction
 
-function ZeroBasedByteValidNum calcLastFragValidByteNum(Bit#(nSz) len) provisos(
+function ByteEnBitNum calcLastFragValidByteNum(Bit#(nSz) len) provisos(
     Add#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH), anysizeK, nSz),
     Add#(DATA_BUS_BYTE_NUM_WIDTH, anysizeJ, nSz)
 );
-    return truncate(len);
+    BusByteWidthMask lowerBits = truncate(len);
+    
+    return isZero(lowerBits) ? fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) : zeroExtend(lowerBits);
 endfunction
 
-function OneBasedByteInvalidNum calcFragInvalidByteNum(
-    ZeroBasedByteValidNum fragValidByteNum
+function ByteEnBitNum calcFragInvalidByteNum(
+    ByteEnBitNum fragValidByteNum
 );
-    return fromInteger(valueOf(ZERO_BASED_BYTE_NUM_MAX)) - fragValidByteNum;
+    return fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) - fragValidByteNum;
 endfunction
 
 
-function Tuple2#(ZeroBasedByteValidNum, Bool) satAddTwoValidByteNum(ZeroBasedByteValidNum v1, ZeroBasedByteValidNum v2);
-    let sumWithCarryBit = {1'b0, pack(v1)};
-    sumWithCarryBit = sumWithCarryBit + zeroExtend(pack(v2)) + 1;
-    Bool isOverflow = msb(sumWithCarryBit) == 1;
-    ZeroBasedByteValidNum ret = isOverflow ? -1 : truncate(sumWithCarryBit);
+function Tuple2#(ByteEnBitNum, Bool) satAddTwoByteNum(ByteEnBitNum v1, ByteEnBitNum v2);
+    let sum = v1 + v2;
+    BusByteWidthMask sumLowerBits = truncate(sum);
+    Bool isOverflow = ((msb(sum) == 1) && (!isZeroR(sumLowerBits))) || (msb(v1) == 1 && msb(v2) == 1);
+    ByteEnBitNum ret = isOverflow ? fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) : sum;
+
     return tuple2(ret, isOverflow);
-endfunction
-
-function Tuple2#(ZeroBasedByteValidNum, Bool) satSubByteNum(ZeroBasedByteValidNum v1, OneBasedByteInvalidNum v2);
-    let sumWithCarryBit = {1'b0, pack(v1)};
-    sumWithCarryBit = sumWithCarryBit - zeroExtend(pack(v2));
-    Bool isOverflow = msb(sumWithCarryBit) == 1;
-    ZeroBasedByteValidNum ret = isOverflow ? 0 : truncate(sumWithCarryBit);
-    return tuple2(ret, isOverflow);
-endfunction
-
-function Tuple2#(ZeroBasedByteValidNum, Bool) satAddValidAndInvalidByteNum(ZeroBasedByteValidNum v1, OneBasedByteInvalidNum v2);
-    let sumWithCarryBit = {1'b0, pack(v1)};
-    sumWithCarryBit = sumWithCarryBit + zeroExtend(pack(v2));
-    Bool isOverflow = msb(sumWithCarryBit) == 1;
-    ZeroBasedByteValidNum ret = isOverflow ? -1 : truncate(sumWithCarryBit);
-    return tuple2(ret, isOverflow);
-endfunction
-
-function Bool isValidPlusInvalidByteNumOverflow(ZeroBasedByteValidNum v1, OneBasedByteInvalidNum v2);
-    let sumWithCarryBit = {1'b0, pack(v1)};
-    sumWithCarryBit = sumWithCarryBit + zeroExtend(pack(v2));
-    Bool isOverflow = msb(sumWithCarryBit) == 1;
-    return isOverflow;
-endfunction
-
-function Bool isTwoValidByteNumSumOverflow(ZeroBasedByteValidNum v1, ZeroBasedByteValidNum v2);
-    let sumWithCarryBit = {1'b0, pack(v1)};
-    sumWithCarryBit = sumWithCarryBit + zeroExtend(pack(v2)) + 1;
-    Bool isOverflow = msb(sumWithCarryBit) == 1;
-    return isOverflow;
 endfunction
 
 
@@ -429,9 +402,9 @@ endfunction
 
 // TODO: check timing of the for loop
 // TODO: refactor the for loop using case statement
-function Maybe#(ZeroBasedByteValidNum) calcFragByteNumFromByteEn(ByteEn fragByteEn);
+function Maybe#(ByteEnBitNum) calcFragByteNumFromByteEn(ByteEn fragByteEn);
     let rightAlignedByteEn = reverseBits(fragByteEn);
-    Maybe#(ZeroBasedByteValidNum) byteEnBitNum = tagged Invalid;
+    Maybe#(ByteEnBitNum) byteEnBitNum = tagged Invalid;
     // let step = valueOf(FRAG_MIN_VALID_BYTE_NUM);
     let step = 1;
     // Bool matched = False;
@@ -441,7 +414,7 @@ function Maybe#(ZeroBasedByteValidNum) calcFragByteNumFromByteEn(ByteEn fragByte
         idx = idx + step
     ) begin
         if (rightAlignedByteEn == (fromInteger(1) << idx) - 1) begin
-            byteEnBitNum = tagged Valid fromInteger(idx-1);
+            byteEnBitNum = tagged Valid fromInteger(idx);
             // matched = True;
         end
     end
@@ -515,30 +488,33 @@ endfunction
 
 // Header related
 
-function HeaderByteEn genHeaderByteEn(ZeroBasedHeaderByteNum headerLen);
-    return reverseBits( ((1 << headerLen) << 1) - 1);
+function HeaderByteEn genHeaderByteEn(HeaderByteNum headerLen);
+    return reverseBits( (1 << headerLen) - 1);
 endfunction
 
-function Tuple2#(HeaderFragNum, ZeroBasedByteValidNum) calcHeaderFragNumAndLastFragValidByeNum(
-    ZeroBasedHeaderByteNum headerLen
+function Tuple2#(HeaderFragNum, ByteEnBitNum) calcHeaderFragNumAndLastFragValidByeNum(
+    HeaderByteNum headerLen
 ) provisos(
     Add#(HEADER_FRAG_NUM_WIDTH, DATA_BUS_BYTE_NUM_WIDTH, HEADER_MAX_BYTE_NUM_WIDTH)
 );
     let headerLastFragValidByteNum = calcLastFragValidByteNum(headerLen);
-    HeaderFragNum headerFragNum = truncate(headerLen >> valueOf(DATA_BUS_BYTE_NUM_WIDTH));
-    headerFragNum = headerFragNum + 1;
+    HeaderFragNum headerFragNum = 1;
+    // Trick: header at most have 2 frag
+    if (headerLen > fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) begin
+        headerFragNum = 2;
+    end
     return tuple2(headerFragNum, headerLastFragValidByteNum);
 endfunction
 
 function HeaderMetaData genHeaderMetaData(
-    ZeroBasedHeaderByteNum headerLen,
+    HeaderByteNum headerLen,
     Bool hasPayload,
     Bool isEmptyHeader
 );
     let { headerFragNum, lastFragValidByteNum } =
         calcHeaderFragNumAndLastFragValidByeNum(headerLen);
     let headerMetaData = HeaderMetaData {
-        headerLenZb: headerLen,
+        headerLen: headerLen,
         headerFragNum: headerFragNum,
         lastFragValidByteNum: lastFragValidByteNum,
         hasPayload: hasPayload,
@@ -549,20 +525,20 @@ endfunction
 
 function HeaderRDMA genHeaderRDMA(
     HeaderData headerData,
-    ZeroBasedHeaderByteNum headerLen,
+    HeaderByteNum headerLen,
     Bool hasPayload
 );
     let headerMetaData = genHeaderMetaData(headerLen, hasPayload, False);
     return HeaderRDMA {
-        headerData    : headerData,
+        headerData     : headerData,
         headerByteNum  : headerLen,
-        headerMetaData: headerMetaData
+        headerMetaData : headerMetaData
     };
 endfunction
 
 function HeaderRDMA genEmptyHeaderRDMA(Bool hasPayload);
     let emptyHeaderMetaData = HeaderMetaData {
-        headerLenZb         : 0,
+        headerLen           : 0,
         headerFragNum       : 0,
         lastFragValidByteNum: 0,
         hasPayload          : hasPayload,
@@ -601,7 +577,7 @@ function DataStream genFakeHeaderSingleBeatStreamForRawPacketReceiveProcessing(A
 
     let fakeHeaderStream = DataStream{
         data: zeroExtendLSB({ pack(bth), pack(reth) }),
-        byteNum: fromInteger(calcHeaderLenByTransTypeAndRdmaOpCode(TRANS_TYPE_DTLD_EXTENDED, RDMA_WRITE_ONLY_WITH_IMMEDIATE)-1),
+        byteNum: fromInteger(calcHeaderLenByTransTypeAndRdmaOpCode(TRANS_TYPE_DTLD_EXTENDED, RDMA_WRITE_ONLY_WITH_IMMEDIATE)),
         isFirst: True,
         isLast: False
     };
