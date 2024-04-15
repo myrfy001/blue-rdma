@@ -13,8 +13,8 @@ SEND_BYTE_COUNT = 1024*16
 
 
 def test_case(host_mem):
-    mock_nic = MockNicAndHost(host_mem, tx_packet_accumulate_cnt=230)
-    NicManager.do_self_loopback(mock_nic)
+    mock_nic = EmulatorMockNicAndHost(host_mem)
+    EmulatorMockNicAndHost.do_self_loopback(mock_nic)
     mock_nic.run()
 
     cmd_req_queue = RingbufCommandReqQueue(

@@ -5,7 +5,7 @@ if __name__ == "__main__":
     listen_addr = "0.0.0.0"
     listen_driver_port_a = 9873
     listen_simulator_port_a = listen_driver_port_a + 1
-    mock_nic_a = mock_host.MockNicAndHost(
+    mock_nic_a = mock_host.EmulatorMockNicAndHost(
         host_mem,
         host=listen_addr,
         port=listen_simulator_port_a,

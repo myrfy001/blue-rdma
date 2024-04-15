@@ -11,7 +11,6 @@ fi
 
 TEST_LOG_MOCK_HOST=system_test_mock_host.log
 TEST_LOG_SIMULATOR_A=system_test_simu_a.log
-TEST_LOG_SIMULATOR_B=system_test_simu_b.log
 
 MOCK_HOST_PYTHON_SERVER=py_tb/raw_socket_server.py
 COMPILED_SIMULATOR_BIN=mkTestTop.sh
@@ -29,7 +28,6 @@ fi
 cd $TEST_DIR
 truncate -s 0 $TEST_LOG_MOCK_HOST
 truncate -s 0 $TEST_LOG_SIMULATOR_A
-truncate -s 0 $TEST_LOG_SIMULATOR_B
 
 if [[ " $@ " =~ " --make " ]]; then
     FILE=`ls TestTop.bsv`
