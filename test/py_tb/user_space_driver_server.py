@@ -2,8 +2,8 @@ import socket
 import json
 import threading
 
-import mock_host
 
+import mock_host
 
 class UserspaceDriverServer:
     def __init__(self, listen_addr, listen_port_a, listen_port_b, share_mem_path, share_mem_size) -> None:

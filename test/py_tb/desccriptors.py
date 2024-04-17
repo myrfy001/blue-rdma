@@ -142,8 +142,10 @@ class CmdQueueDescQpManagementSeg0(Structure):
                 ("F_RESERVED_1", c_int, 4),
                 ("F_QP_ADMIN_ACCESS_FLAG", c_int, 8),
                 ("F_QP_ADMIN_PMTU", c_int, 3),
-                ("F_RESERVED_2", c_longlong, 45),
-                ("F_RESERVED_3", c_longlong, 64),
+                ("F_RESERVED_2", c_longlong, 5),
+                ("F_QP_PEER_QPN", c_int, 24),
+                ("F_RESERVED_3", c_longlong, 16),
+                ("F_RESERVED_4", c_longlong, 64),
                 ]
 
 

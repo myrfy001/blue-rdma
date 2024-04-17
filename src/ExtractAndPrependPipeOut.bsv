@@ -68,14 +68,15 @@ module mkHeader2DataStream#(
         HeaderByteNum leftShiftHeaderByteNum = curHeader.headerByteNum - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
 
         let nextHeaderRDMA = HeaderRDMA {
-            headerData    : leftShiftHeaderData,
+            headerData     : leftShiftHeaderData,
             headerByteNum  : leftShiftHeaderByteNum,
-            headerMetaData: HeaderMetaData {
+            headerMetaData : HeaderMetaData {
                 headerLen           : remainingHeaderLen,
                 headerFragNum       : remainingHeaderFragNum,
                 lastFragValidByteNum: curHeader.headerMetaData.lastFragValidByteNum,
                 hasPayload          : curHeader.headerMetaData.hasPayload,
-                isEmptyHeader       : curHeader.headerMetaData.isEmptyHeader
+                isEmptyHeader       : curHeader.headerMetaData.isEmptyHeader,
+                srcMacIpIdx         : 0
             }
         };
 

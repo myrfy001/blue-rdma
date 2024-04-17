@@ -41,6 +41,8 @@ import RegisterBlock :: *;
 import CmdQueue :: *;
 import WorkQueueRingbuf :: *;
 
+import PrimUtils :: *;
+
 // import SimDma :: *;
 
 typedef 4791 TEST_UDP_PORT;
@@ -135,26 +137,7 @@ interface RdmaUserLogicWithoutXdmaAndCmacWrapper;
 endinterface
 
 
-interface RdmaUserLogicWithoutXdmaAndUdpCmacWrapper;
-    // SQ
-    interface PipeOut#(PktInfo4UDP) sqUdpInfoPipeOut;
-    interface DataStreamPipeOut     sqRdmaDataStreamPipeOut;
 
-    // RQ
-    interface RqDataStreamWithRawPacketFlagPipeIn rqInputDataStream;
-    
-    // DMA Controller
-    interface UserLogicDmaReadWideClt   dmaReadClt;
-    interface UserLogicDmaWriteWideClt  dmaWriteClt;
-
-    // CSR related
-    interface Server#(CsrWriteRequest#(CsrAddr, CsrData), CsrWriteResponse)     csrWriteSrv;
-    interface Server#(CsrReadRequest#(CsrAddr), CsrReadResponse#(CsrData))      csrReadSrv;
-
-    // UDP config related
-    interface Get#(UdpConfig)    setNetworkParamReqOut;
-
-endinterface
 
 
 interface UdpWrapper;
@@ -171,10 +154,12 @@ interface RqWrapper;
     interface UserLogicDmaWriteClt dmaWriteClt;
     interface MrTableQueryClt mrTableQueryClt;
     interface PgtQueryClt pgtQueryClt;
-    interface RqDataStreamWithRawPacketFlagPipeIn rdmaDataStreamInput;
+    interface RqDataStreamWithExtraInfoPipeIn rdmaDataStreamInput;
     interface Server#(WriteReqCommonQPC, Bool) qpcWriteCommonSrv;
     interface PipeOut#(RingbufRawDescriptor) packetMetaDescPipeOutRQ;
     interface Put#(RawPacketReceiveMeta) rawPacketReceiveConfigIn;
+    interface Put#(Tuple2#(IndexQP, PSN)) setRqExpectedPsnReqIn;
+    interface PipeOut#(AutoAckGenMetaData)  autoAckMetaPipeOut;
 endinterface
 
 
@@ -184,14 +169,14 @@ module mkRqWrapper(RqWrapper);
     // TODO try remove this proxy.
     BluerdmaDmaProxyForRQ bluerdmaDmaProxyForRQ <- mkBluerdmaDmaProxyForRQ;
 
-    ReceivedStreamFragStorage recvStreamFragStorage <- mkReceivedStreamFragStorage;
+    RingbufStorage#(DATA, InputStreamFragBufferIdx) recvStreamFragStorage <- mkRingbufStorage("recvStreamFragStorage");
     RQ rqCore <- mkRQ;
     let inputRdmaPktBufAndHeaderValidation <- mkInputRdmaPktBufAndHeaderValidation;
     QPContext qpc <- mkQPContext;
     let payloadConsumer <- mkPayloadConsumer;
     RQReportEntryToRingbufDesc reportDescConvertor <- mkRQReportEntryToRingbufDesc;
 
-    FIFOF#(Tuple2#(DataTypes::DataStream,Bool)) inputDataStreamQ <- mkFIFOF;
+    FIFOF#(RqDataStreamWithExtraInfo) inputDataStreamQ <- mkFIFOF;
 
     let rawPacketFakeHeaderInserterPipeout <- mkRawPacketFakeHeaderStreamInsert(toPipeOut(inputDataStreamQ));
 
@@ -244,6 +229,8 @@ module mkRqWrapper(RqWrapper);
     interface qpcWriteCommonSrv = qpc.writeCommonSrv;
     interface packetMetaDescPipeOutRQ = reportDescConvertor.ringbufDescPipeOut;
     interface rawPacketReceiveConfigIn = rawPacketFakeHeaderInserterPipeout.rawPacketReceiveConfigIn;
+    interface setRqExpectedPsnReqIn = rqCore.setRqExpectedPsnReqIn;
+    interface autoAckMetaPipeOut = rqCore.autoAckMetaPipeOut;
 endmodule
 
 
@@ -259,6 +246,31 @@ module mkQueuePair(QueuePair);
     interface rqIfc = rq;
     interface sqIfc = sq;
 endmodule
+
+
+interface RdmaUserLogicWithoutXdmaAndUdpCmacWrapper;
+    // SQ
+    interface PipeOut#(PktInfo4UDP) sqUdpInfoPipeOut;
+    interface DataStreamPipeOut     sqRdmaDataStreamPipeOut;
+    interface Put#(WorkQueueElem)   autoAckWqePipeIn;
+
+    // RQ
+    interface RqDataStreamWithExtraInfoPipeIn rqInputDataStream;
+    interface PipeOut#(AutoAckGenMetaData) autoAckMetaPipeOut;
+    
+    // DMA Controller
+    interface UserLogicDmaReadWideClt   dmaReadClt;
+    interface UserLogicDmaWriteWideClt  dmaWriteClt;
+
+    // CSR related
+    interface Server#(CsrWriteRequest#(CsrAddr, CsrData), CsrWriteResponse)     csrWriteSrv;
+    interface Server#(CsrReadRequest#(CsrAddr), CsrReadResponse#(CsrData))      csrReadSrv;
+
+    // UDP config related
+    interface Get#(UdpConfig)    setNetworkParamReqOut;
+
+endinterface
+
 
 (* synthesize *)
 // TODO: refactor ringbuf module to get rid of these compiler attributes.
@@ -276,6 +288,8 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     RdmaUserLogicWithoutXdmaAndUdpCmacWrapper ifc
 );
 
+    FIFOF#(WorkQueueElem)   autoAckWqePipeInQ <- mkFIFOF;
+
     RingbufPool#(RINGBUF_H2C_TOTAL_COUNT, RINGBUF_C2H_TOTAL_COUNT, RingbufRawDescriptor) ringbufPool <- mkRingbufPool;
     RegisterBlock#(CsrAddr, CsrData) csrBlock <- mkRegisterBlock(ringbufPool.h2cMetas, ringbufPool.c2hMetas);
     CommandQueueController cmdQController <- mkCommandQueueController;
@@ -289,6 +303,7 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
 
     let qp <- mkQueuePair;
     mkConnection(cmdQController.setRawPacketReceiveMetaReqOut, qp.rqIfc.rawPacketReceiveConfigIn);
+    mkConnection(cmdQController.setRqExpectedPsnReqOut, qp.rqIfc.setRqExpectedPsnReqIn);
 
     DmaReqAddrTranslator addrTranslatorForSQ <- mkDmaReadReqAddrTranslator;
     function Bool alwaysTrue(anytype t) = True;
@@ -346,7 +361,6 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     mkConnection(xdmaWriteClt, xdmaGearbox.c2hStreamSrv);
     
     mkConnection(qp.sqIfc.dmaReadClt, addrTranslatorForSQ.sqReqInputSrv);
-    mkConnection(workQueueRingbufController.workReq, qp.sqIfc.sendQ.wqeSrv.request);
 
     // rule debug;
     //     if (!qp.sqIfc.sendQ.dataStreamPipeOutSQ.notEmpty) begin
@@ -357,6 +371,20 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     //     end 
     // endrule
 
+
+
+    rule arbitUserWqeAndAutoAckWqe;
+        if (autoAckWqePipeInQ.notEmpty) begin
+            autoAckWqePipeInQ.deq;
+            qp.sqIfc.sendQ.wqeSrv.request.put(autoAckWqePipeInQ.first);
+            $display("time=%0t: ", $time, "arbiter enqueue WQE to SQ, ACK WQE=", fshow(autoAckWqePipeInQ.first));
+        end
+        else if (workQueueRingbufController.workReq.notEmpty) begin
+            workQueueRingbufController.workReq.deq;
+            qp.sqIfc.sendQ.wqeSrv.request.put(workQueueRingbufController.workReq.first);
+            $display("time=%0t: ", $time, "arbiter enqueue WQE to SQ, User WQE=", fshow(workQueueRingbufController.workReq.first));
+        end
+    endrule
 
     rule forwardRecvQueuePktReportDescToRingbuf;
         let t = qp.rqIfc.packetMetaDescPipeOutRQ.first;
@@ -372,10 +400,11 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     // SQ
     interface sqUdpInfoPipeOut = qp.sqIfc.sendQ.udpInfoPipeOutSQ;
     interface sqRdmaDataStreamPipeOut = qp.sqIfc.sendQ.dataStreamPipeOutSQ;
+    interface autoAckWqePipeIn = toPut(autoAckWqePipeInQ);
 
     // RQ
     interface rqInputDataStream = qp.rqIfc.rdmaDataStreamInput;
-
+    interface autoAckMetaPipeOut = qp.rqIfc.autoAckMetaPipeOut;
 
     interface dmaReadClt = xdmaGearbox.h2cStreamClt;
     interface dmaWriteClt = xdmaGearbox.c2hStreamClt;
@@ -403,12 +432,19 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     let udp <- mkUdpWrapper;
 
     Reg#(UdpReceivingChannelSelectState)  isReceivingRawPacketReg <- mkReg(UdpReceivingChannelSelectStateIdle);
+    Reg#(UdpReceivingChannelSelectState)  isRelayRawPacketReg <- mkReg(UdpReceivingChannelSelectStateIdle);
 
+    RingbufStorage#(RecvPacketSrcMacIpBufferEntry, RecvPacketSrcMacIpBufferIdx) recvMacIpStorage <- mkRingbufStorage("recvMacIpStorage");
 
     FIFOF#(Ports::DataStream) udpTxStreamBufQ <- mkFIFOF;
     FIFOF#(UdpIpMetaData) udpTxIpMetaBufQ <- mkFIFOF;
     FIFOF#(MacMetaDataWithBypassTag) udpTxMacMetaBufQ <- mkFIFOF;
-    FIFOF#(Tuple2#(DataTypes::DataStream, Bool)) udpRxStreamBufQ <- mkFIFOF;
+    FIFOF#(RqDataStreamWithExtraInfo) udpRxStreamBufQ <- mkFIFOF;
+
+    FIFOF#(AutoAckGenMetaData) sendAutoAckMacIpStorageReadPipeQ <- mkFIFOF;
+
+    FIFOF#(DataStream) rdmaPacketDataStreamRelyQ <- mkFIFOF;
+    FIFOF#(DataStream) rawPacketDataStreamRelyQ <- mkFIFOF;
 
     mkConnection(toGet(udpTxStreamBufQ), udp.netTxRxIfc.dataStreamTxIn);
     mkConnection(toGet(udpTxIpMetaBufQ), udp.netTxRxIfc.udpIpMetaDataTxIn);
@@ -464,11 +500,24 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     endrule
 
+    // rule handleStoreSrcMacAndIpReq;
+
+    //     if (isRelayRawPacketReg == UdpReceivingChannelSelectStateIdle) begin
+        
+
+    //     udp.netTxRxIfc.udpIpMetaDataRxOut.deq;
+    //     udp.netTxRxIfc.macMetaDataRxOut.deq;
+
+    //     recvMacIpStorage.insertFragSrv.request.put(RecvPacketSrcMacIpBufferEntry{
+    //         ip     : tagged IPv4 unpack(pack(udp.netTxRxIfc.udpIpMetaDataRxOut.first.ipAddr)),
+    //         macAddr: unpack(pack(udp.netTxRxIfc.macMetaDataRxOut.first.macAddr))
+    //     });
+    // endrule
+
     rule forwardRdmaRxStream;
         if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateIdle) begin
+            let srcMacIpIdx <- recvMacIpStorage.insertFragSrv.response.get;
             if (udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
-                udp.netTxRxIfc.udpIpMetaDataRxOut.deq;
-                udp.netTxRxIfc.macMetaDataRxOut.deq;
                 let data = udp.netTxRxIfc.dataStreamRxOut.first;
                 udp.netTxRxIfc.dataStreamRxOut.deq;
                 let outData = dataStreamEn2DataStream(DataTypes::DataStreamEn {
@@ -477,7 +526,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                     isLast: data.isLast,
                     isFirst: data.isFirst
                 });
-                udpRxStreamBufQ.enq(tuple2(outData, False));
+                udpRxStreamBufQ.enq(tuple3(outData, False, srcMacIpIdx));
                 $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData), ", origin data = ", fshow(data));
 
                 if (!data.isLast) begin
@@ -494,7 +543,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                     isLast: data.isLast,
                     isFirst: data.isFirst
                 });
-                udpRxStreamBufQ.enq(tuple2(outData, True));
+                udpRxStreamBufQ.enq(tuple3(outData, True, srcMacIpIdx));
                 $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData), ", origin data = ", fshow(data));
 
                 if (!data.isLast) begin
@@ -511,7 +560,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isLast: data.isLast,
                 isFirst: data.isFirst
             });
-            udpRxStreamBufQ.enq(tuple2(outData, False));
+            udpRxStreamBufQ.enq(tuple3(outData, False, ?));
             $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData), ", origin data = ", fshow(data));
             if (data.isLast) begin
                 isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
@@ -526,12 +575,55 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isLast: data.isLast,
                 isFirst: data.isFirst
             });
-            udpRxStreamBufQ.enq(tuple2(outData, True));
+            udpRxStreamBufQ.enq(tuple3(outData, True, ?));
             $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData), ", origin data = ", fshow(data));
             if (data.isLast) begin
                 isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
             end
         end
+    endrule
+
+    rule sendAutoAckMacIpStorageReadReq;
+        let autoAckMeta = rdma.autoAckMetaPipeOut.first;
+        rdma.autoAckMetaPipeOut.deq;
+        recvMacIpStorage.readFragSrv.request.put(tuple2(autoAckMeta.srcMacIpIdx, False));
+        sendAutoAckMacIpStorageReadPipeQ.enq(autoAckMeta);
+    endrule
+
+    rule generateAutoAckWqe;
+        let macIp <- recvMacIpStorage.readFragSrv.response.get;
+
+        let autoAckMeta = sendAutoAckMacIpStorageReadPipeQ.first;
+        sendAutoAckMacIpStorageReadPipeQ.deq;
+
+        ScatterGatherList sgl = unpack(0);
+        sgl[0].isFirst = True;
+        sgl[0].isLast = True;
+
+        let autoGeneratedWQE = WorkQueueElem {
+            pkey: autoAckMeta.pkey,
+            opcode: IBV_WR_RDMA_ACK,
+            flags: enum2Flag(IBV_SEND_NO_FLAGS),
+            qpType: IBV_QPT_RC,
+            psn: autoAckMeta.expectedPsn,
+            pmtu: IBV_MTU_256,
+            dqpIP: macIp.ip,
+            macAddr: macIp.macAddr,
+            sgl: sgl,
+            totalLen: 0,
+            raddr: 0,
+            rkey: 0,
+            sqpn: 0, // TODO: remove it
+            dqpn: autoAckMeta.qpn,
+            comp: tagged Invalid,
+            swap: tagged Invalid,
+            immDtOrInvRKey: tagged Invalid,
+            srqn: tagged Invalid, // for XRC
+            qkey: tagged Invalid, // for UD
+            isFirst: True,
+            isLast: True
+        };
+        rdma.autoAckWqePipeIn.put(autoGeneratedWQE);
     endrule
     
    

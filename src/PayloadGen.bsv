@@ -13,35 +13,6 @@ import PrimUtils :: *;
 import Settings :: *;
 import RdmaUtils :: *;
 
-typedef Bit#(32)  AddrIPv4;
-typedef Bit#(128) AddrIPv6;
-typedef Bit#(48)  MAC;
-
-typedef union tagged {
-    AddrIPv4 IPv4;
-    AddrIPv6 IPv6;
-} IP deriving(Bits, Bounded);
-
-instance FShow#(IP);
-    function Fmt fshow(IP ipAddr);
-        case (ipAddr) matches
-            tagged IPv4 .ipv4: begin
-                return $format(
-                    "ipv4=%0d.%0d.%0d.%0d",
-                    ipv4[31 : 24], ipv4[23: 16], ipv4[15 : 8], ipv4[7 : 0]
-                );
-            end
-            tagged IPv6 .ipv6: begin
-                return $format(
-                    "ipv6=%h:%h:%h:%h:%h:%h:%h:%h",
-                    ipv6[127 : 112], ipv6[111: 96], ipv6[95 : 80], ipv6[79 : 64],
-                    ipv6[63 : 48], ipv6[47: 32], ipv6[31 : 16], ipv6[15 : 0]
-                );
-            end
-        endcase
-    endfunction
-endinstance
-
 typedef union tagged {
     IMM  Imm;
     RKEY RKey;

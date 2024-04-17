@@ -3,6 +3,7 @@ import GetPut :: *;
 import FIFOF :: *;
 import Vector :: *;
 import Connectable :: *;
+import PAClib :: *;
 
 import DataTypes :: *;
 import UserLogicSettings :: *;
@@ -17,7 +18,7 @@ import PayloadGen :: *;
 
 interface WorkQueueRingbufController;
     interface Put#(RingbufRawDescriptor) sqRingBuf;
-    interface Get#(WorkQueueElem) workReq;
+    interface PipeOut#(WorkQueueElem) workReq;
 endinterface
 
 
@@ -108,5 +109,5 @@ module mkWorkQueueRingbufController(WorkQueueRingbufController ifc);
     endrule
 
     interface sqRingBuf = toPut(sqRingBufQ);
-    interface workReq = toGet(workReqQ);
+    interface workReq = toPipeOut(workReqQ);
 endmodule

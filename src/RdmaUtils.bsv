@@ -5,6 +5,8 @@ import GetPut :: *;
 import DataTypes :: *;
 import Headers :: *;
 import Vector :: *;
+import BRAM :: *;
+import Printf:: *;
 
 import PAClib :: *;
 import PrimUtils :: *;
@@ -509,7 +511,8 @@ endfunction
 function HeaderMetaData genHeaderMetaData(
     HeaderByteNum headerLen,
     Bool hasPayload,
-    Bool isEmptyHeader
+    Bool isEmptyHeader,
+    RecvPacketSrcMacIpBufferIdx srcMacIpIdx
 );
     let { headerFragNum, lastFragValidByteNum } =
         calcHeaderFragNumAndLastFragValidByeNum(headerLen);
@@ -518,7 +521,8 @@ function HeaderMetaData genHeaderMetaData(
         headerFragNum: headerFragNum,
         lastFragValidByteNum: lastFragValidByteNum,
         hasPayload: hasPayload,
-        isEmptyHeader : isEmptyHeader
+        isEmptyHeader : isEmptyHeader,
+        srcMacIpIdx: srcMacIpIdx
     };
     return headerMetaData;
 endfunction
@@ -528,7 +532,7 @@ function HeaderRDMA genHeaderRDMA(
     HeaderByteNum headerLen,
     Bool hasPayload
 );
-    let headerMetaData = genHeaderMetaData(headerLen, hasPayload, False);
+    let headerMetaData = genHeaderMetaData(headerLen, hasPayload, False, 0);
     return HeaderRDMA {
         headerData     : headerData,
         headerByteNum  : headerLen,
@@ -542,7 +546,8 @@ function HeaderRDMA genEmptyHeaderRDMA(Bool hasPayload);
         headerFragNum       : 0,
         lastFragValidByteNum: 0,
         hasPayload          : hasPayload,
-        isEmptyHeader       : True
+        isEmptyHeader       : True,
+        srcMacIpIdx         : 0
     };
     return HeaderRDMA {
         headerData    : dontCareValue,
@@ -2019,3 +2024,96 @@ function DataStreamEn reverseStreamEnOnly(DataStreamEn st);
     st.byteEn = swapEndianBit(st.byteEn);
     return st;
 endfunction
+
+
+
+
+
+
+
+
+
+interface RingbufStorage#(type t_data, type t_idx);
+    interface Server#(t_data, t_idx) insertFragSrv;
+    interface Server#(Tuple2#(t_idx, Bool), t_data) readFragSrv;
+endinterface
+
+
+module mkRingbufStorage#(String name)(RingbufStorage#(t_data, t_idx)) provisos (
+    Bits#(t_data, sz_data),
+    Bits#(t_idx, sz_idx),
+    Alias#(Bit#(sz_idxNoGuard), t_idxNoGuard),
+    Add#(sz_idxNoGuard, 1, sz_idx),
+    FShow#(t_idx),
+    Bitwise#(t_idx),
+    Eq#(t_idx),
+    Arith#(t_idx)
+);
+    BypassServer#(t_data, t_idx) insertFragSrvInst                 <- mkBypassServer(sprintf("%s insertFragSrvInst", name));
+    BypassServer#(Tuple2#(t_idx, Bool), t_data) readFragSrvInst    <- mkBypassServer(sprintf("%s readFragSrvInst", name));
+
+    BRAM_Configure cfg = defaultValue;
+    BRAM2Port#(t_idxNoGuard, t_data) bramBuffer <- mkBRAM2Server(cfg);
+    Reg#(t_idx) idxGeneratorReg <- mkReg(unpack(0));
+    Reg#(t_idx) lastConsumeIdxReg <- mkReg(unpack(0));
+
+
+    rule handleInsertReq;
+        let data <- insertFragSrvInst.getReq;
+        bramBuffer.portA.request.put(BRAMRequest{
+            write: True,
+            responseOnWrite:False,
+            address: truncate(pack(idxGeneratorReg)),
+            datain: data
+        });
+
+        insertFragSrvInst.putResp(idxGeneratorReg);
+        idxGeneratorReg <= idxGeneratorReg + 1;
+
+        // if the substruct result's highest bit is one, the overflow
+        immAssert(
+            ((idxGeneratorReg - lastConsumeIdxReg) >> valueOf(sz_idxNoGuard)) == 0,
+            "buf overfllow @ RingbufStorage",
+            $format(
+                "ringbufName=", fshow(name), "idxGeneratorReg=", fshow(idxGeneratorReg), " lastConsumeIdxReg=", fshow(lastConsumeIdxReg)
+            )
+        );
+
+        $display(
+            "time=%0t:", $time, "RingbufStorage new input entry",
+            ", name=", fshow(name),
+            ", idxGeneratorReg=", fshow(idxGeneratorReg),
+            " lastConsumeIdxReg=", fshow(lastConsumeIdxReg) 
+        );
+    endrule
+
+    rule handleReadReq;
+        let {addr, isOnlyUpadteLastConsumeIndex} <- readFragSrvInst.getReq;
+        lastConsumeIdxReg <= addr;
+        if (!isOnlyUpadteLastConsumeIndex) begin
+            bramBuffer.portB.request.put(BRAMRequest{
+                write: False,
+                responseOnWrite:False,
+                address: truncate(pack(addr)),
+                datain: ?
+            });
+        end
+
+        $display(
+            "time=%0t:", $time, " RingbufStorage new output entry",
+            ", name=", fshow(name),
+            ", reqIdx=", fshow(addr),
+            ", lastConsumeIdxReg=", fshow(lastConsumeIdxReg),
+            ", isOnlyUpadteLastConsumeIndex=", fshow(isOnlyUpadteLastConsumeIndex)
+        );
+
+    endrule
+
+    rule outputReadResp;
+        let resp <- bramBuffer.portB.response.get;
+        readFragSrvInst.putResp(resp);
+    endrule
+
+    interface insertFragSrv = insertFragSrvInst.srv;
+    interface readFragSrv = readFragSrvInst.srv;
+endmodule

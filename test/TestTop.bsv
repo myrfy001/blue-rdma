@@ -215,14 +215,14 @@ module mkTestRdmaAndUserLogicWithoutUdp(Empty);
 
 `ifdef __LOOP_WITH_DELAY_QUEUE
 
-        FIFOF#(RqDataStreamWithRawPacketFlag) delayQ <- mkSizedFIFOF(8192);
+        FIFOF#(RqDataStreamWithExtraInfo) delayQ <- mkSizedFIFOF(8192);
         // loop tx stream to rx stream with delayed time so they won't interfere eachother.
         rule bufferTxStream;
             
             let data = topA.sqRdmaDataStreamPipeOut.first;
             topA.sqRdmaDataStreamPipeOut.deq;
             let isRawPkt = topA.sqUdpInfoPipeOut.first.isRawPkt;
-            let outData = tuple2(data, isRawPkt);
+            let outData = tuple3(data, isRawPkt, 0);
             delayQ.enq(outData);
 
             if (data.isLast) begin

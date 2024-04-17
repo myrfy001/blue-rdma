@@ -1,5 +1,6 @@
 import FIFOF :: *;
 import GetPut :: *;
+import Vector :: *;
 
 import ClientServer :: *;
 import RdmaUtils :: *;
@@ -9,6 +10,7 @@ import Headers :: *;
 import PAClib :: *;
 import PrimUtils :: *;
 import QPContext :: *;
+import PayloadGen :: *;
 
 import UserLogicTypes :: *;
 
@@ -27,17 +29,21 @@ typedef struct {
 
 
 interface RQ;
+    interface Put#(Tuple2#(IndexQP, PSN)) setRqExpectedPsnReqIn;
     interface Put#(RdmaPktMetaDataAndQPC) pktMetaDataPipeIn;
     interface MrTableQueryClt mrTableQueryClt;
     interface PgtQueryClt pgtQueryClt;
     interface Client#(PayloadConReq, PayloadConResp) payloadConsumerControlPortClt;
     interface PipeOut#(C2hReportEntry) pktReportEntryPipeOut;
+    interface PipeOut#(AutoAckGenMetaData)  autoAckMetaPipeOut;
 endinterface
 
 (* synthesize *)
 module mkRQ(RQ ifc);
     FIFOF#(RdmaPktMetaDataAndQPC)     rdmaPktMetaDataInQ  <- mkFIFOF;
-    FIFOF#(C2hReportEntry)              pktReportEntryQ     <- mkFIFOF;
+    FIFOF#(C2hReportEntry)               pktReportEntryQ  <- mkFIFOF;
+    FIFOF#(Tuple2#(IndexQP, PSN))   setRqExpectedPsnReqQ  <- mkFIFOF;
+    FIFOF#(AutoAckGenMetaData)           autoAckGenMetaQ  <- mkFIFOF;
 
     BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkBypassClient("mrTableQueryCltInst in RQ");
     BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient("RQ pgtQueryCltInst");
@@ -51,8 +57,9 @@ module mkRQ(RQ ifc);
     FIFOF#(ReqStatusCheckStep3PipeInfo)                                                                      reqStatusCheckStep3PipeQ   <- mkFIFOF;
 
     FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool))                                              getPGTQueryRespPipeQ <- mkSizedFIFOF(5);
-    FIFOF#(Tuple3#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool))                                                 psnContinuityCheckPipeQ <- mkFIFOF;
-    FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, ExpectedPsnContextEntry, Bool, Bool))                  waitDMARespPipeQ <- mkFIFOF;
+    FIFOF#(Tuple3#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool))                                                 psnContextQueryReqPipeQ <- mkFIFOF;
+    FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool))                                           psnContinuityCheckPipeQ <- mkFIFOF;
+    FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, PSN, Bool, Bool))                                      waitDMARespPipeQ        <- mkFIFOF;
 
 
     function FlagsType#(MemAccessTypeFlag) genAccessFlagFromReqType(Bool isSend, Bool isRead, Bool isWrite, Bool isAtomic);
@@ -347,7 +354,7 @@ module mkRQ(RQ ifc);
             end
         end
 
-        psnContinuityCheckPipeQ.enq(tuple3(pktMetaDataAndQpc, reqStatus, needIssueDMARequest));
+        psnContextQueryReqPipeQ.enq(tuple3(pktMetaDataAndQpc, reqStatus, needIssueDMARequest));
 
         $display("time=%0t: ", $time, "recvAddrTransRespAndIssueDMA",
                  ", needWaitForPGTResponse=",  fshow(needWaitForPGTResponse),
@@ -357,61 +364,90 @@ module mkRQ(RQ ifc);
         );
     endrule
 
+    rule sendPsnContinousCheckRequest;
+        let {pktMetaDataAndQpc, reqStatus, needIssueDMARequest} = psnContextQueryReqPipeQ.first;
+        psnContextQueryReqPipeQ.deq;
+
+        let pktMetaData     = pktMetaDataAndQpc.metadata;
+        let rdmaHeader      = pktMetaData.pktHeader;
+        let bth             = extractBTH(rdmaHeader.headerData);
+
+        let isAtomicReq     = isAtomicReqRdmaOpCode(bth.opcode);
+        let isFirstPkt      = isFirstRdmaOpCode(bth.opcode);
+        let isMiddlePkt     = isMiddleRdmaOpCode(bth.opcode);
+        let isLastPkt       = isLastRdmaOpCode(bth.opcode);
+        let isOnlyPkt       = isOnlyRdmaOpCode(bth.opcode);
+
+        let qpIdxPart = getIndexQP(bth.dqpn);
+
+        let isPacketAbnormal        = reqStatus != RDMA_REQ_ST_NORMAL;
+
+        let checkReq = ExpectedPsnCheckReq {
+            qpnIdx                  : qpIdxPart,
+            newIncomingPSN          : bth.psn,
+            isPacketStateAbnormal   : isPacketAbnormal
+        };
+        let needCheckExpectedPSN = !isPacketAbnormal && (isFirstPkt || isMiddlePkt || isLastPkt || isOnlyPkt);
+
+        if (needCheckExpectedPSN) begin
+            expectedPsnManager.psnContextQuerySrv.request.put(checkReq);
+        end
+        
+        psnContinuityCheckPipeQ.enq(tuple4(pktMetaDataAndQpc, reqStatus, needIssueDMARequest, needCheckExpectedPSN));
+
+    endrule
+
     rule checkPsnContinuityAndDecideIfNeedReportPacketMeta;
-        let {pktMetaDataAndQpc, reqStatus, needIssueDMARequest} = psnContinuityCheckPipeQ.first;
+        let {pktMetaDataAndQpc, reqStatus, needIssueDMARequest, needCheckExpectedPSN} = psnContinuityCheckPipeQ.first;
         psnContinuityCheckPipeQ.deq;
 
         let pktMetaData = pktMetaDataAndQpc.metadata;
         let rdmaHeader  = pktMetaData.pktHeader;
-        let bth         = extractBTH(rdmaHeader.headerData);
-
-
-        let isAtomicReq             = isAtomicReqRdmaOpCode(bth.opcode);
-        let isFirstPkt              = isFirstRdmaOpCode(bth.opcode);
-        let isMiddlePkt             = isMiddleRdmaOpCode(bth.opcode);
-        let isLastPkt               = isLastRdmaOpCode(bth.opcode);
-        let isOnlyPkt               = isOnlyRdmaOpCode(bth.opcode);
-        let isPacketAbnormal        = reqStatus != RDMA_REQ_ST_NORMAL;
-
-        Bit#(FORCE_REPORT_HEADER_META_INTERVAL_MASK_WIDTH) forceRepotMaskedPSN = truncate(bth.psn);
-        let isPsnLsbAllZero      = forceRepotMaskedPSN == 0;
         
+        let bth             = extractBTH(rdmaHeader.headerData);
+        let isMiddlePkt     = isMiddleRdmaOpCode(bth.opcode);
 
-        let needReportBecausePsnNotExpected = False;
-        let qpIdxPart = getIndexQP(bth.dqpn);
-        let psnContext = expectedPsnManager.getPsnContext(qpIdxPart);
-        if (psnContext.expectedPSN != bth.psn) begin
-            needReportBecausePsnNotExpected = True;
+        let needReportPacketMeta = True;
+
+        let expectedPsn = 0;
+        
+        $display("time=%0t:", $time, " needCheckExpectedPSN=", fshow(needCheckExpectedPSN));
+
+        if (needCheckExpectedPSN) begin
+            let psnContinousCheckResp <- expectedPsnManager.psnContextQuerySrv.response.get;
+            let needGenerateAck = psnContinousCheckResp.isPsnContinous && bth.ackReq;
+            expectedPsn = psnContinousCheckResp.expectedPSN;
+
+            $display("time=%0t:", $time, " psnContinousCheckResp=", fshow(psnContinousCheckResp), ", bth=", fshow(bth));
+
+            if (needGenerateAck) begin
+                let autoAckGenMeta = AutoAckGenMetaData {
+                    srcMacIpIdx: rdmaHeader.headerMetaData.srcMacIpIdx,
+                    pkey       : bth.pkey,
+                    expectedPsn: expectedPsn,
+                    qpn        : pktMetaDataAndQpc.qpc.peerQPN
+                };
+
+                autoAckGenMetaQ.enq(autoAckGenMeta);
+                $display("time=%0t:", $time, " decide auto send ACK, autoAckGenMeta=", fshow(autoAckGenMeta));
+            end
+
+            if (psnContinousCheckResp.isPsnContinous && isMiddlePkt) begin
+                needReportPacketMeta = False;
+            end
         end
 
-        let needUpdateExpectedPSN = !isPacketAbnormal && (isFirstPkt || isMiddlePkt || isLastPkt || isOnlyPkt);
-
-        // Since the max outstanding packet number is MAX_PSN / 2
-        // if the minus result is smaller than MAX_PSN / 2, it menas (bth.psn > psnContext.expectedPSN)
-        let isCurPsnGreaterOrEqualThanExpectedPSN = msb(bth.psn - psnContext.expectedPSN) == 1'b0;
-        let isCurPsnGreaterOrEqualThanlatestErrorPSN    = msb(bth.psn - psnContext.latestErrorPSN)    == 1'b0;
-
-        if (isCurPsnGreaterOrEqualThanExpectedPSN && needUpdateExpectedPSN) begin 
-            psnContext.expectedPSN = bth.psn+1;
-            expectedPsnManager.updatePsnContext(qpIdxPart, psnContext);
-        end
-        
-        let needReportPacketMeta = (
-            !isMiddlePkt                    || 
-            isPsnLsbAllZero                 || 
-            needReportBecausePsnNotExpected || 
-            isPacketAbnormal
-        );
 
         // For Debug Use
         needReportPacketMeta = True;
 
 
-        waitDMARespPipeQ.enq(tuple5(pktMetaDataAndQpc, reqStatus, psnContext, needIssueDMARequest, needReportPacketMeta));
+        waitDMARespPipeQ.enq(tuple5(pktMetaDataAndQpc, reqStatus, expectedPsn, needIssueDMARequest, needReportPacketMeta));
+        
     endrule
 
     rule waitDMAFinishAndWriteMetaToHost;
-        let { pktMetaDataAndQpc, reqStatus, psnContext, needIssueDMARequest, needReportPacketMeta } = waitDMARespPipeQ.first;
+        let { pktMetaDataAndQpc, reqStatus, expectedPsn, needIssueDMARequest, needReportPacketMeta } = waitDMARespPipeQ.first;
         waitDMARespPipeQ.deq;
 
         let pktMetaData = pktMetaDataAndQpc.metadata;
@@ -455,7 +491,7 @@ module mkRQ(RQ ifc);
         rptEntry.value          = aeth.value;
         rptEntry.msn            = isAckPkt ? aeth.msn : zeroExtend(bth.pkey);
         rptEntry.lastRetryPSN   = nreth.lastRetryPSN;
-        rptEntry.expectedPsn    = psnContext.expectedPSN;
+        rptEntry.expectedPsn    = expectedPsn;
         rptEntry.immDt          = immDT.data;
 
         if (needReportPacketMeta) begin
@@ -464,15 +500,20 @@ module mkRQ(RQ ifc);
         $display("time=%0t: ", $time, "waitDMAFinishAndWriteMetaToHost pktMetaDataAndQpc=",  fshow(pktMetaDataAndQpc));
     endrule
 
-    rule autoSendAck;
+    rule handleResetExpectedPsnReq;
+        let {qpnIdx, newExpectedPSN} = setRqExpectedPsnReqQ.first;
+        setRqExpectedPsnReqQ.deq;
+        expectedPsnManager.resetPSN(qpnIdx);
     endrule
 
-
+    interface setRqExpectedPsnReqIn         = toPut(setRqExpectedPsnReqQ);
+    
     interface pktMetaDataPipeIn             = toPut(rdmaPktMetaDataInQ);
     interface mrTableQueryClt               = mrTableQueryCltInst.clt;
     interface pgtQueryClt                   = pgtQueryCltInst.clt;
     interface payloadConsumerControlPortClt = payloadConsumerControlClt.clt;
     interface pktReportEntryPipeOut         = toPipeOut(pktReportEntryQ);
+    interface autoAckMetaPipeOut         = toPipeOut(autoAckGenMetaQ);
 endmodule
 
 

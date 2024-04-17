@@ -7,12 +7,13 @@ PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_256
 RECV_SIDE_IP = NIC_CONFIG_IPADDR
 RECE_SIDE_MAC = NIC_CONFIG_MACADDR
 RECV_SIDE_QPN = 0x6611
-SEND_SIDE_PSN = 0x22
+SEND_SIDE_PSN_INIT_VAL = 0x0
 
 SEND_BYTE_COUNT = 1024*16
 
 
 def test_case():
+    send_psn = SEND_SIDE_PSN_INIT_VAL
     host_mem = MockHostMem("/bluesim1", TOTAL_MEMORY_SIZE)
     mock_nic = MockNicAndHost(host_mem)
     MockNicAndHost.do_self_loopback(mock_nic)
@@ -47,6 +48,7 @@ def test_case():
 
     cmd_req_queue.put_desc_update_qp(
         qpn=SEND_SIDE_QPN,
+        peer_qpn=RECV_SIDE_QPN,
         pd_handler=SEND_SIDE_PD_HANDLER,
         qp_type=TypeQP.IBV_QPT_RC,
         acc_flag=MemAccessTypeFlag.IBV_ACCESS_LOCAL_WRITE | MemAccessTypeFlag.IBV_ACCESS_REMOTE_READ | MemAccessTypeFlag.IBV_ACCESS_REMOTE_WRITE,
@@ -98,12 +100,15 @@ def test_case():
         r_ip=RECV_SIDE_IP,
         r_mac=RECE_SIDE_MAC,
         dqpn=RECV_SIDE_QPN,
-        psn=SEND_SIDE_PSN,
+        psn=send_psn,
         pmtu=PMTU_VALUE_FOR_TEST,
+        send_flag=WorkReqSendFlag.IBV_SEND_SIGNALED,
     )
+    send_psn += 1
 
     send_queue.sync_pointers()
-    report = meta_report_queue.deq_blocking()
+    report = meta_report_queue.deq_blocking()  # packet meta report
+    report = meta_report_queue.deq_blocking()  # ack packet report
 
     if src_mem[0] != dst_mem[0] or src_mem[1] == dst_mem[1]:
         print("Error: Error at single byte write test")
@@ -130,12 +135,15 @@ def test_case():
         r_ip=RECV_SIDE_IP,
         r_mac=RECE_SIDE_MAC,
         dqpn=RECV_SIDE_QPN,
-        psn=SEND_SIDE_PSN,
+        psn=send_psn,
         pmtu=PMTU_VALUE_FOR_TEST,
+        send_flag=WorkReqSendFlag.IBV_SEND_SIGNALED,
     )
+    send_psn += 1
 
     send_queue.sync_pointers()
-    report = meta_report_queue.deq_blocking()
+    report = meta_report_queue.deq_blocking()  # packet meta report
+    report = meta_report_queue.deq_blocking()  # ack packet report
 
     if src_mem[0:5] != dst_mem[0:5]:
         print("Error: Error at 5 byte write test")
@@ -162,13 +170,16 @@ def test_case():
         r_ip=RECV_SIDE_IP,
         r_mac=RECE_SIDE_MAC,
         dqpn=RECV_SIDE_QPN,
-        psn=SEND_SIDE_PSN,
+        psn=send_psn,
         pmtu=PMTU_VALUE_FOR_TEST,
+        send_flag=WorkReqSendFlag.IBV_SEND_SIGNALED,
     )
+    send_psn += 1
 
     send_queue.sync_pointers()
 
-    report = meta_report_queue.deq_blocking()
+    report = meta_report_queue.deq_blocking()  # packet meta report
+
     parsed_report = MeatReportQueueDescBthReth.from_buffer(report)
     if parsed_report.F_BTH.F_OPCODE != RdmaOpCode.RDMA_READ_REQUEST:
         print(f"Error: Error at 1 byte read test, read request opcode not right, "
@@ -204,12 +215,15 @@ def test_case():
         r_ip=RECV_SIDE_IP,
         r_mac=RECE_SIDE_MAC,
         dqpn=RECV_SIDE_QPN,
-        psn=SEND_SIDE_PSN,
+        psn=send_psn,
         pmtu=PMTU_VALUE_FOR_TEST,
+        send_flag=WorkReqSendFlag.IBV_SEND_SIGNALED,
     )
+    send_psn += 4
 
     send_queue.sync_pointers()
-    report = meta_report_queue.deq_blocking()
+    report = meta_report_queue.deq_blocking()  # packet meta report
+    report = meta_report_queue.deq_blocking()  # ack packet report
 
     if src_mem[0:1024] != dst_mem[0:1024]:
         print("Error: Error at 1024 byte write test")

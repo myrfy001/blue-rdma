@@ -134,7 +134,7 @@ class RingbufCommandReqQueue:
         )
         self.rb.enq(obj)
 
-    def put_desc_update_qp(self, qpn, pd_handler, qp_type, acc_flag, pmtu, user_data=0):
+    def put_desc_update_qp(self, qpn, peer_qpn, pd_handler, qp_type, acc_flag, pmtu, user_data=0):
         cmd_queue_common_header = CmdQueueReqDescCommonHeader(
             F_VALID=1,
             F_SEGMENT_CNT=0,
@@ -151,6 +151,7 @@ class RingbufCommandReqQueue:
             # F_QP_ADMIN_ACCESS_FLAG=MemAccessTypeFlag.IBV_ACCESS_LOCAL_WRITE | MemAccessTypeFlag.IBV_ACCESS_REMOTE_READ | MemAccessTypeFlag.IBV_ACCESS_REMOTE_WRITE,
             F_QP_ADMIN_ACCESS_FLAG=acc_flag,
             F_QP_ADMIN_PMTU=pmtu,
+            F_QP_PEER_QPN=peer_qpn,
         )
         self.rb.enq(obj)
 

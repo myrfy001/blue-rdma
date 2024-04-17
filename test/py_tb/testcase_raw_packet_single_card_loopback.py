@@ -69,6 +69,7 @@ def test_case():
 
     cmd_req_queue.put_desc_update_qp(
         qpn=SEND_SIDE_QPN,
+        peer_qpn=RECV_SIDE_QPN,
         pd_handler=SEND_SIDE_PD_HANDLER,
         qp_type=TypeQP.IBV_QPT_RC,
         acc_flag=MemAccessTypeFlag.IBV_ACCESS_LOCAL_WRITE | MemAccessTypeFlag.IBV_ACCESS_REMOTE_READ | MemAccessTypeFlag.IBV_ACCESS_REMOTE_WRITE,

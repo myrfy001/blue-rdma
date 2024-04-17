@@ -137,9 +137,9 @@ typedef Bit#(PD_HANDLE_WIDTH) HandlerPD;
 typedef PipeOut#(DataStream) DataStreamPipeOut;
 typedef Put#(DataStream) DataStreamPipeIn;
 
-typedef Tuple2#(DataStream, Bool) RqDataStreamWithRawPacketFlag;
-typedef PipeOut#(RqDataStreamWithRawPacketFlag) RqDataStreamWithRawPacketFlagPipeOut;
-typedef Put#(RqDataStreamWithRawPacketFlag) RqDataStreamWithRawPacketFlagPipeIn;
+typedef Tuple3#(DataStream, Bool, RecvPacketSrcMacIpBufferIdx) RqDataStreamWithExtraInfo;
+typedef PipeOut#(RqDataStreamWithExtraInfo) RqDataStreamWithExtraInfoPipeOut;
+typedef Put#(RqDataStreamWithExtraInfo) RqDataStreamWithExtraInfoPipeIn;
 
 typedef PipeOut#(RecvReq)                     RecvReqBuf;
 
@@ -239,11 +239,12 @@ typedef struct {
 } DataStreamEn deriving(Bits, Bounded, Eq, FShow);
 
 typedef struct {
-    HeaderByteNum   headerLen;
-    HeaderFragNum   headerFragNum;
-    ByteEnBitNum    lastFragValidByteNum;
-    Bool            hasPayload;
-    Bool            isEmptyHeader;
+    HeaderByteNum                   headerLen;
+    HeaderFragNum                   headerFragNum;
+    ByteEnBitNum                    lastFragValidByteNum;
+    Bool                            hasPayload;
+    Bool                            isEmptyHeader;
+    RecvPacketSrcMacIpBufferIdx     srcMacIpIdx;
 } HeaderMetaData deriving(Bits, Bounded, Eq);
 
 typedef struct {
@@ -560,6 +561,7 @@ typedef enum {
     IBV_WR_TSO                  = 10,
     IBV_WR_DRIVER1              = 11,
     IBV_WR_RDMA_READ_RESP       = 12, // Not defined in rdma-core
+    IBV_WR_RDMA_ACK             = 13, // Not defined in rdma-core
     IBV_WR_FLUSH                = 14,
     IBV_WR_ATOMIC_WRITE         = 15
 } WorkReqOpCode deriving(Bits, Eq, FShow);
@@ -807,6 +809,7 @@ typedef struct {
     TypeQP                          qpType;             // 4 bits
     FlagsType#(MemAccessTypeFlag)   rqAccessFlags;      // 8 bits
     PMTU                            pmtu;               // 3 bits
+    QPN                             peerQPN;            // 24 bits
 } EntryCommonQPC deriving(Bits, Eq, FShow);
 
 
@@ -880,7 +883,7 @@ typedef enum {
 // Received payload stream related
 
 typedef 9 INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH;
-typedef Bit#(INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH) InputStreamFragBufferIdxWithoutGuard; 
+// typedef Bit#(INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH) InputStreamFragBufferIdxWithoutGuard; 
 
 typedef TAdd#(1, INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH) INPUT_STREAM_FRAG_BUFFER_INDEX_WIDTH;
 typedef Bit#(INPUT_STREAM_FRAG_BUFFER_INDEX_WIDTH) InputStreamFragBufferIdx; 
@@ -909,5 +912,64 @@ typedef 4 FORCE_REPORT_HEADER_META_INTERVAL_MASK_WIDTH;
 typedef struct {
     PSN  expectedPSN;
     PSN  latestErrorPSN;
-    Bool psnIsContinous;
+    Bool isPsnContinous;
 } ExpectedPsnContextEntry deriving(Bits, FShow);
+
+
+typedef Bit#(32)  AddrIPv4;
+typedef Bit#(128) AddrIPv6;
+typedef Bit#(48)  MAC;
+
+typedef union tagged {
+    AddrIPv4 IPv4;
+    AddrIPv6 IPv6;
+} IP deriving(Bits, Bounded);
+
+instance FShow#(IP);
+    function Fmt fshow(IP ipAddr);
+        case (ipAddr) matches
+            tagged IPv4 .ipv4: begin
+                return $format(
+                    "ipv4=%0d.%0d.%0d.%0d",
+                    ipv4[31 : 24], ipv4[23: 16], ipv4[15 : 8], ipv4[7 : 0]
+                );
+            end
+            tagged IPv6 .ipv6: begin
+                return $format(
+                    "ipv6=%h:%h:%h:%h:%h:%h:%h:%h",
+                    ipv6[127 : 112], ipv6[111: 96], ipv6[95 : 80], ipv6[79 : 64],
+                    ipv6[63 : 48], ipv6[47: 32], ipv6[31 : 16], ipv6[15 : 0]
+                );
+            end
+        endcase
+    endfunction
+endinstance
+
+
+typedef struct {
+    IndexQP    qpnIdx;
+    PSN        newIncomingPSN;
+    Bool       isPacketStateAbnormal;
+} ExpectedPsnCheckReq deriving(Bits, FShow);
+
+
+typedef struct {
+    PSN        expectedPSN;
+    Bool       isPsnContinous;
+} ExpectedPsnCheckResp deriving(Bits, FShow);
+
+typedef 6 RECV_PACKET_SRC_MAC_IP_BUFFER_INDEX_WIDTH;
+typedef Bit#(RECV_PACKET_SRC_MAC_IP_BUFFER_INDEX_WIDTH) RecvPacketSrcMacIpBufferIdx; 
+
+typedef struct {
+    IP ip;
+    MAC macAddr;
+} RecvPacketSrcMacIpBufferEntry deriving(Bits, FShow);
+
+typedef struct {
+    RecvPacketSrcMacIpBufferIdx srcMacIpIdx;
+    PKEY pkey;
+    PSN expectedPsn;
+    QPN qpn;
+} AutoAckGenMetaData deriving(Bits, FShow);
+

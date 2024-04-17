@@ -39,7 +39,7 @@ module mkCommandQueueController(CommandQueueController ifc);
 
     FIFOF#(UdpConfig)            setNetworkParamReqQ            <- mkFIFOF;
     FIFOF#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqQ    <- mkFIFOF;
-    FIFOF#(Tuple2#(IndexQP, PSN))    setRqExpectedPsnReqQ           <- mkFIFOF;
+    FIFOF#(Tuple2#(IndexQP, PSN))    setRqExpectedPsnReqQ       <- mkFIFOF;
 
 
     RingbufDescriptorReadProxy#(COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) descReadProxy <- mkRingbufDescriptorReadProxy;
@@ -62,6 +62,7 @@ module mkCommandQueueController(CommandQueueController ifc);
                 
                 let ent = EntryCommonQPC {
                     // isError:        desc0.isError,
+                    peerQPN   :     desc0.peerQPN,
                     qpnKeyPart:     getKeyQP(desc0.qpn), 
                     pdHandler:      desc0.pdHandler,
                     qpType:         desc0.qpType,
@@ -76,7 +77,7 @@ module mkCommandQueueController(CommandQueueController ifc);
                         ent: desc0.isValid ? tagged Valid ent : tagged Invalid
                     }
                 );
-                setRqExpectedPsnReqQ.enq(?);
+                setRqExpectedPsnReqQ.enq(tuple2(getIndexQP(desc0.qpn), 0));
                 isDispatchingReqReg <= False;
                 $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(desc0));
             end

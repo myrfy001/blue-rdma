@@ -182,7 +182,8 @@ typedef struct {
 
 
 typedef struct {
-    ReservedZero#(104)              reserved1;      // 104 bits
+    ReservedZero#(80 )              reserved1;      // 80  bits
+    QPN                             peerQPN;        // 24  bits
     ReservedZero#(5)                reserved2;      // 5   bits
     PMTU                            pmtu;           // 3   bits
     FlagsType#(MemAccessTypeFlag)   rqAccessFlags;  // 8   bits

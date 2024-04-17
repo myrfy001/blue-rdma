@@ -57,6 +57,7 @@ function Maybe#(RdmaOpCode) genFirstOrOnlyRdmaOpCode(WorkReqOpCode wrOpCode, Boo
         IBV_WR_RDMA_READ           : tagged Valid RDMA_READ_REQUEST;
         IBV_WR_ATOMIC_CMP_AND_SWP  : tagged Valid COMPARE_SWAP;
         IBV_WR_ATOMIC_FETCH_AND_ADD: tagged Valid FETCH_ADD;
+        IBV_WR_RDMA_ACK            : tagged Valid ACKNOWLEDGE;
         default                    : tagged Invalid;
     endcase;
 endfunction
@@ -174,6 +175,20 @@ function Maybe#(IETH) genIETH(WorkQueueElem wqe);
     end
 endfunction
 
+function Maybe#(AETH) genAETH(WorkQueueElem wqe);
+    return tagged Valid AETH {
+        rsvd1: unpack(0),
+        code : AETH_CODE_ACK,
+        value: unpack(pack(AETH_ACK_VALUE_INVALID_CREDIT_CNT)),
+        msn  : zeroExtend(wqe.pkey)
+    };
+endfunction
+
+function Maybe#(NRETH) genNRETH(WorkQueueElem wqe);
+    // hardware only generate ACK, not NAK
+    return tagged Valid unpack(0);
+endfunction
+
 function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
     WorkQueueElem wqe, Bool isOnlyReqPkt, Bool solicited, PSN psn, PAD padCnt,
     Bool ackReq, ADDR remoteAddr, Length dlen, Bool hasPayload
@@ -203,13 +218,15 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
             psn      : psn
         };
 
-        let xrceth = genXRCETH(wqe);
-        let deth = genDETH(wqe);
-        let reth = genRETH(wqe.opcode, remoteAddr, wqe.rkey, dlen);
-        let leth = genLETH(wqe, dlen);
+        let xrceth    = genXRCETH(wqe);
+        let deth      = genDETH(wqe);
+        let reth      = genRETH(wqe.opcode, remoteAddr, wqe.rkey, dlen);
+        let leth      = genLETH(wqe, dlen);
         let atomicEth = genAtomicEth(wqe);
-        let immDt = genImmDt(wqe);
-        let ieth = genIETH(wqe);
+        let immDt     = genImmDt(wqe);
+        let ieth      = genIETH(wqe);
+        let aeth      = genAETH(wqe);
+        let nreth     = genNRETH(wqe);
 
         // If WR has zero length, then no payload, no matter what kind of opcode
         // let hasPayload = workReqHasPayload(wr);
@@ -367,6 +384,16 @@ function Maybe#(PktHeaderInfo) genFirstOrOnlyPktHeader(
                         zeroExtendLSB({ pack(bth), pack(unwrapMaybe(reth)) }),
                         fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(RETH_BYTE_WIDTH)),
                         hasPayload
+                    );
+                    default         : tagged Invalid;
+                endcase;
+            end
+            IBV_WR_RDMA_ACK: begin
+                return case (wqe.qpType)
+                    IBV_QPT_RC: tagged Valid genPktHeaderInfo(
+                        zeroExtendLSB({ pack(bth), pack(unwrapMaybe(aeth)), pack(unwrapMaybe(nreth)) }),
+                        fromInteger(valueOf(BTH_BYTE_WIDTH) + valueOf(AETH_BYTE_WIDTH) + valueOf(NRETH_BYTE_WIDTH)),
+                        False
                     );
                     default         : tagged Invalid;
                 endcase;
