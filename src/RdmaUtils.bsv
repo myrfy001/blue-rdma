@@ -2028,13 +2028,9 @@ endfunction
 
 
 
-
-
-
-
-
 interface RingbufStorage#(type t_data, type t_idx);
-    interface Server#(t_data, t_idx) insertFragSrv;
+    interface Get#(t_idx) allocSlotIdx;
+    interface Put#(Tuple2#(t_idx, t_data)) saveData;
     interface Server#(Tuple2#(t_idx, Bool), t_data) readFragSrv;
 endinterface
 
@@ -2049,7 +2045,6 @@ module mkRingbufStorage#(String name)(RingbufStorage#(t_data, t_idx)) provisos (
     Eq#(t_idx),
     Arith#(t_idx)
 );
-    BypassServer#(t_data, t_idx) insertFragSrvInst                 <- mkBypassServer(sprintf("%s insertFragSrvInst", name));
     BypassServer#(Tuple2#(t_idx, Bool), t_data) readFragSrvInst    <- mkBypassServer(sprintf("%s readFragSrvInst", name));
 
     BRAM_Configure cfg = defaultValue;
@@ -2057,34 +2052,12 @@ module mkRingbufStorage#(String name)(RingbufStorage#(t_data, t_idx)) provisos (
     Reg#(t_idx) idxGeneratorReg <- mkReg(unpack(0));
     Reg#(t_idx) lastConsumeIdxReg <- mkReg(unpack(0));
 
+    FIFOF#(t_idx) allocedIdxQ <- mkFIFOF;
 
-    rule handleInsertReq;
-        let data <- insertFragSrvInst.getReq;
-        bramBuffer.portA.request.put(BRAMRequest{
-            write: True,
-            responseOnWrite:False,
-            address: truncate(pack(idxGeneratorReg)),
-            datain: data
-        });
 
-        insertFragSrvInst.putResp(idxGeneratorReg);
+    rule handleAllocIdx;
+        allocedIdxQ.enq(idxGeneratorReg);
         idxGeneratorReg <= idxGeneratorReg + 1;
-
-        // if the substruct result's highest bit is one, the overflow
-        immAssert(
-            ((idxGeneratorReg - lastConsumeIdxReg) >> valueOf(sz_idxNoGuard)) == 0,
-            "buf overfllow @ RingbufStorage",
-            $format(
-                "ringbufName=", fshow(name), "idxGeneratorReg=", fshow(idxGeneratorReg), " lastConsumeIdxReg=", fshow(lastConsumeIdxReg)
-            )
-        );
-
-        $display(
-            "time=%0t:", $time, "RingbufStorage new input entry",
-            ", name=", fshow(name),
-            ", idxGeneratorReg=", fshow(idxGeneratorReg),
-            " lastConsumeIdxReg=", fshow(lastConsumeIdxReg) 
-        );
     endrule
 
     rule handleReadReq;
@@ -2114,6 +2087,34 @@ module mkRingbufStorage#(String name)(RingbufStorage#(t_data, t_idx)) provisos (
         readFragSrvInst.putResp(resp);
     endrule
 
-    interface insertFragSrv = insertFragSrvInst.srv;
+    interface Put saveData;
+        method Action put(Tuple2#(t_idx, t_data) storeReq);
+            let {idx, data} = storeReq;
+            bramBuffer.portA.request.put(BRAMRequest{
+                write: True,
+                responseOnWrite:False,
+                address: truncate(pack(idx)),
+                datain: data
+            });
+    
+            // if the substruct result's highest bit is one, the overflow
+            immAssert(
+                ((idx - lastConsumeIdxReg) >> valueOf(sz_idxNoGuard)) == 0,
+                "buf overfllow @ RingbufStorage",
+                $format(
+                    "ringbufName=", fshow(name), "idx=", fshow(idx), " lastConsumeIdxReg=", fshow(lastConsumeIdxReg)
+                )
+            );
+    
+            $display(
+                "time=%0t:", $time, "RingbufStorage new input entry",
+                ", name=", fshow(name),
+                ", idx=", fshow(idx),
+                " lastConsumeIdxReg=", fshow(lastConsumeIdxReg) 
+            );
+        endmethod
+    endinterface
+
+    interface allocSlotIdx = toGet(allocedIdxQ);
     interface readFragSrv = readFragSrvInst.srv;
 endmodule

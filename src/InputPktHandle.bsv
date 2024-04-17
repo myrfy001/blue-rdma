@@ -89,7 +89,8 @@ interface HeaderAndMetaDataAndPayloadSeperateDataStreamPipeOut;
     interface HeaderDataStreamAndMetaDataPipeOut headerAndMetaData;
     interface DataStreamFragMetaPipeOut payloadStreamFragMetaPipeOut;
     interface RqDataStreamWithExtraInfoPipeIn rdmaPktPipeIn;
-    interface Client#(DATA, InputStreamFragBufferIdx) payloadStreamFragStorageInsertClt;
+    interface Put#(InputStreamFragBufferIdx) payloadStreamFragStorageIdxIn;
+    interface Get#(Tuple2#(InputStreamFragBufferIdx, DATA)) payloadStreamFragStorageDataOut;
 endinterface
 
 // After extract header from rdmaPktPipeIn,
@@ -171,7 +172,8 @@ module mkExtractHeaderFromRdmaPktPipeOut(HeaderAndMetaDataAndPayloadSeperateData
     endinterface;
     interface payloadStreamFragMetaPipeOut = headerAndPayloadPipeOut.payloadStreamFragMetaPipeOut;
     interface rdmaPktPipeIn = toPut(rdmaPktPipeInQ);
-    interface payloadStreamFragStorageInsertClt = headerAndPayloadPipeOut.payloadStreamFragStorageInsertClt;
+    interface payloadStreamFragStorageIdxIn = headerAndPayloadPipeOut.payloadStreamFragStorageIdxIn;
+    interface payloadStreamFragStorageDataOut = headerAndPayloadPipeOut.payloadStreamFragStorageDataOut;
 endmodule
 
 interface InputRdmaPktBuf;

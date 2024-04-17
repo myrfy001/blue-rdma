@@ -560,7 +560,8 @@ endmodule
 interface HeaderAndPayloadSeperateDataStreamPipeOut;
     interface DataStreamPipeOut header;
     interface DataStreamFragMetaPipeOut payloadStreamFragMetaPipeOut;
-    interface Client#(DATA, InputStreamFragBufferIdx) payloadStreamFragStorageInsertClt;
+    interface Put#(InputStreamFragBufferIdx) payloadStreamFragStorageIdxIn;
+    interface Get#(Tuple2#(InputStreamFragBufferIdx, DATA)) payloadStreamFragStorageDataOut;
 endinterface
 
 // Neither dataPipeIn nor headerMetaDataPipeIn can be empty, headerLen cannot be zero
@@ -569,10 +570,11 @@ module mkExtractHeaderFromDataStreamPipeOut#(
     DataStreamPipeOut dataPipeIn, PipeOut#(HeaderMetaData) headerMetaDataPipeIn
 )(HeaderAndPayloadSeperateDataStreamPipeOut);
 
-    BypassClient#(DATA, InputStreamFragBufferIdx) payloadStreamFragStorageInsertCltInst <- mkBypassClient("payloadStreamFragStorageInsertCltInst");
+    FIFOF#(InputStreamFragBufferIdx) payloadStreamFragStorageIdxInQ <- mkFIFOF;
+    FIFOF#(Tuple2#(InputStreamFragBufferIdx, DATA)) payloadStreamFragStorageDataOutQ <- mkFIFOF;
+
     
     FIFOF#(DataStream) headerDataStreamOutQ                     <- mkFIFOF;
-    FIFOF#(DataStreamFragMetaData) payloadDataStreamFragPreOutQ <- mkSizedFIFOF(5);
     FIFOF#(DataStreamFragMetaData) payloadDataStreamFragOutQ    <- mkFIFOF;
 
     FIFOF#(Tuple3#(ByteEnBitNum, ByteEnBitNum, HeaderMetaData)) calculatedMetasQ <- mkFIFOF;
@@ -702,8 +704,8 @@ module mkExtractHeaderFromDataStreamPipeOut#(
                     isLast : True,
                     isEmpty: True
                 };
-                payloadDataStreamFragPreOutQ.enq(outDataStreamFragMeta);
-                // payloadStreamFragStorageInsertCltInst.putReq(leftShiftedPayloadData);
+                payloadDataStreamFragOutQ.enq(outDataStreamFragMeta);
+                
 
                 calculatedMetasQ.deq;  // move on to next packet
 
@@ -714,15 +716,19 @@ module mkExtractHeaderFromDataStreamPipeOut#(
                     "last header beat assertion @ mkExtractHeaderFromDataStreamPipeOut",
                     $format("should be last beat", fshow(inDataStreamFrag))
                 );
+
+                payloadStreamFragStorageIdxInQ.deq;
+                let bufIdx = payloadStreamFragStorageIdxInQ.first;
                 let outDataStreamFragMeta = DataStreamFragMetaData {
-                    bufIdx : ?,
+                    bufIdx : bufIdx,
                     byteNum : leftShiftedPayloadByteNum,
                     isFirst: True,
                     isLast : True,
                     isEmpty: False
                 };
-                payloadDataStreamFragPreOutQ.enq(outDataStreamFragMeta);
-                payloadStreamFragStorageInsertCltInst.putReq(leftShiftedPayloadData);
+                payloadDataStreamFragOutQ.enq(outDataStreamFragMeta);
+                payloadStreamFragStorageDataOutQ.enq(tuple2(bufIdx, leftShiftedPayloadData));
+
                 calculatedMetasQ.deq;  // move on to next packet
             end
             else begin
@@ -748,8 +754,11 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         let noExtraLastFrag = !isByteSumOverflow;
 
         let isLast = curDataStreamFrag.isLast && noExtraLastFrag;
+
+        payloadStreamFragStorageIdxInQ.deq;
+        let bufIdx = payloadStreamFragStorageIdxInQ.first;
         let outDataStream = DataStreamFragMetaData {
-            bufIdx : ?,
+            bufIdx : bufIdx,
             byteNum : outByteNum,
             isFirst: isFirstDataFragReg,
             isLast : isLast,
@@ -766,8 +775,8 @@ module mkExtractHeaderFromDataStreamPipeOut#(
             ", stageReg=", fshow(stageReg)
         );
         
-        payloadDataStreamFragPreOutQ.enq(outDataStream);
-        payloadStreamFragStorageInsertCltInst.putReq(truncate(outData));
+        payloadDataStreamFragOutQ.enq(outDataStream);
+        payloadStreamFragStorageDataOutQ.enq(tuple2(bufIdx, truncate(outData)));
 
         if (curDataStreamFrag.isLast) begin
             if (noExtraLastFrag) begin
@@ -785,8 +794,11 @@ module mkExtractHeaderFromDataStreamPipeOut#(
 
         DATA leftShiftData      = truncate(preDataStreamReg.data << getFragEnBitNumByByteEnNum(zeroExtend(headerLastFragValidByteNum)));
         let leftShiftByteNum    = preDataStreamReg.byteNum - headerLastFragInvalidByteNum;
+
+        payloadStreamFragStorageIdxInQ.deq;
+        let bufIdx = payloadStreamFragStorageIdxInQ.first;
         let extraLastDataStream = DataStreamFragMetaData {
-            bufIdx : ?,
+            bufIdx : bufIdx,
             byteNum: leftShiftByteNum,
             isFirst: False,
             isLast: True,
@@ -794,34 +806,18 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         };
 
         $display("time=%0t: extraLastDataStream=", $time, fshow(extraLastDataStream));
-        payloadDataStreamFragPreOutQ.enq(extraLastDataStream);
-        payloadStreamFragStorageInsertCltInst.putReq(leftShiftData);
+
+        payloadDataStreamFragOutQ.enq(extraLastDataStream);
+        payloadStreamFragStorageDataOutQ.enq(tuple2(bufIdx, leftShiftData));
 
         stageReg <= STREAM_OUTPUT_HEADER_OUTPUT;
         calculatedMetasQ.deq;  // move on to next packet
     endrule
 
-    rule outputPayloadStreamFragMeta;
-        // the goal of this rule is assign bufIdx to fragMeta
-
-        let fragMeta = payloadDataStreamFragPreOutQ.first;
-        payloadDataStreamFragPreOutQ.deq;
-
-        if (!fragMeta.isEmpty) begin
-            let bufIdx <- payloadStreamFragStorageInsertCltInst.getResp;
-            fragMeta.bufIdx = bufIdx;
-        end
-        payloadDataStreamFragOutQ.enq(fragMeta);
-
-        $display(
-            "time=%0t:", $time,
-            " outputPayloadStreamFragMeta ",
-            ", fragMeta=", fshow(fragMeta)
-        );
-    endrule
-
     interface header = toPipeOut(headerDataStreamOutQ);
     interface payloadStreamFragMetaPipeOut = toPipeOut(payloadDataStreamFragOutQ);
-    interface payloadStreamFragStorageInsertClt = payloadStreamFragStorageInsertCltInst.clt;
+    
+    interface payloadStreamFragStorageIdxIn   = toPut(payloadStreamFragStorageIdxInQ);
+    interface payloadStreamFragStorageDataOut = toGet(payloadStreamFragStorageDataOutQ);
 endmodule
 

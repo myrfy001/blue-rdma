@@ -187,7 +187,9 @@ module mkRqWrapper(RqWrapper);
     mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData), inputRdmaPktBufAndHeaderValidation.headerMetaDataPipeIn);
     mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerDataStream), inputRdmaPktBufAndHeaderValidation.headerDataStreamPipeIn);
     mkConnection(toGet(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragMetaPipeOut), inputRdmaPktBufAndHeaderValidation.payloadStreamFragMetaPipeIn);
-    mkConnection(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragStorageInsertClt, recvStreamFragStorage.insertFragSrv);
+    mkConnection(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragStorageIdxIn, recvStreamFragStorage.allocSlotIdx);
+    mkConnection(headerAndMetaDataAndPayloadPipeOut.payloadStreamFragStorageDataOut, recvStreamFragStorage.saveData);
+
 
     // rule debugDropData;
     //     if (headerAndMetaDataAndPayloadPipeOut.headerAndMetaData.headerMetaData.notEmpty) begin
@@ -432,7 +434,6 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     let udp <- mkUdpWrapper;
 
     Reg#(UdpReceivingChannelSelectState)  isReceivingRawPacketReg <- mkReg(UdpReceivingChannelSelectStateIdle);
-    Reg#(UdpReceivingChannelSelectState)  isRelayRawPacketReg <- mkReg(UdpReceivingChannelSelectStateIdle);
 
     RingbufStorage#(RecvPacketSrcMacIpBufferEntry, RecvPacketSrcMacIpBufferIdx) recvMacIpStorage <- mkRingbufStorage("recvMacIpStorage");
 
@@ -500,24 +501,19 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     endrule
 
-    // rule handleStoreSrcMacAndIpReq;
-
-    //     if (isRelayRawPacketReg == UdpReceivingChannelSelectStateIdle) begin
-        
-
-    //     udp.netTxRxIfc.udpIpMetaDataRxOut.deq;
-    //     udp.netTxRxIfc.macMetaDataRxOut.deq;
-
-    //     recvMacIpStorage.insertFragSrv.request.put(RecvPacketSrcMacIpBufferEntry{
-    //         ip     : tagged IPv4 unpack(pack(udp.netTxRxIfc.udpIpMetaDataRxOut.first.ipAddr)),
-    //         macAddr: unpack(pack(udp.netTxRxIfc.macMetaDataRxOut.first.macAddr))
-    //     });
-    // endrule
 
     rule forwardRdmaRxStream;
         if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateIdle) begin
-            let srcMacIpIdx <- recvMacIpStorage.insertFragSrv.response.get;
             if (udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
+                let srcMacIpIdx <- recvMacIpStorage.allocSlotIdx.get;
+                udp.netTxRxIfc.udpIpMetaDataRxOut.deq;
+                udp.netTxRxIfc.macMetaDataRxOut.deq;
+
+                recvMacIpStorage.saveData.put(tuple2(srcMacIpIdx, RecvPacketSrcMacIpBufferEntry{
+                    ip     : tagged IPv4 unpack(pack(udp.netTxRxIfc.udpIpMetaDataRxOut.first.ipAddr)),
+                    macAddr: unpack(pack(udp.netTxRxIfc.macMetaDataRxOut.first.macAddr))
+                }));
+
                 let data = udp.netTxRxIfc.dataStreamRxOut.first;
                 udp.netTxRxIfc.dataStreamRxOut.deq;
                 let outData = dataStreamEn2DataStream(DataTypes::DataStreamEn {
@@ -534,6 +530,11 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 end
             end
             else if (udp.netTxRxIfc.rawPktStreamRxOut.notEmpty) begin
+                let srcMacIpIdx <- recvMacIpStorage.allocSlotIdx.get;
+                recvMacIpStorage.saveData.put(tuple2(srcMacIpIdx, RecvPacketSrcMacIpBufferEntry{
+                    ip     : tagged IPv4 unpack(0),
+                    macAddr: unpack(0)
+                }));
 
                 let data = udp.netTxRxIfc.rawPktStreamRxOut.first;
                 udp.netTxRxIfc.rawPktStreamRxOut.deq;
