@@ -69,17 +69,41 @@ typedef Bit#(CMD_QUEUE_RINGBUF_DESC_OPCODE_LENGTH) RingbufRawDescriptorOpcode;
 
 typedef Bit#(20) UserLogicDmaLen;
 
-typedef TMul#(DATA_BUS_WIDTH, 2) DATA_BUS_WIDE_WIDTH;
-typedef TMul#(DATA_BUS_BYTE_WIDTH, 2) DATA_BUS_WIDE_BYTE_WIDTH;
+typedef TDiv#(512, DATA_BUS_WIDTH) DATA_BUS_TO_WIDE_BUS_CONVERT_FACTOR; // 2 (256 bits)  1 (512 bits)
+
+typedef TMul#(DATA_BUS_WIDTH, DATA_BUS_TO_WIDE_BUS_CONVERT_FACTOR) DATA_BUS_WIDE_WIDTH;
+typedef TMul#(DATA_BUS_BYTE_WIDTH, DATA_BUS_TO_WIDE_BUS_CONVERT_FACTOR) DATA_BUS_WIDE_BYTE_WIDTH;
 typedef Bit#(DATA_BUS_WIDE_WIDTH)      DATA_WIDE;
 typedef Bit#(DATA_BUS_WIDE_BYTE_WIDTH) ByteEnWide;
+
+typedef 256 DATA_BUS_NARROW_WIDTH;                                            // 256
+typedef TDiv#(DATA_BUS_NARROW_WIDTH, BYTE_WIDTH) DATA_BUS_NARROW_BYTE_WIDTH;  // 32
+typedef Bit#(DATA_BUS_NARROW_WIDTH)      DATA_NARROW;
+typedef Bit#(DATA_BUS_NARROW_BYTE_WIDTH) ByteEnNarrow;
+
+typedef Bit#(TAdd#(1, TLog#(DATA_BUS_NARROW_BYTE_WIDTH))) ByteEnBitNumNarrow; // 6 
+
+typedef struct {
+    DATA_NARROW data;
+    ByteEnBitNumNarrow byteNum;
+    Bool isFirst;
+    Bool isLast;
+} DataStreamNarrow deriving(Bits, Bounded, Eq, FShow);
+
+typedef struct {
+    DATA_NARROW data;
+    ByteEnNarrow byteEn;
+    Bool isFirst;
+    Bool isLast;
+} DataStreamNarrowEn deriving(Bits, Bounded, Eq, FShow);
+
 
 typedef struct {
     DATA_WIDE data;
     ByteEnWide byteEn;
     Bool isFirst;
     Bool isLast;
-} DataStreamWide deriving(Bits, Bounded, Eq, FShow);
+} DataStreamWideEn deriving(Bits, Bounded, Eq, FShow);
 
 typedef struct {
     ADDR addr;
@@ -91,7 +115,7 @@ typedef struct {
 } UserLogicDmaH2cResp deriving(Bits, FShow);
 
 typedef struct {
-    DataStreamWide dataStream;
+    DataStreamWideEn dataStream;
 } UserLogicDmaH2cWideResp deriving(Bits, FShow);
 
 
@@ -104,7 +128,7 @@ typedef struct {
 typedef struct {
     ADDR addr;
     UserLogicDmaLen len;
-    DataStreamWide dataStream;
+    DataStreamWideEn dataStream;
 } UserLogicDmaC2hWideReq deriving(Bits, FShow);
 
 typedef struct {

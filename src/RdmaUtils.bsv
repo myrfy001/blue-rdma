@@ -397,7 +397,6 @@ function DataStream dataStreamEn2DataStream(DataStreamEn inStream);
     };
 endfunction
 
-// TODO: should we change ByteEnBitNum and BusBitNum into ShiftBitNum and ShiftByteNum to save an bit?
 function BusBitNum getFragEnBitNumByByteEnNum(ByteEnBitNum byteEnNum);
     return zeroExtend(byteEnNum) << 3;
 endfunction
@@ -500,10 +499,10 @@ function Tuple2#(HeaderFragNum, ByteEnBitNum) calcHeaderFragNumAndLastFragValidB
     Add#(HEADER_FRAG_NUM_WIDTH, DATA_BUS_BYTE_NUM_WIDTH, HEADER_MAX_BYTE_NUM_WIDTH)
 );
     let headerLastFragValidByteNum = calcLastFragValidByteNum(headerLen);
-    HeaderFragNum headerFragNum = 1;
-    // Trick: header at most have 2 frag
-    if (headerLen > fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) begin
-        headerFragNum = 2;
+    HeaderFragNum headerFragNum = truncate(headerLen >> (valueOf(HEADER_MAX_BYTE_NUM_WIDTH)-1));
+    HeaderByteWidthMask lowerPart = truncate(headerLen);
+    if (!isZeroR(lowerPart)) begin
+        headerFragNum = headerFragNum + 1;
     end
     return tuple2(headerFragNum, headerLastFragValidByteNum);
 endfunction

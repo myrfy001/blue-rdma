@@ -81,7 +81,7 @@ module mkTestMockXdma(Empty);
             UserLogicDmaC2hWideReq {
                 addr: 0,
                 len: 256,
-                dataStream: DataStreamWide{
+                dataStream: DataStreamWideEn{
                     isFirst : cnt == 0,
                     isLast : cnt == 3,
                     data: ?,

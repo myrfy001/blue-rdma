@@ -5,6 +5,8 @@ import Clocks :: * ;
 import Vector :: *;
 import BRAM :: *;
 
+import Settings :: *;
+
 import UserLogicSettings :: *;
 import UserLogicTypes :: *;
 import RdmaUtils :: *;
@@ -109,7 +111,7 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
         let currentProcessingReq = readReqProcessingQ.first;
         xdmaH2cStFifo.deq;
         dmaReadRespQ.enq(UserLogicDmaH2cWideResp{
-            dataStream: DataStreamWide{
+            dataStream: DataStreamWideEn{
                 data: unpack(pack(newData.tData)),
                 byteEn: newData.tKeep,
                 isFirst: h2cNextBeatIsFirst,
@@ -416,6 +418,91 @@ interface XdmaGearbox;
     interface UserLogicDmaWriteSrv c2hStreamSrv;
 endinterface
 
+
+`ifdef IS_250MHZ_512BITS
+(* synthesize *)
+module mkXdmaBypassGearbox(XdmaGearbox ifc);
+    
+    Wire#(UserLogicDmaH2cReq) h2cReqWire <- mkWire;
+    Wire#(UserLogicDmaH2cResp) h2cRespWire <- mkWire;
+    Wire#(UserLogicDmaC2hWideReq) c2hReqWire <- mkWire;
+    Wire#(UserLogicDmaC2hResp) c2hRespWire <- mkWire;
+    interface UserLogicDmaReadWideClt h2cStreamClt;
+        interface Get request;
+            method ActionValue#(UserLogicDmaH2cReq) get;
+                return h2cReqWire;
+            endmethod
+        endinterface
+
+        interface Put response;
+            method Action put(UserLogicDmaH2cWideResp in);
+                h2cRespWire <= UserLogicDmaH2cResp {
+                    dataStream: DataStreamEn {
+                        data: in.dataStream.data,
+                        byteEn: in.dataStream.byteEn,
+                        isFirst: in.dataStream.isFirst,
+                        isLast: in.dataStream.isLast
+                    }
+                };
+            endmethod
+        endinterface
+    endinterface
+
+    interface UserLogicDmaWriteWideClt c2hStreamClt;
+        interface Get request;
+            method ActionValue#(UserLogicDmaC2hWideReq) get;
+                return c2hReqWire;
+            endmethod
+        endinterface
+
+        interface Put response;
+            method Action put(UserLogicDmaC2hResp e);
+                c2hRespWire <= e;
+            endmethod
+        endinterface
+    endinterface
+
+    interface UserLogicDmaReadWideSrv h2cStreamSrv;
+        interface Get response;
+            method ActionValue#(UserLogicDmaH2cResp) get;
+                return h2cRespWire;
+            endmethod
+        endinterface
+
+        interface Put request;
+            method Action put(UserLogicDmaH2cReq e);
+                h2cReqWire <= e;
+            endmethod
+        endinterface
+
+    endinterface
+
+    interface UserLogicDmaWriteWideSrv c2hStreamSrv;
+        interface Get response;
+            method ActionValue#(UserLogicDmaC2hResp) get;
+                return c2hRespWire;
+            endmethod
+        endinterface
+
+        interface Put request;
+            method Action put(UserLogicDmaC2hReq e);
+                c2hReqWire <= UserLogicDmaC2hWideReq{
+                    addr: e.addr,
+                    len: e.len,
+                    dataStream: DataStreamWideEn{
+                        data: e.dataStream.data,
+                        byteEn: e.dataStream.byteEn,
+                        isFirst: e.dataStream.isFirst,
+                        isLast: e.dataStream.isLast
+                    }
+                };
+            endmethod
+        endinterface
+    endinterface
+endmodule
+
+`else  // IS_250MHZ_512BITS
+
 (* synthesize *)
 module mkXdmaGearbox(Clock slowClock, Reset slowReset, XdmaGearbox ifc);
     
@@ -608,6 +695,7 @@ module mkXdmaGearbox(Clock slowClock, Reset slowReset, XdmaGearbox ifc);
         endinterface
     endinterface
 endmodule
+`endif  // IS_250MHZ_512BITS
 
 
 
@@ -924,7 +1012,7 @@ module mkFakeXdma(Integer id, Clock cmacRxTxClk, Reset cmacRxTxRst, FakeXdma ifc
             );
 
             let resp = UserLogicDmaH2cWideResp{
-                dataStream: DataStreamWide{
+                dataStream: DataStreamWideEn{
                     data: outData,
                     isFirst: prevBeatInfo.isFirst,
                     isLast: True,
@@ -955,7 +1043,7 @@ module mkFakeXdma(Integer id, Clock cmacRxTxClk, Reset cmacRxTxRst, FakeXdma ifc
             let outEn = hasMoreData ? -1 : (1 << (readStreamInfo.leftShiftByteCnt + newBeatInfo.beatValidByteCnt)) - 1;
             
             let resp = UserLogicDmaH2cWideResp{
-                dataStream: DataStreamWide{
+                dataStream: DataStreamWideEn{
                     data: outData,
                     isFirst: prevBeatInfo.isFirst,
                     isLast: !hasMoreData,

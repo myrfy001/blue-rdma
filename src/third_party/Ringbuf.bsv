@@ -15,14 +15,6 @@ import PrimUtils :: *;
 import RdmaUtils :: *;
 
 
-typedef struct {
-    PageNumber4k rbStartPN;
-    RingbufPointer#(sz_rbp) head;
-    RingbufPointer#(sz_rbp) tail;
-    RingbufPointer#(sz_rbp) shadow;
-} RingbufCtxEntry#(numeric type sz_rbp) deriving(Bits, FShow);
-
-
 function Bool isRingbufNotEmpty(RingbufPointer#(sz_rbp) head, RingbufPointer#(sz_rbp) tail);
     return !(head == tail);
 endfunction
@@ -30,7 +22,6 @@ endfunction
 function Bool isRingbufNotFull(RingbufPointer#(sz_rbp) head, RingbufPointer#(sz_rbp) tail);
     return !((head.idx == tail.idx) && (head.guard != tail.guard));
 endfunction
-
 
 function Tuple2#(PageNumber4k, PageOffset4k) getPageNumberAndOffset4k(ADDR addr);
     return unpack(pack(addr));
@@ -155,7 +146,7 @@ endinterface
 module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem) fifoCntrl, RingbufH2cController ifc)
     provisos(
         Bits#(t_elem, sz_elem),
-        Bits#(DATA, sz_elem),
+        Bits#(RingbufRawDescriptor, sz_elem),
         FShow#(t_elem)
     );
 
@@ -168,7 +159,8 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
 
     Reg#(Bool) ruleState <- mkReg(False);
     Reg#(RingbufReadBlockInnerOffset) tailPosInReadBlockReg <- mkReg(0);
-
+    Reg#(DataStreamEn) dmaRespBeatBufReg <- mkReg(unpack(0));
+    FIFOF#(Tuple2#(RingbufRawDescriptor, Bool)) splitedDescQ <- mkFIFOF;
     
     rule sendDmaReq if (ruleState == False);
 
@@ -210,9 +202,26 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
         end
     endrule
 
+    rule dmaRespBitWidthSplit;
+        let fullResp = dmaRespBeatBufReg;
+        if (lsb(fullResp.byteEn) == 0) begin
+            dmaRespQ.deq;
+            fullResp = dmaRespQ.first.dataStream;
+        end
+
+        RingbufRawDescriptor desc = truncate(fullResp.data);
+
+        fullResp.data = fullResp.data >> valueOf(USER_LOGIC_DESCRIPTOR_BIT_WIDTH);
+        fullResp.byteEn = fullResp.byteEn >> valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH);
+        let isLast = fullResp.isLast && (lsb(fullResp.byteEn) == 0);
+
+        splitedDescQ.enq(tuple2(desc, isLast));
+        dmaRespBeatBufReg <= fullResp;
+    endrule
+
     rule recvDmaResp if (ruleState == True);
-        dmaRespQ.deq;
-        let resp = dmaRespQ.first;
+        let {desc, isLast} = splitedDescQ.first;
+        splitedDescQ.deq;
 
         if (tailPosInReadBlockReg > 0) begin
             // skip already consumed descriptors in previous block read.
@@ -223,7 +232,7 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
             let newTail = tailReg;
             if (tailReg != tailShadowReg) begin
                 // the end of read block may contain invalid descriptors, don't handle descriptors beyond tailShadowReg
-                t_elem t = unpack(pack(resp.dataStream.data));
+                t_elem t = unpack(pack(desc));
                 // $display("Ringbuf H2c enqueue descriptor, qIdx=", fshow(qIdx), fshow(t));
                 fifoCntrl.fillBuf(t);
                 newTail = tailReg + 1;
@@ -234,7 +243,7 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
                 // $display("skip invalid...tailReg=%h", tailReg);
             end
 
-            if (resp.dataStream.isLast) begin
+            if (isLast) begin
                 // $display("current read block finished.");
                 ruleState <= False;
                 immAssert(
@@ -277,7 +286,7 @@ endinterface
 module mkRingbufC2hController(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, RingbufC2hController ifc)
     provisos(
         Bits#(t_elem, sz_elem),
-        Bits#(DATA, sz_elem)
+        Bits#(RingbufRawDescriptor, sz_elem)
     );
 
     Reg#(ADDR) baseAddrReg <- mkReg(0);
@@ -307,7 +316,7 @@ module mkRingbufC2hController(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, Ri
             ds.isLast = True;
             ds.isFirst = True;
             ds.byteNum = fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH));
-            ds.data = unpack(pack(fifoCntrl.first));
+            ds.data = unpack(zeroExtend(pack(fifoCntrl.first)));
             fifoCntrl.deq;
 
             dmaReqQ.enq(UserLogicDmaC2hReq{
@@ -358,7 +367,7 @@ module mkRingbufPool(
     Add#(1, anysize2, c2hCount),
     Add#(TLog#(c2hCount), 1, TLog#(TAdd#(1, c2hCount))),
     Bits#(t_elem, sz_elem),
-    Bits#(DATA, sz_elem),
+    Bits#(RingbufRawDescriptor, sz_elem),
     FShow#(t_elem)
 );
     

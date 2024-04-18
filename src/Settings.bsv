@@ -7,9 +7,18 @@ typedef 2 TARGET_CYCLE_NS;
 typedef 2 MIN_PKT_NUM_IN_RECV_BUF;
 typedef TMul#(2, MAX_QP_WR) MAX_PENDING_WORK_COMP_NUM;
 
+typedef 500000000 UDP_FREQ;
+typedef 250000000 RDMA_FREQ;
+typedef 250000000 DMAC_FREQ;
+
 // RDMA device attributes
 // Must be power of 2
+
+`ifdef IS_250MHZ_512BITS
+typedef 512 DATA_BUS_WIDTH;
+`else
 typedef 256 DATA_BUS_WIDTH;
+`endif
 
 typedef TExp#(31)           MAX_MR_SIZE;   // 2GB
 typedef TExp#(21)           PAGE_SIZE_CAP; // 2MB

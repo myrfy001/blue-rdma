@@ -56,33 +56,37 @@ import SendQ::*;
 module mkTestTop(Empty);
 
     ClockDividerIfc divClk <- mkClockDivider(2);
-    Clock slowClock = divClk.slowClock;
-    Reset slowReset <- mkInitialReset(1, clocked_by slowClock);
-    Clock fastClock <- exposeCurrentClock;
-    Reset fastReset <- exposeCurrentReset;
+    Clock rdmaClock = divClk.slowClock;
+    Reset rdmaReset <- mkInitialReset(1, clocked_by rdmaClock);
+
+    Clock dmacClock = rdmaClock;
+    Reset dmacReset = rdmaReset;
+
+    Clock udpClock <- exposeCurrentClock;
+    Reset udpReset <- exposeCurrentReset;
 
     Clock cmacRxTxClk <- mkAbsoluteClock(0, 15);
     // Clock cmacRxTxClk <- mkAbsoluteClock(0, 10);
-    Reset cmacRxTxRst <- mkSyncReset(2, fastReset, cmacRxTxClk);
+    Reset cmacRxTxRst <- mkSyncReset(2, udpReset, cmacRxTxClk);
 
-    RdmaUserLogicWithoutXdmaAndCmacWrapper topA <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(slowClock, slowReset);
+    RdmaUserLogicWithoutXdmaAndCmacWrapper topA <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(udpClock, udpReset, dmacClock, dmacReset, clocked_by rdmaClock, reset_by rdmaReset);
 
-    FakeXdma fakeXdmaA <- mkFakeXdma(1, cmacRxTxClk, cmacRxTxRst, clocked_by slowClock, reset_by slowReset);
+    FakeXdma fakeXdmaA <- mkFakeXdma(1, cmacRxTxClk, cmacRxTxRst, clocked_by dmacClock, reset_by dmacReset);
 
-    mkConnection(fakeXdmaA.xdmaH2cSrv, topA.dmaReadClt);
-    mkConnection(fakeXdmaA.xdmaC2hSrv, topA.dmaWriteClt);
+    mkConnection(fakeXdmaA.xdmaH2cSrv, topA.dmaReadClt, clocked_by dmacClock, reset_by dmacReset);
+    mkConnection(fakeXdmaA.xdmaC2hSrv, topA.dmaWriteClt, clocked_by dmacClock, reset_by dmacReset);
 
-    SyncFIFOIfc#(CsrAddr) csrReadReqSyncFifo <- mkSyncFIFO(2, slowClock, slowReset, fastClock);
-    mkConnection(fakeXdmaA.barReadClt.request, toPut(csrReadReqSyncFifo), clocked_by slowClock, reset_by slowReset); 
+    SyncFIFOIfc#(CsrAddr) csrReadReqSyncFifo <- mkSyncFIFO(2, dmacClock, dmacReset, rdmaClock);
+    mkConnection(fakeXdmaA.barReadClt.request, toPut(csrReadReqSyncFifo), clocked_by dmacClock, reset_by dmacReset); 
 
-    SyncFIFOIfc#(CsrData) csrReadRespSyncFifo <- mkSyncFIFO(2, fastClock, fastReset, slowClock);
-    mkConnection(toGet(csrReadRespSyncFifo), fakeXdmaA.barReadClt.response, clocked_by slowClock, reset_by slowReset); 
+    SyncFIFOIfc#(CsrData) csrReadRespSyncFifo <- mkSyncFIFO(2, rdmaClock, rdmaReset, dmacClock);
+    mkConnection(toGet(csrReadRespSyncFifo), fakeXdmaA.barReadClt.response, clocked_by dmacClock, reset_by dmacReset); 
 
-    SyncFIFOIfc#(Tuple2#(CsrAddr, CsrData)) csrWriteReqSyncFifo <- mkSyncFIFO(2, slowClock, slowReset, fastClock);
-    mkConnection(fakeXdmaA.barWriteClt.request, toPut(csrWriteReqSyncFifo), clocked_by slowClock, reset_by slowReset); 
+    SyncFIFOIfc#(Tuple2#(CsrAddr, CsrData)) csrWriteReqSyncFifo <- mkSyncFIFO(2, dmacClock, dmacReset, rdmaClock);
+    mkConnection(fakeXdmaA.barWriteClt.request, toPut(csrWriteReqSyncFifo), clocked_by dmacClock, reset_by dmacReset); 
 
-    SyncFIFOIfc#(Bool) csrWriteRespSyncFifo <- mkSyncFIFO(2, fastClock, fastReset, slowClock);
-    mkConnection(toGet(csrWriteRespSyncFifo), fakeXdmaA.barWriteClt.response, clocked_by slowClock, reset_by slowReset); 
+    SyncFIFOIfc#(Bool) csrWriteRespSyncFifo <- mkSyncFIFO(2, rdmaClock, rdmaReset, dmacClock);
+    mkConnection(toGet(csrWriteRespSyncFifo), fakeXdmaA.barWriteClt.response, clocked_by dmacClock, reset_by dmacReset); 
 
 
 // `define __TXRX_MODEL_LOOPBACK_DELAYED
@@ -126,11 +130,11 @@ module mkTestTop(Empty);
 
     // connect rx and tx to MockHost
 
-    SyncFIFOIfc#(AxiStream512) netIfcRxSyncFifo <- mkSyncFIFO(32, cmacRxTxClk, cmacRxTxRst, fastClock);
+    SyncFIFOIfc#(AxiStream512) netIfcRxSyncFifo <- mkSyncFIFO(32, cmacRxTxClk, cmacRxTxRst, udpClock);
     mkConnection(fakeXdmaA.axiStreamRxUdp, toPut(netIfcRxSyncFifo), clocked_by cmacRxTxClk, reset_by cmacRxTxRst);
-    mkConnection(toGet(netIfcRxSyncFifo), topA.axiStreamRxInUdp);
+    mkConnection(toGet(netIfcRxSyncFifo), topA.axiStreamRxInUdp, clocked_by rdmaClock, reset_by rdmaReset);
 
-    SyncFIFOIfc#(AxiStream512) netIfcTxSyncFifo <- mkSyncFIFO(32, fastClock, fastReset, cmacRxTxClk);
+    SyncFIFOIfc#(AxiStream512) netIfcTxSyncFifo <- mkSyncFIFO(32, udpClock, udpReset, cmacRxTxClk);
     // mkConnection(toGet(topA.axiStreamTxOutUdp), toPut(netIfcTxSyncFifo));
     rule forwardUdpSendStream;
         let txData = topA.axiStreamTxOutUdp.first;

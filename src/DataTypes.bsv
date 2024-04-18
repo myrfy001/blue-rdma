@@ -96,21 +96,22 @@ typedef Bit#(DATA_BUS_BYTE_WIDTH) ByteEn;
 typedef Bit#(SGE_IDX_WIDTH) IdxSGL;
 typedef Bit#(SGE_NUM_WIDTH) NumSGE;
 
-typedef Bit#(HEADER_MAX_DATA_WIDTH)           HeaderData;
-typedef Bit#(HEADER_MAX_BYTE_EN_WIDTH)        HeaderByteEn;
-typedef Bit#(HEADER_MAX_BYTE_NUM_WIDTH)       HeaderByteNum;  // 7
-typedef Bit#(HEADER_MAX_BIT_NUM_WIDTH)        HeaderBitNum;
-typedef Bit#(HEADER_FRAG_NUM_WIDTH)           HeaderFragNum;
+typedef Bit#(HEADER_MAX_DATA_WIDTH)                 HeaderData;
+typedef Bit#(HEADER_MAX_BYTE_EN_WIDTH)              HeaderByteEn;
+typedef Bit#(HEADER_MAX_BYTE_NUM_WIDTH)             HeaderByteNum;  // 7
+typedef Bit#(HEADER_MAX_BIT_NUM_WIDTH)              HeaderBitNum;
+typedef Bit#(HEADER_FRAG_NUM_WIDTH)                 HeaderFragNum;
+typedef Bit#(TSub#(HEADER_MAX_BYTE_NUM_WIDTH, 1))   HeaderByteWidthMask;  // 6
+typedef Bit#(TSub#(HEADER_MAX_BIT_NUM_WIDTH, 1))    HeaderBitWidthMask;   // 9
 
-typedef Bit#(DATA_BUS_BIT_NUM_WIDTH)  BusBitWidthMask; // 8
-typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) BusByteWidthMask; // 5
+typedef Bit#(DATA_BUS_BIT_NUM_WIDTH)  BusBitWidthMask; // 8 (bus 256b), 9 (bus 512b)
+typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) BusByteWidthMask; // 5 (bus 256b), 6 (bus 512b)
 // typedef Bit#(PAD_WIDTH)               PadMask;
 
-typedef Bit#(TAdd#(1, DATA_BUS_BIT_NUM_WIDTH))  BusBitNum; // 9
-typedef Bit#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH)) ByteEnBitNum; // 6
+typedef Bit#(TAdd#(1, DATA_BUS_BIT_NUM_WIDTH))  BusBitNum; // 9 (bus 256b), 10 (bus 512b)
+typedef Bit#(TAdd#(1, DATA_BUS_BYTE_NUM_WIDTH)) ByteEnBitNum; // 6 (bus 256b), 7 (bus 512b)
 
-typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ShiftBitNum; // 8
-typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ShiftByteNum; // 5
+typedef Bit#(DATA_BUS_BYTE_NUM_WIDTH) ShiftByteNum; // 5 (bus 256b), 6 (bus 512b)
 
 
 typedef Bit#(QP_CAP_CNT_WIDTH) PendingReqCnt;
