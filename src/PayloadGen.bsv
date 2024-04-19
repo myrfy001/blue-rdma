@@ -973,6 +973,9 @@ module mkMergePayloadEachSGE#(
     //     if (!payloadFragShiftQ.notFull) begin
     //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkMergePayloadEachSGE payloadFragShiftQ");
     //     end
+    //     if (!sgePayloadPipeIn.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkMergePayloadEachSGE sgePayloadPipeIn");
+    //     end
     // endrule
 
 
@@ -1025,17 +1028,12 @@ module mkMergePayloadEachSGE#(
             //     "time=%0t: prepareNextSGE", $time,
             //     ", sgeHasOnlyPkt=", fshow(sgeHasOnlyPkt),
             //     ", sgeHasJustTwoPkts=", fshow(sgeHasJustTwoPkts),
-            //     ", sgePktMetaData.sgePktNum=%0d", sgePktMetaData.sgePktNum,
-            //     ", sgePktMetaData.firstPktLen=%0d", sgePktMetaData.firstPktLen,
-            //     ", sgePktMetaData.lastPktLen=%0d", sgePktMetaData.lastPktLen,
-            //     ", firstPktLastFragValidByteNum=%0d", firstPktLastFragValidByteNum,
-            //     ", firstPktLastFragValidBitNum=%0d", firstPktLastFragValidBitNum,
             //     ", firstPktLastFragInvalidByteNum=%0d", firstPktLastFragInvalidByteNum,
             //     // ", sgeFirstPktLastFragValidByteNumReg=%0d", sgeFirstPktLastFragValidByteNumReg,
             //     ", sgeFirstPktLastFragInvalidByteNumReg=%0d", sgeFirstPktLastFragInvalidByteNumReg,
             //     ", curPayloadFrag.isFirst=", fshow(curPayloadFrag.isFirst),
             //     ", curPayloadFrag.isLast=", fshow(curPayloadFrag.isLast),
-            //     ", curPayloadFrag.byteEn=%h", curPayloadFrag.byteEn
+            //     ", curPayloadFrag.byteNum=%h", curPayloadFrag.byteNum
             // );
             return nextPrePayloadFrag;
         endactionvalue
@@ -1123,10 +1121,10 @@ module mkMergePayloadEachSGE#(
         //     ", sgeFirstPktLastFragInvalidByteNumReg=%0d", sgeFirstPktLastFragInvalidByteNumReg,
         //     ", curPayloadFrag.isFirst=", fshow(curPayloadFrag.isFirst),
         //     ", curPayloadFrag.isLast=", fshow(curPayloadFrag.isLast),
-        //     ", curPayloadFrag.byteEn=%h", curPayloadFrag.byteEn,
+        //     ", curPayloadFrag.byteNum=%h", curPayloadFrag.byteNum,
         //     ", prePayloadFrag.isFirst=", fshow(prePayloadFrag.isFirst),
         //     ", prePayloadFrag.isLast=", fshow(prePayloadFrag.isLast),
-        //     ", prePayloadFrag.byteEn=%h", prePayloadFrag.byteEn
+        //     ", prePayloadFrag.byteNum=%h", prePayloadFrag.byteNum
         // );
     endrule
 
@@ -1179,20 +1177,20 @@ module mkMergePayloadEachSGE#(
             prePayloadFrag, nextPayloadFrag,
             leftShiftInvalidByteNum
         ));
-        // $display(
-        //     "time=%0t: mergeLastOrOnlyPktSGE", $time,
-        //     ", sgeHasOnlyPktReg=", fshow(sgeHasOnlyPktReg),
-        //     ", hasExtraFragReg=", fshow(hasExtraFragReg),
-        //     ", prePayloadFragReg.isFirst=", fshow(prePayloadFragReg.isFirst),
-        //     ", prePayloadFragReg.isLast=", fshow(prePayloadFragReg.isLast),
-        //     ", prePayloadFragReg.byteEn=%h", prePayloadFragReg.byteEn,
-        //     ", nextPayloadFrag.isFirst=", fshow(nextPayloadFrag.isFirst),
-        //     ", nextPayloadFrag.isLast=", fshow(nextPayloadFrag.isLast),
-        //     ", nextPayloadFrag.byteEn=%h", nextPayloadFrag.byteEn,
-        //     ", prePayloadFrag.isFirst=", fshow(prePayloadFrag.isFirst),
-        //     ", prePayloadFrag.isLast=", fshow(prePayloadFrag.isLast),
-        //     ", prePayloadFrag.byteEn=%h", prePayloadFrag.byteEn
-        // );
+        $display(
+            "time=%0t: mergeLastOrOnlyPktSGE", $time,
+            ", sgeHasOnlyPktReg=", fshow(sgeHasOnlyPktReg),
+            ", hasExtraFragReg=", fshow(hasExtraFragReg),
+            ", prePayloadFragReg.isFirst=", fshow(prePayloadFragReg.isFirst),
+            ", prePayloadFragReg.isLast=", fshow(prePayloadFragReg.isLast),
+            ", prePayloadFragReg.byteNum=%h", prePayloadFragReg.byteNum,
+            ", nextPayloadFrag.isFirst=", fshow(nextPayloadFrag.isFirst),
+            ", nextPayloadFrag.isLast=", fshow(nextPayloadFrag.isLast),
+            ", nextPayloadFrag.byteNum=%h", nextPayloadFrag.byteNum,
+            ", prePayloadFrag.isFirst=", fshow(prePayloadFrag.isFirst),
+            ", prePayloadFrag.isLast=", fshow(prePayloadFrag.isLast),
+            ", prePayloadFrag.byteNum=%h", prePayloadFrag.byteNum
+        );
     endrule
 
     rule shiftPayloadFrag if (!clearAll);

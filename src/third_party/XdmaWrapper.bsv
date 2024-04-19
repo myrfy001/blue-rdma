@@ -1,4 +1,5 @@
 import FIFOF :: *;
+import SpecialFIFOs :: *;
 import ClientServer :: * ;
 import GetPut :: *;
 import Clocks :: * ;
@@ -423,20 +424,21 @@ endinterface
 (* synthesize *)
 module mkXdmaBypassGearbox(XdmaGearbox ifc);
     
-    Wire#(UserLogicDmaH2cReq) h2cReqWire <- mkWire;
-    Wire#(UserLogicDmaH2cResp) h2cRespWire <- mkWire;
-    Wire#(UserLogicDmaC2hWideReq) c2hReqWire <- mkWire;
-    Wire#(UserLogicDmaC2hResp) c2hRespWire <- mkWire;
+    FIFOF#(UserLogicDmaH2cReq) h2cReqQ <- mkPipelineFIFOF;
+    FIFOF#(UserLogicDmaH2cResp) h2cRespQ <- mkPipelineFIFOF;
+    FIFOF#(UserLogicDmaC2hWideReq) c2hReqQ <- mkPipelineFIFOF;
+    FIFOF#(UserLogicDmaC2hResp) c2hRespQ <- mkPipelineFIFOF;
     interface UserLogicDmaReadWideClt h2cStreamClt;
         interface Get request;
             method ActionValue#(UserLogicDmaH2cReq) get;
-                return h2cReqWire;
+                h2cReqQ.deq;
+                return h2cReqQ.first;
             endmethod
         endinterface
 
         interface Put response;
             method Action put(UserLogicDmaH2cWideResp in);
-                h2cRespWire <= UserLogicDmaH2cResp {
+                let resp = UserLogicDmaH2cResp {
                     dataStream: DataStreamEn {
                         data: in.dataStream.data,
                         byteEn: in.dataStream.byteEn,
@@ -444,6 +446,7 @@ module mkXdmaBypassGearbox(XdmaGearbox ifc);
                         isLast: in.dataStream.isLast
                     }
                 };
+                h2cRespQ.enq(resp);
             endmethod
         endinterface
     endinterface
@@ -451,14 +454,14 @@ module mkXdmaBypassGearbox(XdmaGearbox ifc);
     interface UserLogicDmaWriteWideClt c2hStreamClt;
         interface Get request;
             method ActionValue#(UserLogicDmaC2hWideReq) get;
-                $display("1111111111111======, UserLogicDmaC2hWideReq=", fshow(c2hReqWire));
-                return c2hReqWire;
+                c2hReqQ.deq;
+                return c2hReqQ.first;
             endmethod
         endinterface
 
         interface Put response;
             method Action put(UserLogicDmaC2hResp e);
-                c2hRespWire <= e;
+                c2hRespQ.enq(e);
             endmethod
         endinterface
     endinterface
@@ -466,13 +469,14 @@ module mkXdmaBypassGearbox(XdmaGearbox ifc);
     interface UserLogicDmaReadWideSrv h2cStreamSrv;
         interface Get response;
             method ActionValue#(UserLogicDmaH2cResp) get;
-                return h2cRespWire;
+                h2cRespQ.deq;
+                return h2cRespQ.first;
             endmethod
         endinterface
 
         interface Put request;
             method Action put(UserLogicDmaH2cReq e);
-                h2cReqWire <= e;
+                h2cReqQ.enq(e);
             endmethod
         endinterface
 
@@ -481,7 +485,8 @@ module mkXdmaBypassGearbox(XdmaGearbox ifc);
     interface UserLogicDmaWriteWideSrv c2hStreamSrv;
         interface Get response;
             method ActionValue#(UserLogicDmaC2hResp) get;
-                return c2hRespWire;
+                c2hRespQ.deq;
+                return c2hRespQ.first;
             endmethod
         endinterface
 
@@ -497,8 +502,7 @@ module mkXdmaBypassGearbox(XdmaGearbox ifc);
                         isLast: e.dataStream.isLast
                     }
                 };
-                c2hReqWire <= req;
-                $display("2222222222======, UserLogicDmaC2hWideReq=", fshow(req));
+                c2hReqQ.enq(req);
             endmethod
         endinterface
     endinterface

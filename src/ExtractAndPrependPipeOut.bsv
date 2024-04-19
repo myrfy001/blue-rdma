@@ -313,7 +313,18 @@ module mkPrependHeader2PipeOut#(
                     ", headerLastFragValidByteNum=", fshow(headerLastFragValidByteNum),
                     ", headerLastFragInvalidByteNum=", fshow(headerLastFragInvalidByteNum));
 
-        if (!headerMetaData.isEmptyHeader) begin
+        if (headerMetaData.isEmptyHeader) begin
+            immAssert(
+                isZero(headerLastFragValidByteNum),
+                "empty header assertion @ mkPrependHeader2PipeOut",
+                $format(
+                    " headerLastFragValidByteNum=%0d", headerLastFragValidByteNum,
+                    " should be zero when isEmptyHeader=",
+                    fshow(headerMetaData.isEmptyHeader)
+                )
+            );
+        end
+        else begin
             immAssert(
                 !isZero(headerMetaData.headerLen),
                 "headerMetaData.headerLen non-zero assertion @ mkPrependHeader2PipeOut",
