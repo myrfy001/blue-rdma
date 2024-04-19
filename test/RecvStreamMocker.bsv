@@ -134,7 +134,7 @@ module mkRecvStreamMocker(RecvStreamMocker);
 
         DataStream ds = DataStream{
             data: truncateLSB(inputReq.headerBuf),
-            byteEn: headerMeta.headerFragNum == 1 ? genByteEn(headerMeta.lastFragValidByteNum) : -1,
+            byteEn: headerMeta.headerFragNum == 1 ? genByteEnLeftAlign(headerMeta.lastFragValidByteNum) : -1,
             isFirst: isFirstHeaderReg,
             isLast: headerMeta.headerFragNum == 1
         };
@@ -160,7 +160,7 @@ module mkRecvStreamMocker(RecvStreamMocker);
         let isLast = inputReq.payloadLen <= fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
         DataStream ds = DataStream{
             data: truncateLSB(inputReq.payloadBuf),
-            byteEn: isLast ? genByteEn(truncate(inputReq.payloadLen)) : -1,
+            byteEn: isLast ? genByteEnLeftAlign(truncate(inputReq.payloadLen)) : -1,
             isFirst: isFirstPayloadReg,
             isLast: isLast
         };

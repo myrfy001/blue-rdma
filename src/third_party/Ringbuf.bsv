@@ -322,8 +322,10 @@ module mkRingbufC2hController(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, Ri
             dmaReqQ.enq(UserLogicDmaC2hReq{
                     addr: curWriteStartAddr,
                     len: fromInteger(valueOf(USER_LOGIC_DESCRIPTOR_BYTE_WIDTH)),
-                    dataStream: dataStream2DataStreamEn(ds)
+                    dataStream: dataStream2DataStreamEnRightAlign(ds)
             });
+
+            $display("33333333====, ds=", fshow(ds), ", dataStream2DataStreamEnRightAlign(ds)=", fshow(dataStream2DataStreamEnRightAlign(ds)));
 
             headShadowReg <= headShadowReg + 1;
         end

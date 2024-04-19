@@ -537,7 +537,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     // rule forwardTxStream;
     //     rdma.sqRdmaDataStreamPipeOut.deq;
-    //     let data = dataStream2DataStreamEn(rdma.sqRdmaDataStreamPipeOut.first);
+    //     let data = dataStream2DataStreamEnLeftAlign(rdma.sqRdmaDataStreamPipeOut.first);
     //     $display("time=%0t: ", $time,"rdma put data to udp = ", fshow(data));
     //     udpTxStreamBufQ.enq(Ports::DataStream{
     //         data: swapEndian(data.data),
@@ -598,7 +598,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
                 let data = udpGearbox.rxOut.first;
                 udpGearbox.rxOut.deq;
-                let outData = dataStreamEn2DataStream(DataTypes::DataStreamEn {
+                let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
                     data: swapEndian(data.data),
                     byteEn: swapEndianBit(data.byteEn),
                     isLast: data.isLast,
@@ -611,16 +611,16 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                     isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRdmaData;
                 end
             end
-            else if (udpGearbox.rxOut.notEmpty) begin
+            else if (udpGearbox.rxRawOut.notEmpty) begin
                 let srcMacIpIdx <- recvMacIpStorage.allocSlotIdx.get;
                 recvMacIpStorage.saveData.put(tuple2(srcMacIpIdx, RecvPacketSrcMacIpBufferEntry{
                     ip     : tagged IPv4 unpack(0),
                     macAddr: unpack(0)
                 }));
 
-                let data = udpGearbox.rxOut.first;
-                udpGearbox.rxOut.deq;
-                let outData = dataStreamEn2DataStream(DataTypes::DataStreamEn {
+                let data = udpGearbox.rxRawOut.first;
+                udpGearbox.rxRawOut.deq;
+                let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
                     data: swapEndian(data.data),
                     byteEn: swapEndianBit(data.byteEn),
                     isLast: data.isLast,
@@ -637,7 +637,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
         else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRdmaData) begin
             let data = udpGearbox.rxOut.first;
             udpGearbox.rxOut.deq;
-            let outData = dataStreamEn2DataStream(DataTypes::DataStreamEn {
+            let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
                 data: swapEndian(data.data),
                 byteEn: swapEndianBit(data.byteEn),
                 isLast: data.isLast,
@@ -650,9 +650,9 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             end
         end
         else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRawData) begin
-            let data = udpGearbox.rxOut.first;
-            udpGearbox.rxOut.deq;
-            let outData = dataStreamEn2DataStream(DataTypes::DataStreamEn {
+            let data = udpGearbox.rxRawOut.first;
+            udpGearbox.rxRawOut.deq;
+            let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
                 data: swapEndian(data.data),
                 byteEn: swapEndianBit(data.byteEn),
                 isLast: data.isLast,

@@ -555,7 +555,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         // TODO: should move the following commented out length calc and check logic to the very begining
         // of packet receive flow.
 
-        // let payloadFragLen = calcFragByteNumFromByteEn(streamFragMeta.byteEn);
+        // let payloadFragLen = calcFragByteNumFromByteEnLeftAlign(streamFragMeta.byteEn);
         // immAssert(
         //     isValid(payloadFragLen),
         //     "isValid(payloadFragLen) assertion @ mkInputRdmaPktBufAndHeaderValidation",
@@ -767,9 +767,6 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
     endrule
 
 
-
-
-
     return interface InputRdmaPktBuf;
         interface reqPktPipeOut = interface RdmaPktMetaDataAndQpcAndPayloadPipeOut;
             interface pktMetaData                       = toPipeOut(reqPktMetaDataAndQpcOutQ);
@@ -788,79 +785,6 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
 endmodule
 
 
-// interface ReceivedStreamFragStorage;
-//     interface Server#(DATA, InputStreamFragBufferIdx) insertFragSrv;
-//     interface Server#(Tuple2#(InputStreamFragBufferIdx, Bool), DATA) readFragSrv;
-// endinterface
-
-// (* synthesize *)
-// module mkReceivedStreamFragStorage(ReceivedStreamFragStorage);
-//     BypassServer#(DATA, InputStreamFragBufferIdx) insertFragSrvInst                 <- mkBypassServer("insertFragSrvInst");
-//     BypassServer#(Tuple2#(InputStreamFragBufferIdx, Bool), DATA) readFragSrvInst    <- mkBypassServer("readFragSrvInst");
-
-//     BRAM_Configure cfg = defaultValue;
-//     BRAM2Port#(InputStreamFragBufferIdxWithoutGuard, DATA) bramBuffer <- mkBRAM2Server (cfg);
-//     Reg#(InputStreamFragBufferIdx) idxGenerator <- mkReg(0);
-//     Reg#(InputStreamFragBufferIdx) lastConsumeIdxReg <- mkReg(0);
-
-
-//     rule handleInsertReq;
-//         let data <- insertFragSrvInst.getReq;
-//         bramBuffer.portA.request.put(BRAMRequest{
-//             write: True,
-//             responseOnWrite:False,
-//             address: truncate(idxGenerator),
-//             datain: data
-//         });
-
-//         insertFragSrvInst.putResp(idxGenerator);
-//         idxGenerator <= idxGenerator + 1;
-
-//         // if the substruct result's highest bit is one, the overflow
-//         immAssert(
-//             ((idxGenerator - lastConsumeIdxReg) >> valueOf(INPUT_STREAM_FRAG_BUFFER_INDEX_WITHOUT_GUARD_WIDTH)) == 0,
-//             "receive data fragment buf overfllow @ mkReceivedStreamFragStorage",
-//             $format(
-//                 "idxGenerator=", fshow(idxGenerator), " lastConsumeIdxReg=", fshow(lastConsumeIdxReg)
-//             )
-//         );
-
-//         $display(
-//             "time=%0t:", $time, "rx frag buffer new input packet, idxGenerator=", fshow(idxGenerator),
-//             " lastConsumeIdxReg=", fshow(lastConsumeIdxReg) 
-//         );
-//     endrule
-
-//     rule handleReadReq;
-//         let {addr, isOnlyUpadteFragBufLastConsumeIndex} <- readFragSrvInst.getReq;
-//         lastConsumeIdxReg <= addr;
-//         if (!isOnlyUpadteFragBufLastConsumeIndex) begin
-//             bramBuffer.portB.request.put(BRAMRequest{
-//                 write: False,
-//                 responseOnWrite:False,
-//                 address: truncate(addr),
-//                 datain: ?
-//             });
-//         end
-
-//         $display(
-//             "time=%0t:", $time, " rx frag buffer new output packet",
-//             ", reqIdx=", fshow(addr),
-//             ", lastConsumeIdxReg=", fshow(lastConsumeIdxReg),
-//             ", isOnlyUpadteFragBufLastConsumeIndex=", fshow(isOnlyUpadteFragBufLastConsumeIndex)
-//         );
-
-//     endrule
-
-//     rule outputReadResp;
-//         let resp <- bramBuffer.portB.response.get;
-//         readFragSrvInst.putResp(resp);
-//     endrule
-
-//     interface insertFragSrv = insertFragSrvInst.srv;
-//     interface readFragSrv = readFragSrvInst.srv;
-// endmodule
-
 interface RawPacketFakeHeaderStreamInsert;
     interface PipeOut#(RqDataStreamWithExtraInfo)  streamPipeOut;
     interface Put#(RawPacketReceiveMeta) rawPacketReceiveConfigIn;
@@ -868,40 +792,107 @@ endinterface
 
 
 
+typedef 32 FAKE_HEADER_BYTE_LENGTH_FOR_RAW_PACKET;
+typedef enum {
+    RawPacketFakeHeaderStreamInsertStateNormal = 0,
+    RawPacketFakeHeaderStreamInsertStateExtraBeat = 1
+} RawPacketFakeHeaderStreamInsertState deriving(Bits, FShow, Eq);
 
 module mkRawPacketFakeHeaderStreamInsert#(PipeOut#(RqDataStreamWithExtraInfo) streamPipeIn)(RawPacketFakeHeaderStreamInsert);
-    Reg#(Bool) isForwardingRawPacketReg                     <- mkReg(False);
-    Reg#(ADDR) rawPacketWriteBaseAddrReg                    <- mkRegU;
-    Reg#(RKEY) rawPacketWriteMrKeyReg                       <- mkRegU;
-    Reg#(RawPacketRecvBufIndex) rawPacketBufferIndexReg     <- mkReg(0);
+    Reg#(RawPacketFakeHeaderStreamInsertState) stateReg <- mkReg(RawPacketFakeHeaderStreamInsertStateNormal);
+    Reg#(Bool) isInsertingFakeHeaderReg                 <- mkReg(True);
+    Reg#(ADDR) rawPacketWriteBaseAddrReg                <- mkRegU;
+    Reg#(RKEY) rawPacketWriteMrKeyReg                   <- mkRegU;
+    Reg#(RawPacketRecvBufIndex) rawPacketBufferIndexReg <- mkReg(0);
+
+    Reg#(DataStream) previousDataFragReg                <- mkRegU;
 
     FIFOF#(RqDataStreamWithExtraInfo) outQ              <- mkFIFOF;
 
-    rule forwardNormalFragOrInsertFakeHeaderFrag if (!isForwardingRawPacketReg);
+    rule forwardNormalFragOrInsertFakeHeaderFrag if (stateReg == RawPacketFakeHeaderStreamInsertStateNormal);
         let {stream, isRawPacket, srcMacIpIdx} = streamPipeIn.first;
         if (!isRawPacket) begin
             outQ.enq(streamPipeIn.first);
             streamPipeIn.deq;
         end 
         else begin
-            isForwardingRawPacketReg <= True;
             let writeAddr = addrAddPsnMultiplyPMTU(rawPacketWriteBaseAddrReg, zeroExtend(pack(rawPacketBufferIndexReg)), IBV_MTU_4096);
             rawPacketBufferIndexReg <= rawPacketBufferIndexReg + 1;
-            let outStream = genFakeHeaderSingleBeatStreamForRawPacketReceiveProcessing(writeAddr, rawPacketWriteMrKeyReg);
+            let insertStreamFrag = genFakeHeaderSingleBeatStreamForRawPacketReceiveProcessingRightAlign(writeAddr, rawPacketWriteMrKeyReg);
+
+            let shiftCnt = ?;
+            case (valueOf(DATA_BUS_WIDTH))
+                256: shiftCnt = 0;
+                512: shiftCnt = 1;
+                default: begin
+                    $display("Not supported");
+                    $finish;
+                end
+            endcase
+            previousDataFragReg <= stream;
+
+            let prevFrag = isInsertingFakeHeaderReg ? insertStreamFrag : previousDataFragReg;
+            let tmpData = {prevFrag.data, stream.data} << (shiftCnt * valueOf(FAKE_HEADER_BYTE_LENGTH_FOR_RAW_PACKET) * valueOf(BYTE_WIDTH));
+            let {tmpByteNum, isByteSumOverflow} = satAddTwoByteNum(prevFrag.byteNum, stream.byteNum);
+
+            if (isByteSumOverflow) begin
+                if (stream.isLast) begin
+                    stateReg <= RawPacketFakeHeaderStreamInsertStateExtraBeat;
+                end
+                else begin
+                    isInsertingFakeHeaderReg <= False;
+                end
+            end
+            else begin
+                immAssert(
+                    stream.isLast,
+                    "frag isLast assertion @ mkRawPacketFakeHeaderStreamInsert",
+                    $format("should be last packet")
+                );
+            end
+
+            let outStream = DataStream {
+                data: truncateLSB(tmpData),
+                byteNum: tmpByteNum,
+                isFirst: True,
+                isLast: !isByteSumOverflow
+            };
             outQ.enq(tuple3(outStream, True, srcMacIpIdx));
+
+            $display("time=%0t: ", $time, " insert rawpacket fake header, output stream = ", fshow(outStream));
+
         end
     endrule
 
-    rule forwardRawPacketFrag if (isForwardingRawPacketReg);
+    rule forwardRawPacketFrag if (stateReg == RawPacketFakeHeaderStreamInsertStateExtraBeat);
         let {stream, isRawPacket, srcMacIpIdx} = streamPipeIn.first;
         streamPipeIn.deq;
 
-        // a fake header is inserted before, so the origin stream must not be first packet.
-        stream.isFirst = False;
-        outQ.enq(tuple3(stream, isRawPacket, srcMacIpIdx));
-        if (stream.isLast) begin
-            isForwardingRawPacketReg <= False;
-        end
+        isInsertingFakeHeaderReg <= True; 
+        stateReg <= RawPacketFakeHeaderStreamInsertStateNormal;
+
+        let shiftCnt = ?;
+        case (valueOf(DATA_BUS_WIDTH))
+            256: shiftCnt = 0;
+            512: shiftCnt = 1;
+            default: begin
+                $display("Not supported");
+                $finish;
+            end
+        endcase
+
+        let tmpData = previousDataFragReg.data << (shiftCnt * valueOf(FAKE_HEADER_BYTE_LENGTH_FOR_RAW_PACKET) * valueOf(BYTE_WIDTH));
+        let tmpByteNum = previousDataFragReg.byteNum - fromInteger(valueOf(FAKE_HEADER_BYTE_LENGTH_FOR_RAW_PACKET));
+
+        let outStream = DataStream {
+            data: truncateLSB(tmpData),
+            byteNum: tmpByteNum,
+            isFirst: False,
+            isLast: True
+        };
+
+        outQ.enq(tuple3(outStream, True, srcMacIpIdx));
+        $display("time=%0t: ", $time, " insert rawpacket fake header extra beat, output stream = ", fshow(outStream));
     endrule
 
     interface Put rawPacketReceiveConfigIn;

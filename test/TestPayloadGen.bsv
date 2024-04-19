@@ -1605,8 +1605,8 @@ module mkTestAdjustNormalOrSmallPayloadSegment#(
         let pmtu            = adjustedTotalPayloadMetaData.pmtu;
         let firstPktLastFragValidByteNum = adjustedTotalPayloadMetaData.firstPktLastFragValidByteNum;
 
-        let firstPktLastFragByteEn = genByteEn(firstPktLastFragValidByteNum);
-        let lastPktLastFragByteEn  = genByteEn(lastPktLastFragValidByteNum);
+        let firstPktLastFragByteEn = genByteEnLeftAlign(firstPktLastFragValidByteNum);
+        let lastPktLastFragByteEn  = genByteEnLeftAlign(lastPktLastFragValidByteNum);
 
         let pmtuFragNum = calcFragNumByPMTU(pmtu);
         let payloadFrag = dut.first;

@@ -681,12 +681,13 @@ module mkExtractHeaderFromDataStreamPipeOut#(
         end
         else begin  // isHeaderLastBeat=True, include case 2,3,4
 
-            // both case 3,4,5 need output header with adjusted byteEN.
+            // both case 2,3,4 need output header with adjusted byteEN.
             headerDataStreamOutQ.enq(byteEnAdjustedFragForLastHeader);
             $display(
                 "time=%0t:", $time,
                 " outputHeader case 2,3,4",
-                ", byteEnAdjustedFragForLastHeader=", fshow(byteEnAdjustedFragForLastHeader)
+                ", byteEnAdjustedFragForLastHeader=", fshow(byteEnAdjustedFragForLastHeader),
+                ", inDataStreamFrag=", fshow(inDataStreamFrag)
             );
 
             if (!headerMetaData.hasPayload) begin  // case 2
@@ -709,6 +710,12 @@ module mkExtractHeaderFromDataStreamPipeOut#(
 
                 calculatedMetasQ.deq;  // move on to next packet
 
+                $display(
+                    "time=%0t:", $time,
+                    " outputHeader case 2",
+                    ", outDataStreamFragMeta=", fshow(outDataStreamFragMeta)
+                );
+
             end
             else if (inDataStreamFrag.isLast) begin // case 3, has payload, but all payload is included in this beat
                 immAssert(
@@ -730,11 +737,21 @@ module mkExtractHeaderFromDataStreamPipeOut#(
                 payloadStreamFragStorageDataOutQ.enq(tuple2(bufIdx, leftShiftedPayloadData));
 
                 calculatedMetasQ.deq;  // move on to next packet
+
+                $display(
+                    "time=%0t:", $time,
+                    " outputHeader case 3",
+                    ", outDataStreamFragMeta=", fshow(outDataStreamFragMeta)
+                );
             end
             else begin
                 stageReg <= STREAM_OUTPUT_DATA_OUTPUT;
                 preDataStreamReg <= inDataStreamFrag;
                 isFirstDataFragReg <= True;
+                $display(
+                    "time=%0t:", $time,
+                    " outputHeader case 4"
+                );
             end
         end
     endrule

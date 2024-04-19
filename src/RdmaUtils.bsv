@@ -349,8 +349,12 @@ endfunction
 
 // ByteEn related
 
-function ByteEn genByteEn(ByteEnBitNum fragValidByteNum);
+function ByteEn genByteEnLeftAlign(ByteEnBitNum fragValidByteNum);
     return reverseBits((1 << fragValidByteNum) - 1);
+endfunction
+
+function ByteEn genByteEnRightAlign(ByteEnBitNum fragValidByteNum);
+    return (1 << fragValidByteNum) - 1;
 endfunction
 
 function ByteEnBitNum calcLastFragValidByteNum(Bit#(nSz) len) provisos(
@@ -379,19 +383,28 @@ function Tuple2#(ByteEnBitNum, Bool) satAddTwoByteNum(ByteEnBitNum v1, ByteEnBit
 endfunction
 
 
-function DataStreamEn dataStream2DataStreamEn(DataStream inStream);
+function DataStreamEn dataStream2DataStreamEnLeftAlign(DataStream inStream);
     return DataStreamEn{
         data: inStream.data,
-        byteEn: genByteEn(inStream.byteNum),
+        byteEn: genByteEnLeftAlign(inStream.byteNum),
         isFirst: inStream.isFirst,
         isLast: inStream.isLast
     };
 endfunction
 
-function DataStream dataStreamEn2DataStream(DataStreamEn inStream);
+function DataStreamEn dataStream2DataStreamEnRightAlign(DataStream inStream);
+    return DataStreamEn{
+        data: inStream.data,
+        byteEn: genByteEnRightAlign(inStream.byteNum),
+        isFirst: inStream.isFirst,
+        isLast: inStream.isLast
+    };
+endfunction
+
+function DataStream dataStreamEnLeftAlign2DataStream(DataStreamEn inStream);
     return DataStream{
         data: inStream.data,
-        byteNum: fromMaybe(?, calcFragByteNumFromByteEn(inStream.byteEn)),
+        byteNum: fromMaybe(?, calcFragByteNumFromByteEnLeftAlign(inStream.byteEn)),
         isFirst: inStream.isFirst,
         isLast: inStream.isLast
     };
@@ -403,7 +416,7 @@ endfunction
 
 // TODO: check timing of the for loop
 // TODO: refactor the for loop using case statement
-function Maybe#(ByteEnBitNum) calcFragByteNumFromByteEn(ByteEn fragByteEn);
+function Maybe#(ByteEnBitNum) calcFragByteNumFromByteEnLeftAlign(ByteEn fragByteEn);
     let rightAlignedByteEn = reverseBits(fragByteEn);
     Maybe#(ByteEnBitNum) byteEnBitNum = tagged Invalid;
     // let step = valueOf(FRAG_MIN_VALID_BYTE_NUM);
@@ -499,8 +512,8 @@ function Tuple2#(HeaderFragNum, ByteEnBitNum) calcHeaderFragNumAndLastFragValidB
     Add#(HEADER_FRAG_NUM_WIDTH, DATA_BUS_BYTE_NUM_WIDTH, HEADER_MAX_BYTE_NUM_WIDTH)
 );
     let headerLastFragValidByteNum = calcLastFragValidByteNum(headerLen);
-    HeaderFragNum headerFragNum = truncate(headerLen >> (valueOf(HEADER_MAX_BYTE_NUM_WIDTH)-1));
-    HeaderByteWidthMask lowerPart = truncate(headerLen);
+    HeaderFragNum headerFragNum = truncate(headerLen >> valueOf(DATA_BUS_BYTE_NUM_WIDTH));
+    BusByteWidthMask lowerPart = truncate(headerLen);
     if (!isZeroR(lowerPart)) begin
         headerFragNum = headerFragNum + 1;
     end
@@ -555,7 +568,7 @@ function HeaderRDMA genEmptyHeaderRDMA(Bool hasPayload);
     };
 endfunction
 
-function DataStream genFakeHeaderSingleBeatStreamForRawPacketReceiveProcessing(ADDR va, RKEY rkey);
+function DataStream genFakeHeaderSingleBeatStreamForRawPacketReceiveProcessingRightAlign(ADDR va, RKEY rkey);
     let bth = BTH {
         trans    : TRANS_TYPE_DTLD_EXTENDED,
         opcode   : RDMA_WRITE_ONLY_WITH_IMMEDIATE,
@@ -579,11 +592,14 @@ function DataStream genFakeHeaderSingleBeatStreamForRawPacketReceiveProcessing(A
         dlen: 0
     };
 
+    let immDt = ImmDt {
+        data: 0
+    };
     let fakeHeaderStream = DataStream{
-        data: zeroExtendLSB({ pack(bth), pack(reth) }),
+        data: zeroExtend({ pack(bth), pack(reth), pack(immDt) }),
         byteNum: fromInteger(calcHeaderLenByTransTypeAndRdmaOpCode(TRANS_TYPE_DTLD_EXTENDED, RDMA_WRITE_ONLY_WITH_IMMEDIATE)),
         isFirst: True,
-        isLast: False
+        isLast: True
     };
 
     return fakeHeaderStream;

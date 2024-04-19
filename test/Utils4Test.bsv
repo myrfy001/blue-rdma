@@ -124,7 +124,7 @@ function Tuple3#(TotalFragNum, ByteEn, ByteEnBitNum) calcTotalFragNumByLength(Le
     ByteEnBitNum lastFragValidByteNum = lastFragEmpty ?
         fromInteger(valueOf(DATA_BUS_BYTE_WIDTH)) :
         zeroExtend(lastFragByteNumResidue);
-    ByteEn lastFragByteEn = genByteEn(lastFragValidByteNum);
+    ByteEn lastFragByteEn = genByteEnLeftAlign(lastFragValidByteNum);
     return tuple3(fragNum, lastFragByteEn, lastFragValidByteNum);
 endfunction
 
@@ -189,7 +189,7 @@ function ByteEn addPadding2LastFragByteEn(ByteEn lastFragByteEn);
     let lastFragValidByteNum = calcByteEnBitNumInSim(lastFragByteEn);
     let padCnt = calcPadCnt(lastFragValidByteNum);
     let lastFragValidByteNumWithPadding = lastFragValidByteNum + zeroExtend(padCnt);
-    let lastFragByteEnWithPadding = genByteEn(lastFragValidByteNumWithPadding);
+    let lastFragByteEnWithPadding = genByteEnLeftAlign(lastFragValidByteNumWithPadding);
     return lastFragByteEnWithPadding;
 endfunction
 /*

@@ -367,7 +367,7 @@ module mkTestSendQueueRawPktCase(Empty);
             )
         );
 
-        let maybePktFragLen = calcFragByteNumFromByteEn(pktFrag.byteEn);
+        let maybePktFragLen = calcFragByteNumFromByteEnLeftAlign(pktFrag.byteEn);
         immAssert(
             isValid(maybePktFragLen),
             "maybePktFragLen assertion @ mkTestSendQueueRawPktCase",
@@ -615,7 +615,7 @@ module mkTestSendQueueNormalAndNoPayloadCase#(
         let pktFrag = headerAndMetaDataAndPayloadPipeOut.payload.first;
         headerAndMetaDataAndPayloadPipeOut.payload.deq;
 
-        let maybePktFragLen = calcFragByteNumFromByteEn(pktFrag.byteEn);
+        let maybePktFragLen = calcFragByteNumFromByteEnLeftAlign(pktFrag.byteEn);
         immAssert(
             isValid(maybePktFragLen),
             "maybePktFragLen assertion @ mkTestSendQueueNormalAndNoPayloadCase",

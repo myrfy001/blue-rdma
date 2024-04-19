@@ -385,7 +385,7 @@ module mkBluerdmaDmaProxyForRQ(BluerdmaDmaProxyForRQ);
         let outReq = UserLogicDmaC2hReq{
             addr: inReq.metaData.startAddr,
             len: zeroExtend(pack(inReq.metaData.len)),
-            dataStream: dataStream2DataStreamEn(reverseStream(inReq.dataStream))
+            dataStream: dataStream2DataStreamEnLeftAlign(reverseStream(inReq.dataStream))
         };
         outReq.dataStream.byteEn = swapEndianBit(outReq.dataStream.byteEn);
 
@@ -451,6 +451,7 @@ module mkXdmaBypassGearbox(XdmaGearbox ifc);
     interface UserLogicDmaWriteWideClt c2hStreamClt;
         interface Get request;
             method ActionValue#(UserLogicDmaC2hWideReq) get;
+                $display("1111111111111======, UserLogicDmaC2hWideReq=", fshow(c2hReqWire));
                 return c2hReqWire;
             endmethod
         endinterface
@@ -486,7 +487,7 @@ module mkXdmaBypassGearbox(XdmaGearbox ifc);
 
         interface Put request;
             method Action put(UserLogicDmaC2hReq e);
-                c2hReqWire <= UserLogicDmaC2hWideReq{
+                let req = UserLogicDmaC2hWideReq{
                     addr: e.addr,
                     len: e.len,
                     dataStream: DataStreamWideEn{
@@ -496,6 +497,8 @@ module mkXdmaBypassGearbox(XdmaGearbox ifc);
                         isLast: e.dataStream.isLast
                     }
                 };
+                c2hReqWire <= req;
+                $display("2222222222======, UserLogicDmaC2hWideReq=", fshow(req));
             endmethod
         endinterface
     endinterface

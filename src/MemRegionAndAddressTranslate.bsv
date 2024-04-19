@@ -335,7 +335,7 @@ module mkMrAndPgtManager(MrAndPgtManager);
             end 
             else begin
                 // the data should be right aligned, but to convert byteEn to byteNum, byteEn need to be left aligned
-                let newFrag = dataStreamEn2DataStream(reverseStreamEnOnly(dmaReadRespQ.first.dataStream));
+                let newFrag = dataStreamEnLeftAlign2DataStream(reverseStreamEnOnly(dmaReadRespQ.first.dataStream));
                 curBeatOfDataReg <= newFrag;
                 $display("receive dma batch page table frag=", fshow(newFrag));
                 dmaReadRespQ.deq;
@@ -479,7 +479,7 @@ module mkDmaReadReqAddrTranslator(DmaReqAddrTranslator);
 
         let resp = DmaReadResp{
             isRespErr   : False,
-            dataStream  : dataStreamEn2DataStream(reverseStreamEnAndData(inResp.dataStream))
+            dataStream  : dataStreamEnLeftAlign2DataStream(reverseStreamEnAndData(inResp.dataStream))
         };
         readRespOutQ.enq(resp);
         $display("time=%0t: ", $time, "mkDmaReadReqAddrTranslator, forwardResponseDMA, resp=", fshow(resp), ", origin resp = ", fshow(inResp));

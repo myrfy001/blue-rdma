@@ -1,6 +1,6 @@
 from mock_host import *
 from test_case_common import *
-
+from utils import print_mem_diff
 
 PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_256
 
@@ -147,6 +147,7 @@ def test_case():
 
     if src_mem[0:5] != dst_mem[0:5]:
         print("Error: Error at 5 byte write test")
+        print_mem_diff(dst_mem[0:5], src_mem[0:5])
     else:
         print("PASS-2")
 
@@ -227,12 +228,7 @@ def test_case():
 
     if src_mem[0:1024] != dst_mem[0:1024]:
         print("Error: Error at 1024 byte write test")
-        for idx in range(len(src_mem[0:1024])):
-            if src_mem[idx] != dst_mem[idx]:
-                print("id:", idx,
-                      "src: ", hex(src_mem[idx]),
-                      "dst: ", hex(dst_mem[idx])
-                      )
+        print_mem_diff(dst_mem[0:1024], src_mem[0:1024])
     else:
         print("PASS-5")
 

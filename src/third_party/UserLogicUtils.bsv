@@ -5,7 +5,9 @@ import PAClib :: *;
 import Gearbox :: *;
 import Vector :: *;
 import Ports :: *;
+import FIFOF :: *;
 
+import PrimUtils :: *;
 import DataTypes :: *;
 import RdmaUtils :: *;
 
@@ -57,8 +59,11 @@ module mkUdpGearbox#(Clock rdmaClock, Reset rdmaReset, Clock udpClock, Reset udp
 
     Reg#(Bool) isRxRdmaStreamOddBeatReg <- mkReg(True, clocked_by udpClock, reset_by udpReset);
     Reg#(Bool) isRxRawStreamOddBeatReg <- mkReg(True, clocked_by udpClock, reset_by udpReset);
+    Reg#(Bool) isTxRdmaStreamSkipEmptyBeatReg <- mkReg(False, clocked_by udpClock, reset_by udpReset);
     Reg#(Bool) isRxRdmaStreamInsertExtraFakeBeatReg <- mkReg(False, clocked_by udpClock, reset_by udpReset);
     Reg#(Bool) isRxRawStreamInsertExtraFakeBeatReg <- mkReg(False, clocked_by udpClock, reset_by udpReset);
+
+    FIFOF#(Ports::DataStream) txOutQ <- mkFIFOF(clocked_by udpClock, reset_by udpReset);
 
     function DataTypes::DataStreamEn narrow2Normal(Vector#(2, Ports::DataStream) inVec);
         let ret = DataTypes::DataStreamEn {
@@ -69,6 +74,13 @@ module mkUdpGearbox#(Clock rdmaClock, Reset rdmaReset, Clock udpClock, Reset udp
         };
         return ret;
     endfunction
+
+    rule handleTxStreamRemoveEmptyFrag;
+        txGearbox.deq;
+        if (!isZeroR(txGearbox.first[0].byteEn)) begin
+            txOutQ.enq(txGearbox.first[0]);
+        end
+    endrule
 
     rule handleRxRdmaStreamInsertExtraFakeBeat if (isRxRdmaStreamInsertExtraFakeBeatReg);
         Vector#(UDP_GEARBOX_NARROW_VECTOR_LEN, Ports::DataStream) vec = newVector;
@@ -99,7 +111,7 @@ module mkUdpGearbox#(Clock rdmaClock, Reset rdmaReset, Clock udpClock, Reset udp
         method Action put(DataTypes::DataStream ds);
             Vector#(UDP_GEARBOX_WIDE_VECTOR_LEN, Ports::DataStream) vec = newVector;
 
-            let dsEn = dataStream2DataStreamEn(ds);
+            let dsEn = dataStream2DataStreamEnLeftAlign(ds);
 
             vec[0].data = swapEndian(truncateLSB(dsEn.data));
             vec[1].data = swapEndian(truncate(dsEn.data));
@@ -125,9 +137,9 @@ module mkUdpGearbox#(Clock rdmaClock, Reset rdmaReset, Clock udpClock, Reset udp
 
     interface Get txOut;
         method ActionValue#(Ports::DataStream) get;
-            txGearbox.deq;
-            $display("time=%0t: ", $time,"rdma put data to udp = ", fshow(txGearbox.first[0]));
-            return txGearbox.first[0];
+            txOutQ.deq;
+            $display("time=%0t: ", $time,"rdma put data to udp = ", fshow(txOutQ.first));
+            return txOutQ.first;
         endmethod
     endinterface
 

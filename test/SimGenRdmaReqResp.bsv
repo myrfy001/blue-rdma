@@ -267,7 +267,7 @@ function DataStream buildCNP(CntrlStatus statusSQ) provisos(
     };
     return DataStream {
         data   : zeroExtendLSB({ pack(bth), pack(payloadCNP) }),
-        byteEn : genByteEn(fromInteger(valueOf(cnpPktByteSz))),
+        byteEn : genByteEnLeftAlign(fromInteger(valueOf(cnpPktByteSz))),
         isFirst: True,
         isLast : True
     };
@@ -828,7 +828,7 @@ module mkTestSimGenRdmaResp(Empty);
         //     let lastFragValidByteNum = calcByteEnBitNumInSim(refDataStream.byteEn);
         //     let padCnt = calcPadCnt(lastFragValidByteNum);
         //     let lastFragValidByteNumWithPadding = lastFragValidByteNum + zeroExtend(padCnt);
-        //     let lastFragByteEnWithPadding = genByteEn(lastFragValidByteNumWithPadding);
+        //     let lastFragByteEnWithPadding = genByteEnLeftAlign(lastFragValidByteNumWithPadding);
 
         //     // $display(
         //     //     "time=%0t: refDataStream.byteEn=%h, padCnt=%0d",
