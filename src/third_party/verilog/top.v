@@ -322,10 +322,14 @@ module top#(
 
 
     mkBsvTop bsv_top(
-      .CLK_slowClock(user_clk_250),
-      .RST_N_slowReset(user_resetn),
-      .CLK(user_clk_500),
+      .CLK_udpClock(user_clk_500),
+      .RST_N_udpReset(user_resetn),
+      .cmac_rxtx_clk(gt_txusrclk2),
+      .cmac_rx_reset(gt_usr_rx_reset),
+      .cmac_tx_reset(gt_usr_tx_reset),
+      .CLK(user_clk_250),
       .RST_N(user_resetn),
+
       .xdmaChannel_rawH2cAxiStream_tvalid(m_axis_h2c_tvalid_0),
       .xdmaChannel_rawH2cAxiStream_tdata(m_axis_h2c_tdata_0),
       .xdmaChannel_rawH2cAxiStream_tkeep(m_axis_h2c_tkeep_0),
@@ -400,9 +404,7 @@ module top#(
 
 
       // CMAC Interface
-      .cmac_rxtx_clk(gt_txusrclk2),
-      .cmac_rx_reset(gt_usr_rx_reset),
-      .cmac_tx_reset(gt_usr_tx_reset),
+
       .cmac_tx_axis_tvalid    (gt_tx_axis_tvalid),
       .cmac_tx_axis_tdata     (gt_tx_axis_tdata ),
       .cmac_tx_axis_tkeep     (gt_tx_axis_tkeep ),

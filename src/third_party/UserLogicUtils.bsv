@@ -52,7 +52,7 @@ typedef 1 UDP_GEARBOX_NARROW_VECTOR_LEN;
 
 module mkUdpGearbox#(Clock rdmaClock, Reset rdmaReset, Clock udpClock, Reset udpReset)(UdpGearbox);
 
-    Gearbox#(UDP_GEARBOX_WIDE_VECTOR_LEN, UDP_GEARBOX_NARROW_VECTOR_LEN, Ports::DataStream) txGearbox <- mkNto1Gearbox(rdmaClock, rdmaReset, udpClock, udpReset);
+    Gearbox#(UDP_GEARBOX_WIDE_VECTOR_LEN, UDP_GEARBOX_NARROW_VECTOR_LEN, Maybe#(Ports::DataStream)) txGearbox <- mkNto1Gearbox(rdmaClock, rdmaReset, udpClock, udpReset);
     Gearbox#(UDP_GEARBOX_NARROW_VECTOR_LEN, UDP_GEARBOX_WIDE_VECTOR_LEN, Ports::DataStream) rxGearbox <- mk1toNGearbox(udpClock, udpReset, rdmaClock, rdmaReset);
     Gearbox#(UDP_GEARBOX_NARROW_VECTOR_LEN, UDP_GEARBOX_WIDE_VECTOR_LEN, Ports::DataStream) rxRawGearbox <- mk1toNGearbox(udpClock, udpReset, rdmaClock, rdmaReset);
 
@@ -77,8 +77,9 @@ module mkUdpGearbox#(Clock rdmaClock, Reset rdmaReset, Clock udpClock, Reset udp
 
     rule handleTxStreamRemoveEmptyFrag;
         txGearbox.deq;
-        if (!isZeroR(txGearbox.first[0].byteEn)) begin
-            txOutQ.enq(txGearbox.first[0]);
+
+        if (txGearbox.first[0] matches tagged Valid .frag) begin
+            txOutQ.enq(frag);
         end
     endrule
 
@@ -109,29 +110,36 @@ module mkUdpGearbox#(Clock rdmaClock, Reset rdmaReset, Clock udpClock, Reset udp
 
     interface Put txIn;
         method Action put(DataTypes::DataStream ds);
-            Vector#(UDP_GEARBOX_WIDE_VECTOR_LEN, Ports::DataStream) vec = newVector;
+            Vector#(UDP_GEARBOX_WIDE_VECTOR_LEN, Ports::DataStream) vecDs = newVector;
+            Vector#(UDP_GEARBOX_WIDE_VECTOR_LEN, Maybe#(Ports::DataStream)) vecMaybeDs = newVector;
 
             let dsEn = dataStream2DataStreamEnLeftAlign(ds);
 
-            vec[0].data = swapEndian(truncateLSB(dsEn.data));
-            vec[1].data = swapEndian(truncate(dsEn.data));
+            
+
+            vecDs[0].data = swapEndian(truncateLSB(dsEn.data));
+            vecDs[1].data = swapEndian(truncate(dsEn.data));
 
             let onlyHasHalfBeat = ds.byteNum <= fromInteger(valueOf(DATA_BUS_NARROW_BYTE_WIDTH));
+
+            vecDs[0].isFirst = ds.isFirst;
+            vecDs[1].isFirst = False;
+            vecDs[0].isLast = ds.isLast && onlyHasHalfBeat;
+            vecDs[1].isLast = ds.isLast && !onlyHasHalfBeat;
+
             if (onlyHasHalfBeat) begin
-                vec[0].byteEn = swapEndianBit(truncateLSB(dsEn.byteEn));
-                vec[1].byteEn = 0;
+                vecDs[0].byteEn = swapEndianBit(truncateLSB(dsEn.byteEn));
+                vecDs[1].byteEn = 0;
             end
             else begin
-                vec[0].byteEn = -1;
-                vec[1].byteEn = swapEndianBit(truncate(dsEn.byteEn));
+                vecDs[0].byteEn = -1;
+                vecDs[1].byteEn = swapEndianBit(truncate(dsEn.byteEn));
             end
  
-            vec[0].isFirst = ds.isFirst;
-            vec[1].isFirst = False;
-            vec[0].isLast = ds.isLast && onlyHasHalfBeat;
-            vec[1].isLast = ds.isLast && !onlyHasHalfBeat;
-    
-            txGearbox.enq(vec);
+            vecMaybeDs[0] = tagged Valid vecDs[0];
+            vecMaybeDs[1] = onlyHasHalfBeat ? tagged Invalid : tagged Valid vecDs[1];
+            
+            txGearbox.enq(vecMaybeDs);
         endmethod
     endinterface
 
