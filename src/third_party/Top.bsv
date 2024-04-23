@@ -9,7 +9,6 @@ import AlignedFIFOs :: * ;
 
 import Axi4LiteTypes :: *;
 import XilinxCmacController :: *;
-import UdpIpArpEthCmacRxTx :: *;
 import Ports :: *;
 import EthernetTypes :: *;
 import SemiFifo :: *;
@@ -65,8 +64,6 @@ endinterface
 
 (* synthesize *)
 module mkBsvTop(
-    Clock udpClock, 
-    Reset udpReset,
     (* osc   = "cmac_rxtx_clk" *) Clock cmacRxTxClk,
     (* reset = "cmac_rx_reset" *) Reset cmacRxReset,
     (* reset = "cmac_tx_reset" *) Reset cmacTxReset,
@@ -75,8 +72,11 @@ module mkBsvTop(
 
     Clock dmacClock <- exposeCurrentClock;
     Reset dmacReset <- exposeCurrentReset;
+
+    Clock udpClock <- exposeCurrentClock;
+    Reset udpReset <- exposeCurrentReset;
     
-    XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper(clocked_by dmacClock, reset_by dmacReset);
+    XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper;
     XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(dmacClock, dmacReset);
     RdmaUserLogicWithoutXdmaAndCmacWrapper udpAndRdma <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(udpClock, udpReset, dmacClock, dmacReset);
     mkConnection(xdmaAxiLiteWrap.csrWriteClt, udpAndRdma.csrWriteSrv);
@@ -89,7 +89,7 @@ module mkBsvTop(
     Bool isEnableFlowControl = False;
     Bool isEnableRsFec = True;
 
-    let axiStream512RxIn <- mkPutToFifoIn(udpAndRdma.axiStreamRxInUdp, clocked_by udpClock, reset_by udpReset);
+    let axiStream512RxIn <- mkPutToFifoIn(udpAndRdma.axiStreamRxInUdp);
 
     let axiStream512SyncFifoForCMAC <- mkDuplexAxiStreamAsyncFifo(
         valueOf(CMAC_SYNC_BRAM_BUF_DEPTH),
@@ -100,9 +100,7 @@ module mkBsvTop(
         cmacRxReset,
         cmacTxReset,
         axiStream512RxIn,
-        udpAndRdma.axiStreamTxOutUdp,
-        clocked_by udpClock,
-        reset_by udpReset
+        udpAndRdma.axiStreamTxOutUdp
     );
 
 
@@ -441,15 +439,15 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     let rdmaReset <- exposeCurrentReset;
 
     let rdma <- mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(dmacClock, dmacReset);
-    let udp <- mkUdpWrapper(clocked_by udpClock, reset_by udpReset);
+    let udp <- mkUdpWrapper;
 
-    let udpGearbox <- mkUdpGearbox(rdmaClock, rdmaReset, udpClock, udpReset);
+    // let udpGearbox <- mkUdpGearbox(rdmaClock, rdmaReset, udpClock, udpReset);
 
     Reg#(UdpReceivingChannelSelectState)  isReceivingRawPacketReg <- mkReg(UdpReceivingChannelSelectStateIdle);
 
     RingbufStorage#(RecvPacketSrcMacIpBufferEntry, RecvPacketSrcMacIpBufferIdx) recvMacIpStorage <- mkRingbufStorage("recvMacIpStorage");
 
-    // FIFOF#(Ports::DataStream) udpTxStreamBufQ <- mkFIFOF;
+    FIFOF#(Ports::DataStream) udpTxStreamBufQ <- mkFIFOF;
     FIFOF#(UdpIpMetaData) udpTxIpMetaBufQ <- mkFIFOF;
     FIFOF#(MacMetaDataWithBypassTag) udpTxMacMetaBufQ <- mkFIFOF;
     FIFOF#(RqDataStreamWithExtraInfo) udpRxStreamBufQ <- mkFIFOF;
@@ -460,92 +458,24 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     FIFOF#(DataStream) rawPacketDataStreamRelyQ <- mkFIFOF;
 
 
-
-    // Tx Clock transform
-    mkConnection(toGet(rdma.sqRdmaDataStreamPipeOut), udpGearbox.txIn);
-
-    Store#(UInt#(0), UdpIpMetaData, 0) txIpMetaSyncFifoStore <- mkRegStore(rdmaClock, udpClock);
-    Store#(UInt#(0), MacMetaDataWithBypassTag, 0) txMacMetaSyncFifoStore <- mkRegStore(rdmaClock, udpClock);
-    
-    ClockDividerIfc divClk <- mkClockDivider(valueOf(TDiv#(UDP_FREQ, RDMA_FREQ)), clocked_by udpClock, reset_by udpReset);
-
-    AlignedFIFO#(UdpIpMetaData) txIpMetaSyncQ <- mkAlignedFIFO(
-        rdmaClock, rdmaReset,
-        udpClock, udpReset,
-        txIpMetaSyncFifoStore,
-        True,
-        divClk.clockReady
-    );
-
-    AlignedFIFO#(MacMetaDataWithBypassTag) txMacMetaSyncQ <- mkAlignedFIFO(
-        rdmaClock, rdmaReset,
-        udpClock, udpReset,
-        txMacMetaSyncFifoStore,
-        True,
-        divClk.clockReady
-    );
-
-    mkConnection(toGet(udpTxIpMetaBufQ), toPut(txIpMetaSyncQ));
-    mkConnection(toGet(udpTxMacMetaBufQ), toPut(txMacMetaSyncQ));
-
-    // Rx Clock transform
-    mkConnection(toGet(udp.netTxRxIfc.dataStreamRxOut), udpGearbox.rxIn);
-    mkConnection(toGet(udp.netTxRxIfc.rawPktStreamRxOut), udpGearbox.rxRawIn);
-
-    Store#(UInt#(0), UdpIpMetaData, 0) rxIpMetaSyncFifoStore <- mkRegStore(udpClock, rdmaClock);
-    Store#(UInt#(0), MacMetaData, 0) rxMacMetaSyncFifoStore <- mkRegStore(udpClock, rdmaClock);
-
-    AlignedFIFO#(UdpIpMetaData) rxIpMetaSyncQ <- mkAlignedFIFO(
-        udpClock, udpReset,
-        rdmaClock, rdmaReset,
-        rxIpMetaSyncFifoStore,
-        divClk.clockReady,
-        True
-    );
-
-    AlignedFIFO#(MacMetaData) rxMacMetaSyncQ <- mkAlignedFIFO(
-        udpClock, udpReset,
-        rdmaClock, rdmaReset,
-        rxMacMetaSyncFifoStore,
-        divClk.clockReady,
-        True
-    );
-
-    // Config Clock transform
-    Store#(UInt#(0), UdpConfig, 0) udpConfigSyncFifoStore <- mkRegStore(rdmaClock, udpClock);
-    AlignedFIFO#(UdpConfig) udpConfigSyncQ <- mkAlignedFIFO(
-        rdmaClock, rdmaReset,
-        udpClock, udpReset,
-        udpConfigSyncFifoStore,
-        True,
-        divClk.clockReady
-    );
-
-
-
-
-    mkConnection(toGet(udp.netTxRxIfc.udpIpMetaDataRxOut), toPut(rxIpMetaSyncQ), clocked_by udpClock, reset_by udpReset);
-    mkConnection(toGet(udp.netTxRxIfc.macMetaDataRxOut), toPut(rxMacMetaSyncQ), clocked_by udpClock, reset_by udpReset);
-
-    mkConnection(toGet(udpGearbox.txOut), udp.netTxRxIfc.dataStreamTxIn, clocked_by udpClock, reset_by udpReset);
-    mkConnection(toGet(txIpMetaSyncQ), udp.netTxRxIfc.udpIpMetaDataTxIn, clocked_by udpClock, reset_by udpReset);
-    mkConnection(toGet(txMacMetaSyncQ), udp.netTxRxIfc.macMetaDataTxIn, clocked_by udpClock, reset_by udpReset);
+    mkConnection(toGet(udpTxStreamBufQ), udp.netTxRxIfc.dataStreamTxIn);
+    mkConnection(toGet(udpTxIpMetaBufQ), udp.netTxRxIfc.udpIpMetaDataTxIn);
+    mkConnection(toGet(udpTxMacMetaBufQ), udp.netTxRxIfc.macMetaDataTxIn);
     mkConnection(toGet(udpRxStreamBufQ), rdma.rqInputDataStream);
 
-    mkConnection(toGet(rdma.setNetworkParamReqOut), toPut(udpConfigSyncQ));
-    mkConnection(toGet(udpConfigSyncQ), toPut(udp.netTxRxIfc.udpConfig), clocked_by udpClock, reset_by udpReset);
+    mkConnection(toGet(rdma.setNetworkParamReqOut), toPut(udp.netTxRxIfc.udpConfig));
 
-    // rule forwardTxStream;
-    //     rdma.sqRdmaDataStreamPipeOut.deq;
-    //     let data = dataStream2DataStreamEnLeftAlign(rdma.sqRdmaDataStreamPipeOut.first);
-    //     $display("time=%0t: ", $time,"rdma put data to udp = ", fshow(data));
-    //     udpTxStreamBufQ.enq(Ports::DataStream{
-    //         data: swapEndian(data.data),
-    //         byteEn: swapEndianBit(data.byteEn),
-    //         isFirst:    data.isFirst,
-    //         isLast:     data.isLast
-    //     });
-    // endrule
+    rule forwardTxStream;
+        rdma.sqRdmaDataStreamPipeOut.deq;
+        let data = dataStream2DataStreamEnLeftAlign(rdma.sqRdmaDataStreamPipeOut.first);
+        $display("time=%0t: ", $time,"rdma put data to udp = ", fshow(data));
+        udpTxStreamBufQ.enq(Ports::DataStream{
+            data: swapEndian(data.data),
+            byteEn: swapEndianBit(data.byteEn),
+            isFirst:    data.isFirst,
+            isLast:     data.isLast
+        });
+    endrule
 
     rule forwardTxMeta;
         rdma.sqUdpInfoPipeOut.deq;
@@ -586,18 +516,18 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     rule forwardRdmaRxStream;
         if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateIdle) begin
-            if (udpGearbox.rxOut.notEmpty) begin
+            if (udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
                 let srcMacIpIdx <- recvMacIpStorage.allocSlotIdx.get;
-                rxIpMetaSyncQ.deq;
-                rxMacMetaSyncQ.deq;
+                udp.netTxRxIfc.udpIpMetaDataRxOut.deq;
+                udp.netTxRxIfc.macMetaDataRxOut.deq;
 
                 recvMacIpStorage.saveData.put(tuple2(srcMacIpIdx, RecvPacketSrcMacIpBufferEntry{
-                    ip     : tagged IPv4 unpack(pack(rxIpMetaSyncQ.first.ipAddr)),
-                    macAddr: unpack(pack(rxMacMetaSyncQ.first.macAddr))
+                    ip     : tagged IPv4 unpack(pack(udp.netTxRxIfc.udpIpMetaDataRxOut.first.ipAddr)),
+                    macAddr: unpack(pack(udp.netTxRxIfc.macMetaDataRxOut.first.macAddr))
                 }));
 
-                let data = udpGearbox.rxOut.first;
-                udpGearbox.rxOut.deq;
+                let data = udp.netTxRxIfc.dataStreamRxOut.first;
+                udp.netTxRxIfc.dataStreamRxOut.deq;
                 let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
                     data: swapEndian(data.data),
                     byteEn: swapEndianBit(data.byteEn),
@@ -611,15 +541,15 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                     isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRdmaData;
                 end
             end
-            else if (udpGearbox.rxRawOut.notEmpty) begin
+            else if (udp.netTxRxIfc.rawPktStreamRxOut.notEmpty) begin
                 let srcMacIpIdx <- recvMacIpStorage.allocSlotIdx.get;
                 recvMacIpStorage.saveData.put(tuple2(srcMacIpIdx, RecvPacketSrcMacIpBufferEntry{
                     ip     : tagged IPv4 unpack(0),
                     macAddr: unpack(0)
                 }));
 
-                let data = udpGearbox.rxRawOut.first;
-                udpGearbox.rxRawOut.deq;
+                let data = udp.netTxRxIfc.rawPktStreamRxOut.first;
+                udp.netTxRxIfc.rawPktStreamRxOut.deq;
                 let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
                     data: swapEndian(data.data),
                     byteEn: swapEndianBit(data.byteEn),
@@ -635,8 +565,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             end
         end
         else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRdmaData) begin
-            let data = udpGearbox.rxOut.first;
-            udpGearbox.rxOut.deq;
+            let data = udp.netTxRxIfc.dataStreamRxOut.first;
+            udp.netTxRxIfc.dataStreamRxOut.deq;
             let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
                 data: swapEndian(data.data),
                 byteEn: swapEndianBit(data.byteEn),
@@ -650,8 +580,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             end
         end
         else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRawData) begin
-            let data = udpGearbox.rxRawOut.first;
-            udpGearbox.rxRawOut.deq;
+            let data = udp.netTxRxIfc.rawPktStreamRxOut.first;
+            udp.netTxRxIfc.rawPktStreamRxOut.deq;
             let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
                 data: swapEndian(data.data),
                 byteEn: swapEndianBit(data.byteEn),

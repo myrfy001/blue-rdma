@@ -55,7 +55,6 @@ module top#(
    //----------------------------------------------------------------------------------------------------------------//
    
    wire 					   user_clk_250;
-   wire              user_clk_500;
    wire 					   user_resetn;
 
 
@@ -219,18 +218,6 @@ module top#(
     wire            gt_ctl_rx_rsfec_enable_correction;
     wire            gt_ctl_rx_rsfec_enable_indication;
 
-  wire clk_wiz_user_clock_locked;
-
-  clk_wiz_xdma_250_to_500 mmcm_250_to_500
-   (
-      // Clock out ports
-      .clk_out1(user_clk_500),     // output clk_out1
-      // Status and control signals
-      .locked(clk_wiz_user_clock_locked),       // output locked
-      // Clock in ports
-      .clk_in1(user_clk_250)      // input clk_in1
-  );
-
 
 
   xdma_0 xdma_0_i
@@ -322,8 +309,6 @@ module top#(
 
 
     mkBsvTop bsv_top(
-      .CLK_udpClock(user_clk_500),
-      .RST_N_udpReset(user_resetn),
       .cmac_rxtx_clk(gt_txusrclk2),
       .cmac_rx_reset(gt_usr_rx_reset),
       .cmac_tx_reset(gt_usr_tx_reset),
@@ -497,8 +482,8 @@ module top#(
   assign gtwiz_reset_tx_datapath    = 1'b0;
   assign gtwiz_reset_rx_datapath    = 1'b0;
 
-  assign udp_reset = clk_wiz_user_clock_locked;
-  assign cmac_sys_reset = ~ clk_wiz_user_clock_locked;
+  assign udp_reset = user_resetn;
+  assign cmac_sys_reset = ~ user_resetn;
   // assign gt_init_clk = user_clk_250;
 
 
