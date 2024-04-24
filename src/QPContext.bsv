@@ -142,20 +142,20 @@ module mkExpectedPsnManager(ExpectedPsnManager);
 
         let cacheRespMaybe <- psnCache.search(req.qpnIdx);
 
-        let storedIsPsnContinous = bramResp.isPsnContinous;
+        let storedIsQpPsnContinous = bramResp.isQpPsnContinous;
         let storedLatestErrorPSN = bramResp.latestErrorPSN;
         let storedExpectedPSN    = bramResp.expectedPSN;       
         
         $display("time=%0t:", $time, " storedExpectedPSN=", fshow(storedExpectedPSN));
 
         if (cacheRespMaybe matches tagged Valid .cacheResp) begin
-            storedIsPsnContinous = cacheResp.isPsnContinous;
+            storedIsQpPsnContinous = cacheResp.isQpPsnContinous;
             storedLatestErrorPSN = cacheResp.latestErrorPSN;
             storedExpectedPSN    = cacheResp.expectedPSN;  
             $display("time=%0t:", $time, " upadte storedExpectedPSN to cached value, value=", fshow(storedExpectedPSN)); 
         end
 
-        let newIsPsnContinous = storedIsPsnContinous;
+        let newIsQpPsnContinous = storedIsQpPsnContinous;
         let newLatestErrorPSN = storedLatestErrorPSN;
         let newExpectedPSN    = storedExpectedPSN;
 
@@ -165,22 +165,22 @@ module mkExpectedPsnManager(ExpectedPsnManager);
         // if the minus result is smaller than MAX_PSN / 2, it menas (req.newIncomingPSN > storedExpectedPSN)
         let isCurPsnGreaterOrEqualThanExpectedPSN       = msb(req.newIncomingPSN - storedExpectedPSN)    == 1'b0;
 
-
+        let isAdjacentPsnContinous = False;
         if (req.isPacketStateAbnormal) begin
-            newIsPsnContinous = False;
+            newIsQpPsnContinous = False;
             newLatestErrorPSN = req.newIncomingPSN;
             newErrorOccured   = True;
         end 
         else if (isCurPsnGreaterOrEqualThanExpectedPSN) begin
             // expected PSN is monotone increasing
             newExpectedPSN = req.newIncomingPSN + 1;
-
-            if (req.newIncomingPSN != storedExpectedPSN) begin
+            isAdjacentPsnContinous = req.newIncomingPSN == storedExpectedPSN;
+            if (!isAdjacentPsnContinous) begin
                 // if not equal, it must be greater than expected, so change to non-continous state
                 // if we receive a psn less than expected PSN, it's a out-of-order packet or retry packet,
-                // so we should not modify newIsPsnContinous. E.g., if we are in normal state and receive 
+                // so we should not modify newIsQpPsnContinous. E.g., if we are in normal state and receive 
                 // a retry packet, we should ignore it and not turn into non-continous state.
-                newIsPsnContinous = False;
+                newIsQpPsnContinous = False;
                 newLatestErrorPSN = req.newIncomingPSN;
                 newErrorOccured   = True;
             end
@@ -190,7 +190,7 @@ module mkExpectedPsnManager(ExpectedPsnManager);
         // handle recovery logic
         if (qpReturnToNormalStateReqRegVec[req.qpnIdx] matches tagged Valid .recoveryPSN) begin
             if (recoveryPSN == newLatestErrorPSN && !newErrorOccured) begin
-                newIsPsnContinous = True;
+                newIsQpPsnContinous = True;
             end
             getRecoveryPsnNotifyWire.wset(req.qpnIdx);
         end
@@ -198,14 +198,15 @@ module mkExpectedPsnManager(ExpectedPsnManager);
         let bramNewValue = ExpectedPsnContextEntry {
             expectedPSN:    newExpectedPSN,
             latestErrorPSN: newLatestErrorPSN,
-            isPsnContinous: newIsPsnContinous
+            isQpPsnContinous: newIsQpPsnContinous
         };
 
         updatePsnReqWire.wset(tuple2(req.qpnIdx, bramNewValue));
 
         let resp = ExpectedPsnCheckResp {
             expectedPSN: storedExpectedPSN,
-            isPsnContinous: newIsPsnContinous
+            isQpPsnContinous: newIsQpPsnContinous,
+            isAdjacentPsnContinous: isAdjacentPsnContinous
         };
         psnContextQuerySrvInst.putResp(resp);
     endrule
@@ -216,7 +217,7 @@ module mkExpectedPsnManager(ExpectedPsnManager);
             let bramNewValue = ExpectedPsnContextEntry {
                 expectedPSN : 0,
                 latestErrorPSN : 0,
-                isPsnContinous : True
+                isQpPsnContinous : True
             };
 
             let bramReq = BRAMRequest{

@@ -341,7 +341,8 @@ typedef struct {
 } MeatReportQueueDescFragImmDT deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(136)              reserved1;      // 136
+    Bool                            canAutoAck;     // 1
+    ReservedZero#(135)              reserved1;      // 135
     MSN                             msn;            // 24
     MeatReportQueueDescFragBTH      bth;            // 64
     RdmaReqStatus                   reqStatus;      // 8
@@ -349,7 +350,8 @@ typedef struct {
 } MeatReportQueueDescBth deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(8)                reserved1;      // 8
+    Bool                            canAutoAck;     // 1
+    ReservedZero#(7)                reserved1;      // 7
     MSN                             msn;            // 24
     MeatReportQueueDescFragRETH     reth;           // 128
     MeatReportQueueDescFragBTH      bth;            // 64

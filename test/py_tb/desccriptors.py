@@ -336,7 +336,8 @@ class MeatReportQueueDescBthReth(Structure):
                 ("F_BTH", MeatReportQueueDescFragBTH),
                 ("F_RETH", MeatReportQueueDescFragRETH),
                 ("F_MSN", c_int, 24),
-                ("F_RESERVED_1", c_int, 8),
+                ("F_RESERVED_1", c_int, 7),
+                ("F_CAN_AUTO_ACK", c_uint, 1),
                 ]
 
 

@@ -186,8 +186,9 @@ class NetworkDataAgent:
         self.full_tx_data_list = []
 
     def put_tx_frag(self, frag):
-        ones = math.log2(frag.byte_en + 1)
-        self.tx_data_buf += frag.data[:ones]
+        bitmask = struct.unpack('<Q', bytes(frag.byte_en))[0]
+        ones = int(math.log2(bitmask + 1))
+        self.tx_data_buf += bytes(frag.data[:ones])
         if frag.is_last:
             self.full_tx_data_list.append(self.tx_data_buf)
             self.tx_data_buf = b""
@@ -198,33 +199,37 @@ class NetworkDataAgent:
             if remain_size > 64:
                 data_trunk = data[:64]
                 data = data[64:]
-                self.mock_host.put_net_ifc_rx_data_to_nic(
-                    CStructRpcNetIfcRxTxMessage(
-                        header=CStructRpcHeader(
-                            opcode=CEnumRpcOpcode.RpcOpcodeNetIfcGetRxData,
-                        ),
-                        payload=CStructRpcNetIfcRxTxPayload(
-                            data=data,
-                            byte_en=0xFFFFFFFFFFFFFFFF,
-                            is_last=0,
-                            is_valid=1
-                        )
+                tx_msg = CStructRpcNetIfcRxTxMessage(
+                    header=CStructRpcHeader(
+                        opcode=CEnumRpcOpcode.RpcOpcodeNetIfcGetRxData,
+                    ),
+                    payload=CStructRpcNetIfcRxTxPayload(
+                        data=CUbyteArray64(*data_trunk),
+                        byte_en=CUbyteArray8(
+                            *struct.pack("<Q", 0xFFFFFFFFFFFFFFFF)),
+                        is_last=0,
+                        is_valid=1
                     )
                 )
+                self.mock_host.put_net_ifc_rx_data_to_nic(tx_msg.payload)
+                remain_size -= 64
             else:
-                self.mock_host.put_net_ifc_rx_data_to_nic(
-                    CStructRpcNetIfcRxTxMessage(
-                        header=CStructRpcHeader(
-                            opcode=CEnumRpcOpcode.RpcOpcodeNetIfcGetRxData,
-                        ),
-                        payload=CStructRpcNetIfcRxTxPayload(
-                            data=data,
-                            byte_en=(1 << remain_size) - 1,
-                            is_last=1,
-                            is_valid=1
-                        )
+                data = data + (b"\0" * (64-remain_size))
+                tx_msg = CStructRpcNetIfcRxTxMessage(
+                    header=CStructRpcHeader(
+                        opcode=CEnumRpcOpcode.RpcOpcodeNetIfcGetRxData,
+                    ),
+                    payload=CStructRpcNetIfcRxTxPayload(
+                        data=CUbyteArray64(*data),
+                        byte_en=CUbyteArray8(
+                            *struct.pack("<Q", (1 << remain_size) - 1)),
+                        is_last=1,
+                        is_valid=1
                     )
                 )
+                # TODO: should use `tx_msg.payload` or `tx_msg` ?
+                self.mock_host.put_net_ifc_rx_data_to_nic(tx_msg.payload)
+                remain_size -= 64
 
     def get_full_tx_packet(self):
         if self.full_tx_data_list:
@@ -450,7 +455,7 @@ class MockNicAndHost:
     def put_net_ifc_rx_data_to_nic(self, frag):
         return self.pending_network_packet_rx.append(frag)
 
-    @staticmethod
+    @ staticmethod
     def do_self_loopback(nic):
         def _self_loopback_thread():
             while True:
@@ -459,7 +464,7 @@ class MockNicAndHost:
         loopback_thread = threading.Thread(target=_self_loopback_thread)
         loopback_thread.start()
 
-    @staticmethod
+    @ staticmethod
     def connect_to_raw_socket(nic: "MockNicAndHost", addr: str, port: int, nic_mac: str, other_mac: str):
         def _send_proxy():
             try:
@@ -517,7 +522,7 @@ class MockNicAndHost:
         raw_socket_thread = threading.Thread(target=_receive_proxy)
         raw_socket_thread.start()
 
-    @staticmethod
+    @ staticmethod
     def connect_two_card(nic_a, nic_b):
         def _forward_a():
             # client_to_buf = dict()

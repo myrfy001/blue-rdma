@@ -59,7 +59,7 @@ module mkRQ(RQ ifc);
     FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool))                                              getPGTQueryRespPipeQ <- mkSizedFIFOF(5);
     FIFOF#(Tuple3#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool))                                                 psnContextQueryReqPipeQ <- mkFIFOF;
     FIFOF#(Tuple4#(RdmaPktMetaDataAndQPC, RdmaReqStatus, Bool, Bool))                                           psnContinuityCheckPipeQ <- mkFIFOF;
-    FIFOF#(Tuple5#(RdmaPktMetaDataAndQPC, RdmaReqStatus, PSN, Bool, Bool))                                      waitDMARespPipeQ        <- mkFIFOF;
+    FIFOF#(Tuple6#(RdmaPktMetaDataAndQPC, RdmaReqStatus, PSN, Bool, Bool, Bool))                                waitDMARespPipeQ        <- mkFIFOF;
 
 
     function FlagsType#(MemAccessTypeFlag) genAccessFlagFromReqType(Bool isSend, Bool isRead, Bool isWrite, Bool isAtomic);
@@ -410,14 +410,16 @@ module mkRQ(RQ ifc);
         let needReportPacketMeta = True;
 
         let expectedPsn = 0;
+
+        let canAutoAck = False;
         
         $display("time=%0t:", $time, " needCheckExpectedPSN=", fshow(needCheckExpectedPSN));
 
         if (needCheckExpectedPSN) begin
             let psnContinousCheckResp <- expectedPsnManager.psnContextQuerySrv.response.get;
-            let needGenerateAck = psnContinousCheckResp.isPsnContinous && bth.ackReq;
+            let needGenerateAck = psnContinousCheckResp.isQpPsnContinous && bth.ackReq;
             expectedPsn = psnContinousCheckResp.expectedPSN;
-
+            canAutoAck = psnContinousCheckResp.isQpPsnContinous;
             $display("time=%0t:", $time, " psnContinousCheckResp=", fshow(psnContinousCheckResp), ", bth=", fshow(bth));
 
             if (needGenerateAck) begin
@@ -432,22 +434,22 @@ module mkRQ(RQ ifc);
                 $display("time=%0t:", $time, " decide auto send ACK, autoAckGenMeta=", fshow(autoAckGenMeta));
             end
 
-            if (psnContinousCheckResp.isPsnContinous && isMiddlePkt) begin
+            if (psnContinousCheckResp.isAdjacentPsnContinous && isMiddlePkt) begin
                 needReportPacketMeta = False;
             end
         end
 
 
         // For Debug Use
-        needReportPacketMeta = True;
+        // needReportPacketMeta = True;
 
 
-        waitDMARespPipeQ.enq(tuple5(pktMetaDataAndQpc, reqStatus, expectedPsn, needIssueDMARequest, needReportPacketMeta));
+        waitDMARespPipeQ.enq(tuple6(pktMetaDataAndQpc, reqStatus, expectedPsn, needIssueDMARequest, needReportPacketMeta, canAutoAck));
         
     endrule
 
     rule waitDMAFinishAndWriteMetaToHost;
-        let { pktMetaDataAndQpc, reqStatus, expectedPsn, needIssueDMARequest, needReportPacketMeta } = waitDMARespPipeQ.first;
+        let { pktMetaDataAndQpc, reqStatus, expectedPsn, needIssueDMARequest, needReportPacketMeta, canAutoAck } = waitDMARespPipeQ.first;
         waitDMARespPipeQ.deq;
 
         let pktMetaData = pktMetaDataAndQpc.metadata;
@@ -493,6 +495,7 @@ module mkRQ(RQ ifc);
         rptEntry.lastRetryPSN   = nreth.lastRetryPSN;
         rptEntry.expectedPsn    = expectedPsn;
         rptEntry.immDt          = immDT.data;
+        rptEntry.canAutoAck     = canAutoAck;
 
         if (needReportPacketMeta) begin
             pktReportEntryQ.enq(rptEntry);
@@ -581,9 +584,10 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                 fromInteger(valueOf(RC_SEND_ONLY)):
                 begin
                     let ent = MeatReportQueueDescBth{
+                        canAutoAck  :   reportEntry.canAutoAck,
                         reqStatus   :   reportEntry.reqStatus,
                         bth         :   bth,
-                        expectedPSN :   reportEntry.lastRetryPSN,
+                        expectedPSN :   reportEntry.expectedPsn,
                         msn         :   reportEntry.msn,
                         reserved1   :   unpack(0)
                     };
@@ -609,12 +613,13 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                 fromInteger(valueOf(DTLD_EXT_RAW_PACKET_WRITE_ONLY_WITH_IMMEDIATE)):
                 begin
                     let ent = MeatReportQueueDescBthReth{
+                        canAutoAck  :   reportEntry.canAutoAck,
                         reserved1   :   unpack(0),
                         msn         :   reportEntry.msn,
                         reqStatus   :   reportEntry.reqStatus,
                         bth         :   bth,
                         reth        :   reth,
-                        expectedPSN :   reportEntry.lastRetryPSN
+                        expectedPSN :   reportEntry.expectedPsn
                     };
                     if (opcode == fromInteger(valueOf(RC_RDMA_READ_REQUEST)) || isHasImmData) begin
                         state <= RQReportEntryToRingbufDescStatusOutputExtraInfo;
