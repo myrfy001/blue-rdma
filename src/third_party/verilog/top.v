@@ -39,7 +39,11 @@ module top#(
     input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_rxn_in,
     input  [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_rxp_in,
     output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_txn_out,
-    output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_txp_out
+    output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_txp_out,
+
+    input qsfp2_fault_in,
+    output qsfp2_lpmode_out,
+    output qsfp2_resetl_out
 );
 
   localparam AXIL_ADDR_WIDTH = 20;
@@ -219,8 +223,15 @@ module top#(
     wire            gt_ctl_rx_rsfec_enable_indication;
 
 
+    // CMAC CTRL STATE
+    wire [3:0]      cmac_ctrl_tx_state;
+    wire [3:0]      cmac_ctrl_rx_state;
+    wire            is_cmac_rx_aligned;
 
-  xdma_0 xdma_0_i
+    assign qsfp2_lpmode_out = 1'b0;
+    assign qsfp2_resetl_out = 1'b1;
+
+    xdma_0 xdma_0_i
      (
       .sys_rst_n       ( sys_rst_n_c ),
 
@@ -425,7 +436,7 @@ module top#(
       .cmac_rx_axis_tkeep     (gt_rx_axis_tkeep ),
       .cmac_rx_axis_tlast     (gt_rx_axis_tlast ),
       .cmac_rx_axis_tuser     (gt_rx_axis_tuser ),
-      .cmac_rx_axis_tready    (),
+      .cmac_rx_axis_tready    (gt_rx_axis_tready),
 
       .rx_stat_aligned        (gt_stat_rx_aligned    ),
       .rx_stat_pause_req      (gt_stat_rx_pause_req  ),
@@ -468,7 +479,12 @@ module top#(
       .rx_ctl_rsfec_enable    (gt_ctl_rx_rsfec_enable),
       .rx_ctl_rsfec_enable_correction(gt_ctl_rx_rsfec_enable_correction),
       .rx_ctl_rsfec_enable_indication(gt_ctl_rx_rsfec_enable_indication),
-      .ctl_rsfec_ieee_error_indication_mode(gt_ctl_rsfec_ieee_error_indication_mode)
+      .ctl_rsfec_ieee_error_indication_mode(gt_ctl_rsfec_ieee_error_indication_mode),
+
+      // Controller State
+      .cmac_ctrl_tx_state     (cmac_ctrl_tx_state ),
+      .cmac_ctrl_rx_state     (cmac_ctrl_rx_state ),
+      .cmac_rx_aligned_indication(is_cmac_rx_aligned)
   );
 
   wire [(CMAC_GT_LANE_WIDTH * 3)-1 :0]    gt_loopback_in;

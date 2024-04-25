@@ -631,13 +631,14 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         if (streamFragMeta.isLast) begin
             rdmaHeaderPktLenCalcQ.deq;
 
+            pktValid = pktValid && validHeaderInfo.isValidHeader;
             let pktLenCheckInfo = PktLenCheckInfo {
                 padCnt         : bth.padCnt,
                 rdmaHeader     : rdmaHeader,
                 pktFragNum     : pktFragNum,
                 pktLen         : pktLen,
                 pmtu           : pmtu,
-                pktValid       : pktValid && validHeaderInfo.isValidHeader,
+                pktValid       : pktValid,
                 isFirstOrMidPkt: isFirstOrMidPkt,
                 isLastOrOnlyPkt: isLastOrOnlyPkt,
                 isMidPkt       : isMidPkt
@@ -689,8 +690,6 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
         let streamFragMeta = payloadFragMetaPktLenCheckQ.first;
         payloadFragMetaPktLenCheckQ.deq;
 
-        
-
         if (streamFragMeta.isLast) begin
             let { pktLenCheckInfo, qpcCommonMaybe, isZeroPayloadLen, isPktLenEqPMTU, isPktLenGtPMTU } = rdmaHeaderPktLenCheckQ.first;
             rdmaHeaderPktLenCheckQ.deq;
@@ -702,6 +701,7 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             let isFirstOrMidPkt = pktLenCheckInfo.isFirstOrMidPkt;
             let isLastOrOnlyPkt = pktLenCheckInfo.isLastOrOnlyPkt;
             let isMidPkt        = pktLenCheckInfo.isMidPkt;
+            
             let pktStatus       = PKT_ST_VALID;
 
             // fix byteNum to prevent dma write access touch unrelated bytes.
@@ -712,22 +712,6 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
                     pktValid =  (isFirstOrMidPkt && !isPktLenGtPMTU) ||
                         (isMidPkt && isPktLenEqPMTU) ||
                         (isLastOrOnlyPkt && !isPktLenGtPMTU);
-
-                    // $display(
-                    //     "time=%0t: checkPktLen", $time,
-                    //     ", bth.trans=", fshow(pktLenCheckInfo.trans),
-                    //     ", bth.dqpn=%h", pktLenCheckInfo.dqpn,
-                    //     ", bth.psn=%h", pktLenCheckInfo.psn,
-                    //     ", bth.opcode=", fshow(pktLenCheckInfo.opcode),
-                    //     ", bth.padCnt=%h", pktLenCheckInfo.padCnt,
-                    //     ", pktLen=%0d", pktLen,
-                    //     ", pmtu=", fshow(pmtu),
-                    //     ", isFirstOrMidPkt=", fshow(isFirstOrMidPkt),
-                    //     ", isPktLenEqPMTU=", fshow(isPktLenEqPMTU),
-                    //     ", isLastOrOnlyPkt=", fshow(isLastOrOnlyPkt),
-                    //     ", isPktLenGtPMTU=", fshow(isPktLenGtPMTU),
-                    //     ", pktValid=", fshow(pktValid)
-                    // );
                 end
 
                 if (!pktValid) begin
@@ -755,15 +739,21 @@ module mkInputRdmaPktBufAndHeaderValidation(InputRdmaPktBuf);
             end
 
             $display(
-                "time=%0t:", $time, " pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc)
-                // "time=%0t: bth=", $time, fshow(bth), ", pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc)
+                "time=%0t: 8th stage checkPktLen", $time,
+                ", bth.padCnt=%h", pktLenCheckInfo.padCnt,
+                ", pktLen=%0d", pktLenCheckInfo.pktLen,
+                ", pmtu=", fshow(pktLenCheckInfo.pmtu),
+                ", isFirstOrMidPkt=", fshow(isFirstOrMidPkt),
+                ", isPktLenEqPMTU=", fshow(isPktLenEqPMTU),
+                ", isLastOrOnlyPkt=", fshow(isLastOrOnlyPkt),
+                ", isPktLenGtPMTU=", fshow(isPktLenGtPMTU),
+                ", pktValid=", fshow(pktValid),
+                ", pktMetaDataAndQpc=", fshow(pktMetaDataAndQpc)
             );
         end
         else begin
             reqPayloadFragMetaOutQ.enq(streamFragMeta);
         end
-
-        $display("time=%0t: 8th stage checkPktLen", $time);
     endrule
 
 

@@ -10,43 +10,43 @@ def memcpy(dst, start_addr, src):
 
 
 class CmdQueueReqDescCommonHeader(Structure):
-    _fields_ = [("F_VALID", c_int, 1),
-                ("F_SIGNAL_CPLT", c_int, 1),
-                ("F_OP_CODE", c_int, 6),
-                ("F_SEGMENT_CNT", c_int, 4),
-                ("F_RESERVED_0", c_int, 20),
-                ("F_CMD_QUEUE_USER_DATA", c_int, 32),
+    _fields_ = [("F_VALID", c_uint, 1),
+                ("F_SIGNAL_CPLT", c_uint, 1),
+                ("F_OP_CODE", c_uint, 6),
+                ("F_SEGMENT_CNT", c_uint, 4),
+                ("F_RESERVED_0", c_uint, 20),
+                ("F_CMD_QUEUE_USER_DATA", c_uint, 32),
                 ]
 
 
 class CmdQueueRespDescCommonHeader(Structure):
-    _fields_ = [("F_VALID", c_int, 1),
-                ("F_OP_CODE", c_int, 6),
-                ("F_SEGMENT_CNT", c_int, 4),
-                ("F_RESP_SUCCESS", c_int, 1),
-                ("F_RESERVED_0", c_int, 20),
-                ("F_CMD_QUEUE_USER_DATA", c_int, 32),
+    _fields_ = [("F_VALID", c_uint, 1),
+                ("F_OP_CODE", c_uint, 6),
+                ("F_SEGMENT_CNT", c_uint, 4),
+                ("F_RESP_SUCCESS", c_uint, 1),
+                ("F_RESERVED_0", c_uint, 20),
+                ("F_CMD_QUEUE_USER_DATA", c_uint, 32),
                 ]
 
 
 class CmdQueueDescUpdateMrTable(Structure):
     _fields_ = [("common_header", CmdQueueReqDescCommonHeader),
-                ("F_MR_TABLE_MR_BASE_VA", c_longlong),
-                ("F_MR_TABLE_MR_LENGTH", c_int, 32),
-                ("F_MR_TABLE_MR_KEY", c_int, 32),
-                ("F_MR_TABLE_PD_HANDLER", c_int, 32),
-                ("F_MR_TABLE_ACC_FLAGS", c_int, 8),
-                ("F_MR_TABLE_PGT_OFFSET", c_int, 17),
-                ("F_RESERVED_0", c_int, 7),
+                ("F_MR_TABLE_MR_BASE_VA", c_ulonglong),
+                ("F_MR_TABLE_MR_LENGTH", c_uint, 32),
+                ("F_MR_TABLE_MR_KEY", c_uint, 32),
+                ("F_MR_TABLE_PD_HANDLER", c_uint, 32),
+                ("F_MR_TABLE_ACC_FLAGS", c_uint, 8),
+                ("F_MR_TABLE_PGT_OFFSET", c_uint, 17),
+                ("F_RESERVED_0", c_uint, 7),
                 ]
 
 
 class CmdQueueDescUpdatePGT(Structure):
     _fields_ = [("common_header", CmdQueueReqDescCommonHeader),
-                ("F_PGT_DMA_ADDR", c_longlong),
-                ("F_PGT_START_INDEX", c_int, 32),
-                ("F_PGT_DMA_READ_LENGTH", c_int, 32),
-                ("F_RESERVED_0", c_longlong),
+                ("F_PGT_DMA_ADDR", c_ulonglong),
+                ("F_PGT_START_INDEX", c_uint, 32),
+                ("F_PGT_DMA_READ_LENGTH", c_uint, 32),
+                ("F_RESERVED_0", c_ulonglong),
                 ]
 
 
@@ -133,39 +133,51 @@ class PMTU:
 
 class CmdQueueDescQpManagementSeg0(Structure):
     _fields_ = [("common_header", CmdQueueReqDescCommonHeader),
-                ("F_QP_ADMIN_IS_VALID", c_int, 1),
-                ("F_QP_ADMIN_IS_ERROR", c_int, 1),
-                ("F_RESERVED_0", c_int, 6),
-                ("F_QP_ADMIN_QPN", c_int, 24),
-                ("F_QP_ADMIN_PD_HANDLER", c_int, 32),
-                ("F_QP_ADMIN_QP_TYPE", c_int, 4),
-                ("F_RESERVED_1", c_int, 4),
-                ("F_QP_ADMIN_ACCESS_FLAG", c_int, 8),
-                ("F_QP_ADMIN_PMTU", c_int, 3),
-                ("F_RESERVED_2", c_longlong, 5),
-                ("F_QP_PEER_QPN", c_int, 24),
-                ("F_RESERVED_3", c_longlong, 16),
-                ("F_RESERVED_4", c_longlong, 64),
+                ("F_QP_ADMIN_IS_VALID", c_ulonglong, 1),
+                ("F_QP_ADMIN_IS_ERROR", c_ulonglong, 1),
+                ("F_RESERVED_0", c_ulonglong, 6),
+                ("F_QP_ADMIN_QPN", c_ulonglong, 24),
+                ("F_QP_ADMIN_PD_HANDLER", c_ulonglong, 32),
+                ("F_QP_ADMIN_QP_TYPE", c_ulonglong, 4),
+                ("F_RESERVED_1", c_ulonglong, 4),
+                ("F_QP_ADMIN_ACCESS_FLAG", c_ulonglong, 8),
+                ("F_QP_ADMIN_PMTU", c_ulonglong, 3),
+                ("F_RESERVED_2", c_ulonglong, 5),
+                ("F_QP_PEER_QPN", c_ulonglong, 24),
+                ("F_RESERVED_3", c_ulonglong, 16),
+                ("F_RESERVED_4", c_ulonglong, 64),
                 ]
 
 
 class CmdQueueDescSetNetworkParam(Structure):
     _fields_ = [("common_header", CmdQueueReqDescCommonHeader),
-                ("F_NET_PARAM_GATEWAY", c_int, 32),
-                ("F_NET_PARAM_NETMASK", c_int, 32),
-                ("F_NET_PARAM_IPADDR", c_int, 32),
-                ("F_RESERVED_0", c_int, 32),
-                ("F_NET_PARAM_MACADDR", c_longlong, 48),
-                ("F_RESERVED_1", c_int, 16),
+                ("F_NET_PARAM_GATEWAY", c_uint, 32),
+                ("F_NET_PARAM_NETMASK", c_uint, 32),
+                ("F_NET_PARAM_IPADDR", c_uint, 32),
+                ("F_RESERVED_0", c_uint, 32),
+                ("F_NET_PARAM_MACADDR", c_ulonglong, 48),
+                ("F_RESERVED_1", c_uint, 16),
                 ]
 
 
 class CmdQueueDescSetRawPacketReceiveMeta(Structure):
     _fields_ = [("common_header", CmdQueueReqDescCommonHeader),
-                ("F_RAW_PACKET_META_BASE_ADDR", c_longlong),
-                ("F_RAW_PACKET_META_MR_KEY", c_int, 32),
-                ("F_RESERVED_0", c_int),
-                ("F_RESERVED_1", c_longlong),
+                ("F_RAW_PACKET_META_BASE_ADDR", c_ulonglong),
+                ("F_RAW_PACKET_META_MR_KEY", c_uint, 32),
+                ("F_RESERVED_0", c_uint),
+                ("F_RESERVED_1", c_ulonglong),
+                ]
+
+
+class CmdQueueDescUpdateErrorPsnRecoverPoint(Structure):
+    _pack_ = 1
+    _fields_ = [("common_header", CmdQueueReqDescCommonHeader),
+                ("F_RECOVERY_POINT",  c_uint, 24),
+                ("F_RESERVED_0", c_uint, 8),
+                ("F_QPN", c_uint, 24),
+                ("F_RESERVED_1", c_uint, 8),
+                ("F_RESERVED_2", c_ulonglong),
+                ("F_RESERVED_3", c_ulonglong),
                 ]
 
 
@@ -175,64 +187,66 @@ class CmdQueueDescOperators:
     F_OPCODE_CMDQ_MANAGE_QP = 0x02
     F_OPCODE_CMDQ_SET_NETWORK_PARAM = 0x03
     F_OPCODE_CMDQ_SET_RAW_PACKET_RECEIVE_META = 0x04
+    F_OPCODE_CMDQ_UPDATE_ERROR_PSN_RECOVER_POINT = 0x05
 
 
 class SendQueueDescCommonHeader(Structure):
-    _fields_ = [("F_VALID", c_int, 1),
-                ("F_SIGNAL_CPLT", c_int, 1),
-                ("F_IS_FIRST", c_int, 1),
-                ("F_IS_LAST", c_int, 1),
-                ("F_OP_CODE", c_int, 4),
-                ("F_SEGMENT_CNT", c_int, 4),
-                ("F_RESERVED_1", c_int, 20),
-                ("F_TOTAL_LEN", c_int, 32),
+    _fields_ = [("F_VALID", c_uint, 1),
+                ("F_SIGNAL_CPLT", c_uint, 1),
+                ("F_IS_FIRST", c_uint, 1),
+                ("F_IS_LAST", c_uint, 1),
+                ("F_OP_CODE", c_uint, 4),
+                ("F_SEGMENT_CNT", c_uint, 4),
+                ("F_RESERVED_1", c_uint, 20),
+                ("F_TOTAL_LEN", c_uint, 32),
                 ]
 
 
 class SendQueueDescSeg0(Structure):
     _fields_ = [("common_header", SendQueueDescCommonHeader),
-                ("F_R_ADDR", c_longlong, 64),
-                ("F_RKEY", c_int, 32),
-                ("F_DST_IP", c_int, 32),
-                ("F_RESERVED_1", c_longlong, 64),
+                ("F_R_ADDR", c_ulonglong, 64),
+                ("F_RKEY", c_uint, 32),
+                ("F_DST_IP", c_uint, 32),
+                ("F_PKEY", c_uint, 16),
+                ("F_RESERVED_1", c_ulonglong, 48),
                 ]
 
 
 class SendQueueDescSeg1(Structure):
-    _fields_ = [("F_PMTU", c_int, 3),
-                ("F_RESERVED_8", c_int, 5),
+    _fields_ = [("F_PMTU", c_uint, 3),
+                ("F_RESERVED_8", c_uint, 5),
 
-                ("F_FLAGS", c_int, 5),
-                ("F_RESERVED_7", c_int, 3),
+                ("F_FLAGS", c_uint, 5),
+                ("F_RESERVED_7", c_uint, 3),
 
-                ("F_QP_TYPE", c_int, 4),
-                ("F_RESERVED_6", c_int, 4),
+                ("F_QP_TYPE", c_uint, 4),
+                ("F_RESERVED_6", c_uint, 4),
 
-                ("F_SEG_CNT", c_int, 3),
-                ("F_RESERVED_5", c_int, 5),
+                ("F_SEG_CNT", c_uint, 3),
+                ("F_RESERVED_5", c_uint, 5),
 
 
-                ("F_PSN", c_int, 24),
-                ("F_RESERVED_4", c_int, 8),
+                ("F_PSN", c_uint, 24),
+                ("F_RESERVED_4", c_uint, 8),
 
-                ("F_MAC_ADDR", c_longlong, 48),
-                ("F_RESERVED_3", c_int, 16),
+                ("F_MAC_ADDR", c_ulonglong, 48),
+                ("F_RESERVED_3", c_uint, 16),
 
-                ("F_DQPN", c_int, 24),
-                ("F_RESERVED_2", c_int, 8),
+                ("F_DQPN", c_uint, 24),
+                ("F_RESERVED_2", c_uint, 8),
 
-                ("F_IMM", c_int, 32),
+                ("F_IMM", c_uint, 32),
 
-                ("F_RESERVED_1", c_longlong, 64),
+                ("F_RESERVED_1", c_ulonglong, 64),
 
 
                 ]
 
 
 class SendQueueReqDescFragSGE(Structure):
-    _fields_ = [("F_LKEY", c_int, 32),
-                ("F_LEN", c_int, 32),
-                ("F_LADDR", c_longlong, 64),
+    _fields_ = [("F_LKEY", c_uint, 32),
+                ("F_LEN", c_uint, 32),
+                ("F_LADDR", c_ulonglong, 64),
                 ]
 
 
@@ -301,42 +315,64 @@ def is_power_of_2(x):
 
 class MeatReportQueueDescFragBTH(Structure):
     _pack_ = 1
-    _fields_ = [("F_TRANS", c_int, 3),
-                ("F_OPCODE", c_int, 5),
+    _fields_ = [("F_TRANS", c_uint, 3),
+                ("F_OPCODE", c_uint, 5),
 
-                ("F_DQPN", c_int, 24),
-                ("F_PSN", c_int, 24),
+                ("F_DQPN", c_uint, 24),
+                ("F_PSN", c_uint, 24),
 
-                ("F_SOLICITED", c_int, 1),
-                ("F_ACK_REQ", c_int, 1),
-                ("F_PAD_CNT", c_int, 2),
-                ("F_RESERVED_1", c_int, 4),
+                ("F_SOLICITED", c_uint, 1),
+                ("F_ACK_REQ", c_uint, 1),
+                ("F_PAD_CNT", c_uint, 2),
+                ("F_RESERVED_1", c_uint, 4),
                 ]
 
 
 class MeatReportQueueDescFragRETH(Structure):
     _pack_ = 1
-    _fields_ = [("F_VA", c_longlong, 64),
-                ("F_RKEY", c_int, 32),
-                ("F_DLEN", c_int, 32),
+    _fields_ = [("F_VA", c_ulonglong, 64),
+                ("F_RKEY", c_uint, 32),
+                ("F_DLEN", c_uint, 32),
                 ]
 
 
 class MeatReportQueueDescFragSecondaryRETH(Structure):
     _pack_ = 1
-    _fields_ = [("F_ADDR", c_longlong, 64),
-                ("F_RKEY", c_int, 32),
+    _fields_ = [("F_ADDR", c_ulonglong, 64),
+                ("F_RKEY", c_uint, 32),
+                ]
+
+
+class MeatReportQueueDescFragAETH(Structure):
+    _pack_ = 1
+    _fields_ = [("F_LAST_RETRY_PSN", c_ulonglong, 24),
+                ("F_MSN", c_ulonglong, 24),
+                ("F_AETH_VALUE", c_ulonglong, 5),
+                ("F_AETH_CODE", c_ulonglong, 2),
+                ("F_RESERVED_1", c_ulonglong, 9),
                 ]
 
 
 class MeatReportQueueDescBthReth(Structure):
     _pack_ = 1
-    _fields_ = [("F_EXPECTED_PSN", c_int, 24),
-                ("F_REQ_STATUS", c_int, 8),
+    _fields_ = [("F_EXPECTED_PSN", c_uint, 24),
+                ("F_REQ_STATUS", c_uint, 8),
                 ("F_BTH", MeatReportQueueDescFragBTH),
                 ("F_RETH", MeatReportQueueDescFragRETH),
-                ("F_MSN", c_int, 24),
-                ("F_RESERVED_1", c_int, 7),
+                ("F_MSN", c_uint, 24),
+                ("F_RESERVED_1", c_uint, 7),
+                ("F_CAN_AUTO_ACK", c_uint, 1),
+                ]
+
+
+class MeatReportQueueDescBthReth(Structure):
+    _pack_ = 1
+    _fields_ = [("F_EXPECTED_PSN", c_uint, 24),
+                ("F_REQ_STATUS", c_uint, 8),
+                ("F_BTH", MeatReportQueueDescFragBTH),
+                ("F_RETH", MeatReportQueueDescFragRETH),
+                ("F_MSN", c_uint, 24),
+                ("F_RESERVED_1", c_uint, 7),
                 ("F_CAN_AUTO_ACK", c_uint, 1),
                 ]
 
@@ -344,7 +380,40 @@ class MeatReportQueueDescBthReth(Structure):
 class MeatReportQueueDescSecondaryReth(Structure):
     _pack_ = 1
     _fields_ = [("F_SEC_RETH", MeatReportQueueDescFragSecondaryRETH),
-                ("F_RESERVED_1", c_int),
-                ("F_RESERVED_2", c_longlong),
-                ("F_RESERVED_3", c_longlong),
+                ("F_RESERVED_1", c_uint),
+                ("F_RESERVED_2", c_ulonglong),
+                ("F_RESERVED_3", c_ulonglong),
                 ]
+
+
+class MeatReportQueueDescBthAeth(Structure):
+    _pack_ = 1
+    _fields_ = [("F_RESERVED_1", c_uint, 24),
+                ("F_REQ_STATUS", c_uint, 8),
+                ("F_BTH", MeatReportQueueDescFragBTH),
+                ("F_AETH", MeatReportQueueDescFragAETH),
+                ("F_RESERVED_3", c_uint, 32),
+                ("F_RESERVED_3", c_ulonglong, 64),
+                ]
+
+
+class AethCode:
+    AETH_CODE_ACK = 0b00
+    AETH_CODE_RNR = 0b01
+    AETH_CODE_RSVD = 0b10
+    AETH_CODE_NAK = 0b11
+
+
+class AethAckValueCreditCnt:
+    AETH_ACK_VALUE_INVALID_CREDIT_CNT = 0b11111
+
+
+class RdmaReqStatus:
+    RDMA_REQ_ST_NORMAL = 1
+    RDMA_REQ_ST_INV_ACC_FLAG = 2
+    RDMA_REQ_ST_INV_OPCODE = 3
+    RDMA_REQ_ST_INV_MR_KEY = 4
+    RDMA_REQ_ST_INV_MR_REGION = 5
+    RDMA_REQ_ST_UNKNOWN = 6
+    RDMA_REQ_ST_INV_HEADER = 7
+    RDMA_REQ_ST_MAX_GUARD = 255

@@ -159,7 +159,7 @@ interface RqWrapper;
     interface Server#(WriteReqCommonQPC, Bool) qpcWriteCommonSrv;
     interface PipeOut#(RingbufRawDescriptor) packetMetaDescPipeOutRQ;
     interface Put#(RawPacketReceiveMeta) rawPacketReceiveConfigIn;
-    interface Put#(Tuple2#(IndexQP, PSN)) setRqExpectedPsnReqIn;
+    interface Put#(Tuple3#(IndexQP, PSN, RqPsnManagerPsnUpadteAction)) setRqExpectedPsnReqIn;
     interface PipeOut#(AutoAckGenMetaData)  autoAckMetaPipeOut;
 endinterface
 

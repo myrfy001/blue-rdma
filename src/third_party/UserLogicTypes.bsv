@@ -151,6 +151,12 @@ typedef 1 XDMA_GEARBOX_NARROW_VECTOR_LEN;
 typedef Bit#(USER_LOGIC_DESCRIPTOR_BIT_WIDTH) RingbufRawDescriptor;
 typedef Bit#(RINGBUF_NUMBER_WIDTH) RingbufNumber;
 
+
+typedef enum {
+    RqPsnManagerPsnUpadteActionReset = 0,
+    RqPsnManagerPsnUpadteActionUpdateErrorRecoveryPoint = 1
+} RqPsnManagerPsnUpadteAction deriving(Bits, Eq, FShow);
+
 typedef 2 COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
 typedef 4 SQ_DESCRIPTOR_MAX_IN_USE_SEG_COUNT;
 
@@ -159,7 +165,8 @@ typedef enum {
     CmdQueueOpcodeUpdatePGT = 'h1,
     CmdQueueOpcodeQpManagement = 'h2,
     CmdQueueOpcodeSetNetworkParam = 'h3,
-    CmdQueueOpcodeSetRawPacketReceiveMeta = 'h4
+    CmdQueueOpcodeSetRawPacketReceiveMeta = 'h4,
+    CmdQueueOpcodeUpdateErrorPsnRecoverPoint = 'h5
 } CommandQueueOpcode deriving(Bits, Eq);
 
 typedef Bit#(TLog#(CMD_QUEUE_DESCRIPTOR_MAX_SEGMENT_CNT)) DescriptorSegmentIndex;
@@ -243,6 +250,14 @@ typedef struct {
     CmdQueueDescCommonHead          commonHeader;   // 64  bits
 } CmdQueueReqDescSetRawPacketReceiveMeta deriving(Bits, FShow);
 
+typedef struct {
+    ReservedZero#(136)              reserved1;      // 136 bits
+    QPN                             qpn;            // 24  bits
+    ReservedZero#(8)                reserved2;      // 8   bits
+    PSN                             recoverPoint;   // 24  bits
+    CmdQueueDescCommonHead          commonHeader;   // 64  bits
+} CmdQueueReqDescUpdateErrorPsnRecoverPoint deriving(Bits, FShow);
+
 
 typedef struct {
     Length                  totalLen;                       // 32 bits
@@ -325,6 +340,7 @@ typedef struct {
 } MeatReportQueueDescFragRETH deriving(Bits, FShow);
 
 typedef struct {
+    ReservedZero#(9)        reserved1;    // 9
     AethCode                code;         // 2
     AethValue               value;        // 5
     MSN                     msn;          // 24
@@ -365,11 +381,11 @@ typedef struct {
 } MeatReportQueueDescImmDT deriving(Bits, FShow);
 
 typedef struct {
-    ReservedZero#(105)              reserved1;      // 105
-    MeatReportQueueDescFragAETH     aeth;           // 55
+    ReservedZero#(96)               reserved1;      // 96
+    MeatReportQueueDescFragAETH     aeth;           // 64
     MeatReportQueueDescFragBTH      bth;            // 64
     RdmaReqStatus                   reqStatus;      // 8 
-    PSN                             expectedPSN;    // 24
+    ReservedZero#(24)               reserved2  ;    // 24
 } MeatReportQueueDescBthAeth deriving(Bits, FShow);
 
 typedef struct {

@@ -29,7 +29,7 @@ typedef struct {
 
 
 interface RQ;
-    interface Put#(Tuple2#(IndexQP, PSN)) setRqExpectedPsnReqIn;
+    interface Put#(Tuple3#(IndexQP, PSN, RqPsnManagerPsnUpadteAction)) setRqExpectedPsnReqIn;
     interface Put#(RdmaPktMetaDataAndQPC) pktMetaDataPipeIn;
     interface MrTableQueryClt mrTableQueryClt;
     interface PgtQueryClt pgtQueryClt;
@@ -40,10 +40,10 @@ endinterface
 
 (* synthesize *)
 module mkRQ(RQ ifc);
-    FIFOF#(RdmaPktMetaDataAndQPC)     rdmaPktMetaDataInQ  <- mkFIFOF;
-    FIFOF#(C2hReportEntry)               pktReportEntryQ  <- mkFIFOF;
-    FIFOF#(Tuple2#(IndexQP, PSN))   setRqExpectedPsnReqQ  <- mkFIFOF;
-    FIFOF#(AutoAckGenMetaData)           autoAckGenMetaQ  <- mkFIFOF;
+    FIFOF#(RdmaPktMetaDataAndQPC)                                    rdmaPktMetaDataInQ <- mkFIFOF;
+    FIFOF#(C2hReportEntry)                                              pktReportEntryQ <- mkFIFOF;
+    FIFOF#(Tuple3#(IndexQP, PSN, RqPsnManagerPsnUpadteAction))     setRqExpectedPsnReqQ <- mkFIFOF;
+    FIFOF#(AutoAckGenMetaData)                                          autoAckGenMetaQ <- mkFIFOF;
 
     BypassClient#(MrTableQueryReq, Maybe#(MemRegionTableEntry)) mrTableQueryCltInst  <- mkBypassClient("mrTableQueryCltInst in RQ");
     BypassClient#(PgtAddrTranslateReq, ADDR) pgtQueryCltInst                         <- mkBypassClient("RQ pgtQueryCltInst");
@@ -462,7 +462,7 @@ module mkRQ(RQ ifc);
         let aeth            = extractAETH(rdmaHeader.headerData);
         let nreth           = extractNRETH(rdmaHeader.headerData);
         let immDT           = extractImmDt(rdmaHeader.headerData, bth.opcode, bth.trans);
-
+        $display("nreth=", fshow(nreth));
         let isAckPkt        = isAckRdmaOpCode(bth.opcode);
         let isRawPacket     = rdmaHeader.headerMetaData.isEmptyHeader;
 
@@ -504,9 +504,16 @@ module mkRQ(RQ ifc);
     endrule
 
     rule handleResetExpectedPsnReq;
-        let {qpnIdx, newExpectedPSN} = setRqExpectedPsnReqQ.first;
+        let {qpnIdx, newExpectedPSN, psnUpadteAction} = setRqExpectedPsnReqQ.first;
         setRqExpectedPsnReqQ.deq;
-        expectedPsnManager.resetPSN(qpnIdx);
+        case (psnUpadteAction)
+            RqPsnManagerPsnUpadteActionReset: begin
+                expectedPsnManager.resetPSN(qpnIdx);
+            end
+            RqPsnManagerPsnUpadteActionUpdateErrorRecoveryPoint: begin
+                expectedPsnManager.submitQpReturnToNormalStateRequest(qpnIdx, newExpectedPSN);
+            end
+        endcase
     endrule
 
     interface setRqExpectedPsnReqIn         = toPut(setRqExpectedPsnReqQ);
@@ -565,7 +572,8 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
             code:           reportEntry.code,
             value:          reportEntry.value,
             msn:            reportEntry.msn,
-            lastRetryPSN:   reportEntry.lastRetryPSN
+            lastRetryPSN:   reportEntry.lastRetryPSN,
+            reserved1:      unpack(0)
         };
 
         let immDt = MeatReportQueueDescFragImmDT {
@@ -639,8 +647,8 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
                         reqStatus   :   reportEntry.reqStatus,
                         bth         :   bth,
                         aeth        :   aeth,
-                        expectedPSN :   reportEntry.lastRetryPSN,
-                        reserved1   :   unpack(0)
+                        reserved1   :   unpack(0),
+                        reserved2   :   unpack(0)
                     };
                     pktReportEntryPipeInQ.deq;
                     ringbufDescPipeOutQ.enq(pack(ent));

@@ -185,6 +185,20 @@ class RingbufCommandReqQueue:
         )
         self.rb.enq(obj)
 
+    def put_desc_update_err_psn_recover_point(self, qpn, recovery_point, user_data=0):
+        cmd_queue_common_header = CmdQueueReqDescCommonHeader(
+            F_VALID=1,
+            F_SEGMENT_CNT=0,
+            F_OP_CODE=CmdQueueDescOperators.F_OPCODE_CMDQ_UPDATE_ERROR_PSN_RECOVER_POINT,
+            F_CMD_QUEUE_USER_DATA=user_data,
+        )
+        obj = CmdQueueDescUpdateErrorPsnRecoverPoint(
+            common_header=cmd_queue_common_header,
+            F_RECOVERY_POINT=recovery_point,
+            F_QPN=qpn,
+        )
+        self.rb.enq(obj)
+
 
 class RingbufCommandRespQueue:
     def __init__(self, backend_mem, addr, mock_host) -> None:
@@ -216,7 +230,7 @@ class RingbufSendQueue:
     def sync_pointers(self):
         self.rb.sync_pointers()
 
-    def put_work_request(self, opcode, is_first, is_last, sgl, r_va, r_key, r_ip, r_mac, dqpn, psn, qp_type=TypeQP.IBV_QPT_RC, pmtu=PMTU.IBV_MTU_256, send_flag=WorkReqSendFlag.IBV_SEND_NO_FLAGS, imm_data=0):
+    def put_work_request(self, opcode, is_first, is_last, sgl, r_va, r_key, r_ip, r_mac, dqpn, psn, msn=0, qp_type=TypeQP.IBV_QPT_RC, pmtu=PMTU.IBV_MTU_256, send_flag=WorkReqSendFlag.IBV_SEND_NO_FLAGS, imm_data=0):
 
         total_len = sum([x.F_LEN for x in sgl])
         send_queue_common_header = SendQueueDescCommonHeader(
@@ -233,6 +247,7 @@ class RingbufSendQueue:
             F_R_ADDR=r_va,
             F_RKEY=r_key,
             F_DST_IP=r_ip,
+            F_PKEY=msn,
         )
         self.rb.enq(obj)
 

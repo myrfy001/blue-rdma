@@ -14,12 +14,12 @@ import Ports :: *;
 import Headers :: *;
 
 interface CommandQueueController;
-    interface Server#(RingbufRawDescriptor, RingbufRawDescriptor)   ringbufSrv;
-    interface Client#(RingbufRawDescriptor, Bool)                   mrAndPgtManagerClt;
-    interface Client#(WriteReqCommonQPC, Bool)                      qpcModifyClt;
-    interface Get#(UdpConfig)                                       setNetworkParamReqOut;
-    interface Get#(RawPacketReceiveMeta)                            setRawPacketReceiveMetaReqOut;
-    interface Get#(Tuple2#(IndexQP, PSN))                           setRqExpectedPsnReqOut;
+    interface Server#(RingbufRawDescriptor, RingbufRawDescriptor)           ringbufSrv;
+    interface Client#(RingbufRawDescriptor, Bool)                           mrAndPgtManagerClt;
+    interface Client#(WriteReqCommonQPC, Bool)                              qpcModifyClt;
+    interface Get#(UdpConfig)                                               setNetworkParamReqOut;
+    interface Get#(RawPacketReceiveMeta)                                    setRawPacketReceiveMetaReqOut;
+    interface Get#(Tuple3#(IndexQP, PSN, RqPsnManagerPsnUpadteAction))      setRqExpectedPsnReqOut;
 endinterface
 
 
@@ -27,19 +27,19 @@ endinterface
 module mkCommandQueueController(CommandQueueController ifc);
 
     // If we need to wait for response for some cycle to finish, then we need to set this to False;
-    Reg#(Bool) isDispatchingReqReg                              <- mkReg(True);
+    Reg#(Bool) isDispatchingReqReg                                                          <- mkReg(True);
     
-    FIFOF#(RingbufRawDescriptor) mrAndPgtReqQ                   <- mkFIFOF;
-    FIFOF#(RingbufRawDescriptor) mrAndPgtInflightReqQ           <- mkFIFOF;
-    FIFOF#(Bool) mrAndPgtRespQ                                  <- mkFIFOF;
+    FIFOF#(RingbufRawDescriptor) mrAndPgtReqQ                                               <- mkFIFOF;
+    FIFOF#(RingbufRawDescriptor) mrAndPgtInflightReqQ                                       <- mkFIFOF;
+    FIFOF#(Bool) mrAndPgtRespQ                                                              <- mkFIFOF;
 
-    FIFOF#(WriteReqCommonQPC) qpcReqQ                           <- mkFIFOF;
-    FIFOF#(RingbufRawDescriptor) qpcInflightReqQ                <- mkFIFOF;
-    FIFOF#(Bool) qpcRespQ                                       <- mkFIFOF;
+    FIFOF#(WriteReqCommonQPC) qpcReqQ                                                       <- mkFIFOF;
+    FIFOF#(RingbufRawDescriptor) qpcInflightReqQ                                            <- mkFIFOF;
+    FIFOF#(Bool) qpcRespQ                                                                   <- mkFIFOF;
 
-    FIFOF#(UdpConfig)            setNetworkParamReqQ            <- mkFIFOF;
-    FIFOF#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqQ    <- mkFIFOF;
-    FIFOF#(Tuple2#(IndexQP, PSN))    setRqExpectedPsnReqQ       <- mkFIFOF;
+    FIFOF#(UdpConfig)            setNetworkParamReqQ                                        <- mkFIFOF;
+    FIFOF#(RawPacketReceiveMeta) setRawPacketReceiveMetaReqQ                                <- mkFIFOF;
+    FIFOF#(Tuple3#(IndexQP, PSN, RqPsnManagerPsnUpadteAction))    setRqExpectedPsnReqQ      <- mkFIFOF;
 
 
     RingbufDescriptorReadProxy#(COMMAND_QUEUE_DESCRIPTOR_MAX_IN_USE_SEG_COUNT) descReadProxy <- mkRingbufDescriptorReadProxy;
@@ -77,7 +77,7 @@ module mkCommandQueueController(CommandQueueController ifc);
                         ent: desc0.isValid ? tagged Valid ent : tagged Invalid
                     }
                 );
-                setRqExpectedPsnReqQ.enq(tuple2(getIndexQP(desc0.qpn), 0));
+                setRqExpectedPsnReqQ.enq(tuple3(getIndexQP(desc0.qpn), 0, RqPsnManagerPsnUpadteActionReset));
                 isDispatchingReqReg <= False;
                 $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(desc0));
             end
@@ -112,6 +112,23 @@ module mkCommandQueueController(CommandQueueController ifc);
                 respDesc.commonHeader.extraSegmentCnt = 0;
                 respRawDescSeg[0] = pack(respDesc);
                 descWriteProxy.setWideDesc(respRawDescSeg, 0);
+                $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(reqDesc));
+                $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware Send cmd queue response: ", fshow(respDesc));
+            end
+            CmdQueueOpcodeUpdateErrorPsnRecoverPoint: begin
+                CmdQueueReqDescUpdateErrorPsnRecoverPoint reqDesc = unpack(rawDesc);
+
+                setRqExpectedPsnReqQ.enq(
+                    tuple3(getIndexQP(reqDesc.qpn), reqDesc.recoverPoint, RqPsnManagerPsnUpadteActionUpdateErrorRecoveryPoint));
+
+
+                CmdQueueReqDescUpdateErrorPsnRecoverPoint respDesc = unpack(pack(reqDesc));
+                respDesc.commonHeader.isSuccessOrNeedSignalCplt = True;
+                respDesc.commonHeader.valid = True;
+                respDesc.commonHeader.extraSegmentCnt = 0;
+                respRawDescSeg[0] = pack(respDesc);
+                descWriteProxy.setWideDesc(respRawDescSeg, 0);
+
                 $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware receive cmd queue descriptor: ", fshow(reqDesc));
                 $display("time=%0t: ", $time, "SOFTWARE DEBUG POINT ", "Hardware Send cmd queue response: ", fshow(respDesc));
             end
