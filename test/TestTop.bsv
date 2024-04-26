@@ -64,7 +64,7 @@ module mkTestTop(Empty);
     Clock udpClock <- exposeCurrentClock;
     Reset udpReset <- exposeCurrentReset;
 
-    Clock cmacRxTxClk <- mkAbsoluteClock(0, 15);
+    Clock cmacRxTxClk <- mkAbsoluteClock(0, 7);  // about 322 MHz
     // Clock cmacRxTxClk <- mkAbsoluteClock(0, 10);
     Reset cmacRxTxRst <- mkSyncReset(2, udpReset, cmacRxTxClk);
 
@@ -190,7 +190,7 @@ module mkTestRdmaAndUserLogicWithoutUdp(Empty);
     Clock fastClock <- exposeCurrentClock;
     Reset fastReset <- exposeCurrentReset;
 
-    Clock cmacRxTxClk <- mkAbsoluteClock(0, 15);
+    Clock cmacRxTxClk <- mkAbsoluteClock(0, 7);  // about 322 MHz
     // Clock cmacRxTxClk <- mkAbsoluteClock(0, 10);
     Reset cmacRxTxRst <- mkSyncReset(2, fastReset, cmacRxTxClk);
 

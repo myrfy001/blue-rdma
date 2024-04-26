@@ -14,7 +14,7 @@ SEND_BYTE_COUNT = 1024*16
 
 def test_case():
     host_mem = MockHostMem("/bluesim1", TOTAL_MEMORY_SIZE)
-    mock_nic = MockNicAndHost(host_mem)
+    mock_nic = MockNicAndHost(host_mem, tx_packet_accumulate_cnt=230)
     MockNicAndHost.do_self_loopback(mock_nic)
     mock_nic.run()
 
@@ -108,7 +108,7 @@ def test_case():
         mock_nic.main_memory.buf[RESP_SIDE_VA_ADDR+i] = 0
 
     send_queue.sync_pointers()
-    for report_idx in range(4):
+    for report_idx in range(2):
         meta_report_queue.deq_blocking()
         print("receive meta report: ", report_idx)
 

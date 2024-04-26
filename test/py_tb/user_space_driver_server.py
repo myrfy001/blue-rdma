@@ -5,6 +5,7 @@ import threading
 
 import mock_host
 
+
 class UserspaceDriverServer:
     def __init__(self, listen_addr, listen_port_a, listen_port_b, share_mem_path, share_mem_size) -> None:
         self.listen_addr = listen_addr
@@ -18,7 +19,7 @@ class UserspaceDriverServer:
         self.mock_nic_a = mock_host.MockNicAndHost(
             self.host_mem, host=self.listen_addr, port=self.simulator_listen_port_a, rx_packet_wait_time=0)
         self.mock_nic_b = mock_host.MockNicAndHost(
-            self.host_mem, host=self.listen_addr, port=self.simulator_listen_port_b, rx_packet_wait_time=0.001)
+            self.host_mem, host=self.listen_addr, port=self.simulator_listen_port_b, rx_packet_wait_time=0)
 
     def run(self):
         mock_host.MockNicAndHost.connect_two_card(

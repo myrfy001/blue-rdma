@@ -281,14 +281,14 @@ chunk_size = 64
 CUbyteArray64 = c_ubyte * 64
 CUbyteArray8 = c_ubyte * 8
 
-# rx_packet_wait_time can be used to mimic line-rate receive, the MockHost will block simulator and wait
-# up to rx_packet_wait_time seconds. This is because tx simulator may run slower than rx simulator, so from
-# rx simulator's point of view, the packet received from network interface is non-continous. if we try to
-# block rx simulator, then it may see continous input packet data at every clock-cycle
+# tx_packet_accumulate_cnt can be used to mimic line-rate receive, the MockHost will not output tx packet until it accumulated
+# more than tx_packet_accumulate_cnt. This is because network clock is async with rdma clock, so from
+# rx simulator's point of view, the packet received from network interface is non-continous (has bulbs). if we want to test is
+# reveive logic is fully-pipelined, we need to make sure RQ reveive packet continous. So we can buffer some packet.
 
 
 class MockNicAndHost:
-    def __init__(self, main_memory: MockHostMem, host=HOST, port=PORT, rx_packet_wait_time=0) -> None:
+    def __init__(self, main_memory: MockHostMem, host=HOST, port=PORT, tx_packet_accumulate_cnt=0) -> None:
         self.main_memory = main_memory
         self.bluesim_rpc_server = BluesimRpcServer(host, port)
         self.bluesim_rpc_server.register_opcode(
@@ -322,7 +322,8 @@ class MockNicAndHost:
         self.pending_network_packet_rx = []
 
         self.pcie_tlp_read_tag_counter = 0
-        self.rx_packet_wait_time = rx_packet_wait_time
+        self.tx_packet_accumulate_cnt = tx_packet_accumulate_cnt
+        self.is_accumulating = tx_packet_accumulate_cnt != 0
 
     def run(self):
         self.bluesim_rpc_server.run()
@@ -399,11 +400,6 @@ class MockNicAndHost:
         req = CStructRpcNetIfcRxTxMessage.from_buffer_copy(raw_req_buf)
         # print("rx Q len=", len(self.pending_network_packet_rx))
 
-        if self.rx_packet_wait_time > 0:
-            start_time = time.time()
-            while (not self.pending_network_packet_rx and time.time()-start_time < self.rx_packet_wait_time):
-                pass
-
         if self.pending_network_packet_rx:
             req_payload = self.pending_network_packet_rx.pop(0)
             req.payload = req_payload
@@ -448,6 +444,10 @@ class MockNicAndHost:
         return resp.payload.value
 
     def get_net_ifc_tx_data_from_nic_blocking(self):
+        if self.is_accumulating:
+            while len(self.pending_network_packet_tx) < self.tx_packet_accumulate_cnt:
+                time.sleep(0.1)
+            self.is_accumulating = False
         self.pending_network_packet_tx_sema.acquire()
         data = self.pending_network_packet_tx.pop(0)
         return data

@@ -82,6 +82,47 @@ module mkRQ(RQ ifc);
         return accFlags;
     endfunction
 
+
+
+    rule debug;
+        if (!rdmaPktMetaDataInQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: rdmaPktMetaDataInQ");
+        end
+        if (!pktReportEntryQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: pktReportEntryQ");
+        end
+        if (!setRqExpectedPsnReqQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: setRqExpectedPsnReqQ");
+        end
+        if (!autoAckGenMetaQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: autoAckGenMetaQ");
+        end
+        if (!reqStatusCheckStep1PipeQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: reqStatusCheckStep1PipeQ");
+        end
+        if (!reqStatusCheckStep2PipeQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: reqStatusCheckStep2PipeQ");
+        end
+        if (!reqStatusCheckStep3PipeQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: reqStatusCheckStep3PipeQ");
+        end
+        if (!getPGTQueryRespPipeQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: getPGTQueryRespPipeQ");
+        end
+        if (!psnContextQueryReqPipeQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: psnContextQueryReqPipeQ");
+        end
+        if (!psnContinuityCheckPipeQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: psnContinuityCheckPipeQ");
+        end
+        if (!waitDMARespPipeQ.notFull) begin
+            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: waitDMARespPipeQ");
+        end                        
+    endrule
+
+
+
+
     rule queryMemoryRegionTable;
         let pktMetaDataAndQpc = rdmaPktMetaDataInQ.first;
         rdmaPktMetaDataInQ.deq;
