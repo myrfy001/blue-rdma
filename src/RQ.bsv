@@ -584,6 +584,18 @@ module mkRQReportEntryToRingbufDesc(RQReportEntryToRingbufDesc);
 
     Reg#(RQReportEntryToRingbufDescStatus) state <- mkReg(RQReportEntryToRingbufDescStatusOutputBasicInfo);
 
+    // rule debug;
+    //     if (!pktReportEntryPipeInQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: pktReportEntryPipeInQ");
+    //     end
+    //     if (!pktReportEntryPipeInQ.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: pktReportEntryPipeInQ");
+    //     end
+    //     if (!ringbufDescPipeOutQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: ringbufDescPipeOutQ");
+    //     end                      
+    // endrule
+
     rule outputDesc ;
         let reportEntry = pktReportEntryPipeInQ.first;
 

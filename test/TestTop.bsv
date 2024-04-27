@@ -184,37 +184,40 @@ endmodule
 (* doc = "testcase" *)
 module mkTestRdmaAndUserLogicWithoutUdp(Empty);
 
-    ClockDividerIfc divClk <- mkClockDivider(2);
-    Clock slowClock = divClk.slowClock;
-    Reset slowReset <- mkInitialReset(1, clocked_by slowClock);
-    Clock fastClock <- exposeCurrentClock;
-    Reset fastReset <- exposeCurrentReset;
+    Clock rdmaClock <- exposeCurrentClock;
+    Reset rdmaReset <- exposeCurrentReset;
+
+    Clock dmacClock <- exposeCurrentClock;
+    Reset dmacReset <- exposeCurrentReset;
+
+    Clock udpClock <- exposeCurrentClock;
+    Reset udpReset <- exposeCurrentReset;
 
     Clock cmacRxTxClk <- mkAbsoluteClock(0, 7);  // about 322 MHz
     // Clock cmacRxTxClk <- mkAbsoluteClock(0, 10);
-    Reset cmacRxTxRst <- mkSyncReset(2, fastReset, cmacRxTxClk);
+    Reset cmacRxTxRst <- mkSyncReset(2, rdmaReset, cmacRxTxClk);
 
-    RdmaUserLogicWithoutXdmaAndUdpCmacWrapper topA <- mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(slowClock, slowReset);
+    RdmaUserLogicWithoutXdmaAndUdpCmacWrapper topA <- mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(dmacClock, dmacReset);
 
-    FakeXdma fakeXdmaA <- mkFakeXdma(1, cmacRxTxClk, cmacRxTxRst, clocked_by slowClock, reset_by slowReset);
+    FakeXdma fakeXdmaA <- mkFakeXdma(1, cmacRxTxClk, cmacRxTxRst, clocked_by dmacClock, reset_by dmacReset);
 
     mkConnection(fakeXdmaA.xdmaH2cSrv, topA.dmaReadClt);
     mkConnection(fakeXdmaA.xdmaC2hSrv, topA.dmaWriteClt);
 
-    SyncFIFOIfc#(CsrAddr) csrReadReqSyncFifo <- mkSyncFIFO(2, slowClock, slowReset, fastClock);
-    mkConnection(fakeXdmaA.barReadClt.request, toPut(csrReadReqSyncFifo), clocked_by slowClock, reset_by slowReset); 
+    SyncFIFOIfc#(CsrAddr) csrReadReqSyncFifo <- mkSyncFIFO(2, dmacClock, dmacReset, rdmaClock);
+    mkConnection(fakeXdmaA.barReadClt.request, toPut(csrReadReqSyncFifo), clocked_by dmacClock, reset_by dmacReset); 
 
-    SyncFIFOIfc#(CsrData) csrReadRespSyncFifo <- mkSyncFIFO(2, fastClock, fastReset, slowClock);
-    mkConnection(toGet(csrReadRespSyncFifo), fakeXdmaA.barReadClt.response, clocked_by slowClock, reset_by slowReset); 
+    SyncFIFOIfc#(CsrData) csrReadRespSyncFifo <- mkSyncFIFO(2, rdmaClock, rdmaReset, dmacClock);
+    mkConnection(toGet(csrReadRespSyncFifo), fakeXdmaA.barReadClt.response, clocked_by dmacClock, reset_by dmacReset); 
 
-    SyncFIFOIfc#(Tuple2#(CsrAddr, CsrData)) csrWriteReqSyncFifo <- mkSyncFIFO(2, slowClock, slowReset, fastClock);
-    mkConnection(fakeXdmaA.barWriteClt.request, toPut(csrWriteReqSyncFifo), clocked_by slowClock, reset_by slowReset); 
+    SyncFIFOIfc#(Tuple2#(CsrAddr, CsrData)) csrWriteReqSyncFifo <- mkSyncFIFO(2, dmacClock, dmacReset, rdmaClock);
+    mkConnection(fakeXdmaA.barWriteClt.request, toPut(csrWriteReqSyncFifo), clocked_by dmacClock, reset_by dmacReset); 
 
-    SyncFIFOIfc#(Bool) csrWriteRespSyncFifo <- mkSyncFIFO(2, fastClock, fastReset, slowClock);
-    mkConnection(toGet(csrWriteRespSyncFifo), fakeXdmaA.barWriteClt.response, clocked_by slowClock, reset_by slowReset); 
+    SyncFIFOIfc#(Bool) csrWriteRespSyncFifo <- mkSyncFIFO(2, rdmaClock, rdmaReset, dmacClock);
+    mkConnection(toGet(csrWriteRespSyncFifo), fakeXdmaA.barWriteClt.response, clocked_by dmacClock, reset_by dmacReset); 
 
 
-`define __LOOP_WITH_DELAY_QUEUE True;
+// `define __LOOP_WITH_DELAY_QUEUE True;
 
 `ifdef __LOOP_WITH_DELAY_QUEUE
 
@@ -246,10 +249,17 @@ module mkTestRdmaAndUserLogicWithoutUdp(Empty);
 `else
         // loop tx stream to rx stream
         rule displayAndForwardWireData;
-            let d = topA.axiStreamTxOutUdp.first;
-            topA.axiStreamTxOutUdp.deq;
-            topA.axiStreamRxInUdp.put(d);
-            $display("time=%0t: ", $time, "udp send data: ", fshow(d));
+            let data = topA.sqRdmaDataStreamPipeOut.first;
+            topA.sqRdmaDataStreamPipeOut.deq;
+            let isRawPkt = topA.sqUdpInfoPipeOut.first.isRawPkt;
+            let outData = tuple3(data, isRawPkt, 0);
+
+            if (data.isLast) begin
+                topA.sqUdpInfoPipeOut.deq;
+            end
+
+            topA.rqInputDataStream.put(outData);
+            $display("time=%0t: ", $time, "relay stream from tx to rx: ", fshow(outData));
         endrule
 `endif
 
