@@ -42,8 +42,8 @@ module top#(
     output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_txp_out,
 
     input qsfp2_fault_in,
-    output qsfp2_lpmode_out,
-    output qsfp2_resetl_out
+    (*mark_debug*) output qsfp2_lpmode_out,
+    (*mark_debug*) output qsfp2_resetl_out
 );
 
   localparam AXIL_ADDR_WIDTH = 20;
@@ -224,9 +224,9 @@ module top#(
 
 
     // CMAC CTRL STATE
-    wire [3:0]      cmac_ctrl_tx_state;
-    wire [3:0]      cmac_ctrl_rx_state;
-    wire            is_cmac_rx_aligned;
+    (*mark_debug*)  wire [3:0]      cmac_ctrl_tx_state;
+    (*mark_debug*)  wire [3:0]      cmac_ctrl_rx_state;
+    (*mark_debug*)  wire            is_cmac_rx_aligned;
 
     assign qsfp2_lpmode_out = 1'b0;
     assign qsfp2_resetl_out = 1'b1;
@@ -308,9 +308,8 @@ module top#(
       .h2c_dsc_byp_ctl_0      (h2c_dsc_byp_ctl_0),
       .h2c_dsc_byp_load_0     (h2c_dsc_byp_load_0),
 
-
-      // .usr_irq_req  (usr_irq_req),
-      // .usr_irq_ack  (usr_irq_ack),
+      .usr_irq_req  (0),
+      .usr_irq_ack  (),
 
       //-- AXI Global
       .axi_aclk        ( user_clk_250),
@@ -321,8 +320,8 @@ module top#(
 
     mkBsvTop bsv_top(
       .cmac_rxtx_clk(gt_txusrclk2),
-      .cmac_rx_reset(gt_usr_rx_reset),
-      .cmac_tx_reset(gt_usr_tx_reset),
+      .cmac_rx_resetn(~gt_usr_rx_reset),
+      .cmac_tx_resetn(~gt_usr_tx_reset),
       .CLK(user_clk_250),
       .RST_N(user_resetn),
 
@@ -500,7 +499,6 @@ module top#(
 
   assign udp_reset = user_resetn;
   assign cmac_sys_reset = ~ user_resetn;
-  // assign gt_init_clk = user_clk_250;
 
 
   cmac_usplus_0 cmac_inst(

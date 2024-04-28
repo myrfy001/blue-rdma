@@ -65,8 +65,8 @@ endinterface
 (* synthesize *)
 module mkBsvTop(
     (* osc   = "cmac_rxtx_clk" *) Clock cmacRxTxClk,
-    (* reset = "cmac_rx_reset" *) Reset cmacRxReset,
-    (* reset = "cmac_tx_reset" *) Reset cmacTxReset,
+    (* reset = "cmac_rx_resetn" *) Reset cmacRxReset,
+    (* reset = "cmac_tx_resetn" *) Reset cmacTxReset,
     BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc
 );
 

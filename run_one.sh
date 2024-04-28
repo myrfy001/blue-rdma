@@ -15,7 +15,8 @@ cd $TEST_DIR
 truncate -s 0 $TEST_LOG
 
 FILES=`ls TestTop.bsv`
-TESTCASES="mkTestRdmaAndUserLogicWithoutUdp"
+# TESTCASES="mkTestRdmaAndUserLogicWithoutUdp"
+TESTCASES="mkTestTop"
 # FILES=`ls TestMockHost.bsv`
 # FILES=`ls TestRdmaUtils.bsv`
 # FILES=`ls TestMockXdma.bsv`
