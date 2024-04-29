@@ -281,9 +281,9 @@ endinterface
 (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_0.recvDmaResp_1" *) 
 (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp" *) 
 (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp_1" *) 
-(* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp" *)
+// (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp" *)
 // (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp_1" *) 
-(* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp" *)
+// (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp" *)
 // (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp_1" *) 
 module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     Clock dmacClock, 
@@ -465,25 +465,25 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     mkConnection(toGet(rdma.setNetworkParamReqOut), toPut(udp.netTxRxIfc.udpConfig));
 
-    rule debug;
-        // if (!udpTxStreamBufQ.notFull) begin
-        //     $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: udpTxStreamBufQ");
-        // end
+    // rule debug;
+    //     // if (!udpTxStreamBufQ.notFull) begin
+    //     //     $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: udpTxStreamBufQ");
+    //     // end
 
-        if (!udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
-            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: udp.netTxRxIfc.dataStreamRxOut");
-        end
-        if (!udp.netTxRxIfc.udpIpMetaDataRxOut.notEmpty) begin
-            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: udp.netTxRxIfc.udpIpMetaDataRxOut");
-        end
-        if (!udp.netTxRxIfc.macMetaDataRxOut.notEmpty) begin
-            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: udp.netTxRxIfc.macMetaDataRxOut");
-        end
+    //     if (!udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: udp.netTxRxIfc.dataStreamRxOut");
+    //     end
+    //     if (!udp.netTxRxIfc.udpIpMetaDataRxOut.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: udp.netTxRxIfc.udpIpMetaDataRxOut");
+    //     end
+    //     if (!udp.netTxRxIfc.macMetaDataRxOut.notEmpty) begin
+    //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: udp.netTxRxIfc.macMetaDataRxOut");
+    //     end
 
-        if (!udpRxStreamBufQ.notFull) begin
-            $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: udpRxStreamBufQ");
-        end
-    endrule
+    //     if (!udpRxStreamBufQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: udpRxStreamBufQ");
+    //     end
+    // endrule
 
     rule forwardTxStream;
         rdma.sqRdmaDataStreamPipeOut.deq;

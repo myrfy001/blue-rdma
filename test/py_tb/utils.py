@@ -82,5 +82,11 @@ def assert_descriptor_bth_aeth(desc, dqpn=None, psn=None, msn=None, opcode=None,
         raise SystemExit
 
 
-def meta_report_descriptor_from_buffer(buffer):
-    pass
+
+def assert_descriptor_reth(buffer, opcode):
+    desc = MeatReportQueueDescBthReth.from_buffer(buffer)
+    assert_descriptor_bth_reth(desc, opcode=opcode)
+
+def assert_descriptor_ack(buffer):
+    desc = MeatReportQueueDescBthAeth.from_buffer(buffer)
+    assert_descriptor_bth_aeth(desc, aeth_code=AethCode.AETH_CODE_ACK)

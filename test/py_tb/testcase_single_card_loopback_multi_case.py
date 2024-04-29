@@ -1,6 +1,6 @@
 from mock_host import *
 from test_case_common import *
-from utils import print_mem_diff
+from utils import print_mem_diff, assert_descriptor_reth, assert_descriptor_ack
 
 PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_256
 
@@ -108,7 +108,10 @@ def test_case():
 
     send_queue.sync_pointers()
     report = meta_report_queue.deq_blocking()  # packet meta report
+    assert_descriptor_reth(report, RdmaOpCode.RDMA_WRITE_ONLY)
+
     report = meta_report_queue.deq_blocking()  # ack packet report
+    assert_descriptor_ack(report)
 
     if src_mem[0] != dst_mem[0] or src_mem[1] == dst_mem[1]:
         print("Error: Error at single byte write test")
@@ -143,7 +146,10 @@ def test_case():
 
     send_queue.sync_pointers()
     report = meta_report_queue.deq_blocking()  # packet meta report
+    assert_descriptor_reth(report, RdmaOpCode.RDMA_WRITE_ONLY)
+
     report = meta_report_queue.deq_blocking()  # ack packet report
+    assert_descriptor_ack(report)
 
     if src_mem[0:5] != dst_mem[0:5]:
         print("Error: Error at 5 byte write test")
@@ -198,9 +204,17 @@ def test_case():
     else:
         print("PASS-4")
 
+    # This is different from standard IB protocol, for read message, if you set SIGNALED flag,
+    # then an ack will be generated. if this not what you want, then never set SIGNALED flag
+    report = meta_report_queue.deq_blocking()
+    assert_descriptor_ack(report)
+
     # ================================
     # 4th case, write 1024 byte
     # ================================
+
+    dst_mem[0:1024] = b'\0' * 1024
+
     sgl = [
         SendQueueReqDescFragSGE(
             F_LKEY=SEND_SIDE_KEY, F_LEN=1024, F_LADDR=REQ_SIDE_VA_ADDR),
@@ -223,8 +237,13 @@ def test_case():
     send_psn += 4
 
     send_queue.sync_pointers()
-    report = meta_report_queue.deq_blocking()  # packet meta report
+    report = meta_report_queue.deq_blocking()  # packet meta report first
+    assert_descriptor_reth(report, RdmaOpCode.RDMA_WRITE_FIRST)
+    report = meta_report_queue.deq_blocking()  # packet meta report last
+    assert_descriptor_reth(report, RdmaOpCode.RDMA_WRITE_LAST)
     report = meta_report_queue.deq_blocking()  # ack packet report
+    assert_descriptor_ack(report)
+
 
     if src_mem[0:1024] != dst_mem[0:1024]:
         print("Error: Error at 1024 byte write test")
@@ -233,6 +252,19 @@ def test_case():
         print("PASS-5")
 
     dst_mem[0:1024] = b'\0' * 1024
+
+    # ================================
+    # 5th case, read const CSR
+    # ================================
+    
+
+    expected_hw_ver = 2024042901
+    hw_ver = mock_nic.read_csr_blocking(CSR_ADDR_HARDWARE_CONST_HW_VERSION)
+    if hw_ver != expected_hw_ver:
+        print("Error: Error at read HW version CSR, expected=", expected_hw_ver, ", got ", hw_ver)
+    else:
+        print("PASS-6")
+
 
     mock_nic.stop()
 

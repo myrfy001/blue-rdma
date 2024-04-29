@@ -10,18 +10,56 @@ import UserLogicTypes :: *;
 import UserLogicSettings :: *;
 
 
+/*
+
+CSR space layout
+
+The CSR address space is split into 4kB groups, each group has 1k 4B CSR;
+
+Group Idx     Desc
+=========     ================
+0x000         C2H Queue 0
+0x001         C2H Queue 1
+
+0x008         H2C Queue 0
+0x009         H2C Queue 1
+
+0x020         Hardware Const Block (Read Only)
+*/
+
+
 typedef enum {
-    CsrIdxRbBaseAddrLow = 'h0,
-    CsrIdxRbBaseAddrHigh = 'h1,
-    CsrIdxRbHead = 'h2,
-    CsrIdxRbTail = 'h3,
-    CsrIdxMaxGuard = 'h3FF
-} CsrPageIndexForRingbuf deriving(Bits, Eq, FShow);
+    CsrGroupIdxC2hQueue0 = 'h000,
+    CsrGroupIdxC2hQueue1 = 'h001,
+    CsrGroupIdxH2cQueue0 = 'h008,
+    CsrGroupIdxH2cQueue1 = 'h009,
+    CsrGroupIdxHardwareConsts = 'h020,
+    CsrGroupIdxMaxGuard = 'h0FF
+} CsrGroupIndex deriving(Bits, Eq, FShow);
+
+typedef struct {
+     Bit#(CSR_GROUP_CNT_WIDTH)     groupIndex;
+     Bit#(CSR_GROUP_WIDTH)         groupOffset;
+     Bit#(CSR_ADDR_INTERVAL_WIDTH) reservedLSB;
+} CsrAddrRawLayout deriving (Bits, Eq, FShow);
+
+typedef enum {
+    CsrGroupOffsetForRingbufBaseAddrLow = 'h0,
+    CsrGroupOffsetForRingbufBaseAddrHigh = 'h1,
+    CsrGroupOffsetForRingbufHeadPointer = 'h2,
+    CsrGroupOffsetForRingbufTailPointer = 'h3,
+    CsrGroupOffsetForRingbufMaxGuard = 'h3FF
+} CsrGroupOffsetForRingbuf deriving(Bits, Eq, FShow);
+
+typedef enum {
+    CsrGroupOffsetForHardwareConstHwVersion = 'h0,
+    CsrGroupOffsetForRingbufMaxGuard = 'h3FF
+} CsrGroupOffsetForHardwareConst deriving(Bits, Eq, FShow);
 
 typedef struct {
     Bool isH2c;
     UInt#(RINGBUF_NUMBER_WIDTH) queueIndex;
-    CsrPageIndexForRingbuf regIndex;
+    CsrGroupOffsetForRingbuf regIndex;
 } CsrRingbufRegsAddress deriving (Bits, Eq, FShow);
 
 
@@ -42,41 +80,54 @@ module mkRegisterBlock(
     FIFOF#(CsrReadResponse#(CsrData)) readRespQ <- mkFIFOF;
 
     rule ruleHandleWrite;
-        CsrRingbufRegsAddress regAddr = unpack(truncate(pack(writeReqQ.first.addr)>>2));
+        CsrAddrRawLayout addrRaw = unpack(truncate(writeReqQ.first.addr));
         let data = writeReqQ.first.data;
         writeReqQ.deq;
-        case (regAddr.regIndex) matches
-            CsrIdxRbBaseAddrLow: begin
-                if (regAddr.isH2c) begin
-                    h2cMetas[regAddr.queueIndex].addr[31:0] <= unpack(data);
-                end 
-                else begin
-                    c2hMetas[regAddr.queueIndex].addr[31:0] <= unpack(data);
-                end
-            end
-            CsrIdxRbBaseAddrHigh: begin
-                if (regAddr.isH2c) begin
-                    h2cMetas[regAddr.queueIndex].addr[63:32] <= unpack(data);
-                end 
-                else begin
-                    c2hMetas[regAddr.queueIndex].addr[63:32] <= unpack(data);
-                end
-            end 
-            CsrIdxRbHead: begin
-                if (regAddr.isH2c) begin
-                    h2cMetas[regAddr.queueIndex].head <= unpack(truncate(data));
-                end 
-                else begin
-                    c2hMetas[regAddr.queueIndex].head <= unpack(truncate(data));
-                end
-            end
-            CsrIdxRbTail: begin
-                if (regAddr.isH2c) begin
-                    h2cMetas[regAddr.queueIndex].tail <= unpack(truncate(data));
-                end 
-                else begin
-                    c2hMetas[regAddr.queueIndex].tail <= unpack(truncate(data));
-                end
+
+        case (unpack(addrRaw.groupIndex))
+            CsrGroupIdxC2hQueue0,
+            CsrGroupIdxC2hQueue1,
+            CsrGroupIdxH2cQueue0,
+            CsrGroupIdxH2cQueue1: begin
+                CsrRingbufRegsAddress regAddr = unpack(truncate(pack(writeReqQ.first.addr)>>2));
+                case (regAddr.regIndex)
+                    CsrGroupOffsetForRingbufBaseAddrLow: begin
+                        if (regAddr.isH2c) begin
+                            h2cMetas[regAddr.queueIndex].addr[31:0] <= unpack(data);
+                        end 
+                        else begin
+                            c2hMetas[regAddr.queueIndex].addr[31:0] <= unpack(data);
+                        end
+                    end
+                    CsrGroupOffsetForRingbufBaseAddrHigh: begin
+                        if (regAddr.isH2c) begin
+                            h2cMetas[regAddr.queueIndex].addr[63:32] <= unpack(data);
+                        end 
+                        else begin
+                            c2hMetas[regAddr.queueIndex].addr[63:32] <= unpack(data);
+                        end
+                    end 
+                    CsrGroupOffsetForRingbufHeadPointer: begin
+                        if (regAddr.isH2c) begin
+                            h2cMetas[regAddr.queueIndex].head <= unpack(truncate(data));
+                        end 
+                        else begin
+                            c2hMetas[regAddr.queueIndex].head <= unpack(truncate(data));
+                        end
+                    end
+                    CsrGroupOffsetForRingbufTailPointer: begin
+                        if (regAddr.isH2c) begin
+                            h2cMetas[regAddr.queueIndex].tail <= unpack(truncate(data));
+                        end 
+                        else begin
+                            c2hMetas[regAddr.queueIndex].tail <= unpack(truncate(data));
+                        end
+                    end
+                    default: begin 
+                        $display("CSR write unknown addr: %x", writeReqQ.first.addr);
+                        $finish;
+                    end
+                endcase
             end
             default: begin 
                 $display("CSR write unknown addr: %x", writeReqQ.first.addr);
@@ -84,55 +135,76 @@ module mkRegisterBlock(
             end
         endcase
 
+        
+
         writeRespQ.enq(CsrWriteResponse{flag: 0});
     endrule
 
     rule ruleHandleRead;
-
+        CsrAddrRawLayout addrRaw = unpack(truncate(readReqQ.first.addr));
         CsrRingbufRegsAddress regAddr = unpack(truncate(pack(readReqQ.first.addr)>>2));
         readReqQ.deq;
         CsrData retData = ?;
-        case (regAddr.regIndex) matches
-            CsrIdxRbBaseAddrLow: begin
-                if (regAddr.isH2c) begin
-                    retData = zeroExtend(pack(h2cMetas[regAddr.queueIndex].addr[31:0]));
-                end 
-                else begin
-                    retData = zeroExtend(pack(c2hMetas[regAddr.queueIndex].addr[31:0]));
-                end
+        case (unpack(addrRaw.groupIndex))
+            CsrGroupIdxC2hQueue0,
+            CsrGroupIdxC2hQueue1,
+            CsrGroupIdxH2cQueue0,
+            CsrGroupIdxH2cQueue1: begin
+                case (regAddr.regIndex)
+                    CsrGroupOffsetForRingbufBaseAddrLow: begin
+                        if (regAddr.isH2c) begin
+                            retData = zeroExtend(pack(h2cMetas[regAddr.queueIndex].addr[31:0]));
+                        end 
+                        else begin
+                            retData = zeroExtend(pack(c2hMetas[regAddr.queueIndex].addr[31:0]));
+                        end
+                    end
+                    CsrGroupOffsetForRingbufBaseAddrHigh: begin
+                        if (regAddr.isH2c) begin
+                            retData = zeroExtend(pack(h2cMetas[regAddr.queueIndex].addr[63:32]));
+                        end 
+                        else begin
+                            retData = zeroExtend(pack(c2hMetas[regAddr.queueIndex].addr[63:32]));
+                        end
+                    end 
+                    CsrGroupOffsetForRingbufHeadPointer: begin
+                        if (regAddr.isH2c) begin
+                            retData = zeroExtend(pack(h2cMetas[regAddr.queueIndex].head));
+                        end 
+                        else begin
+                            retData = zeroExtend(pack(c2hMetas[regAddr.queueIndex].head));
+                        end
+                    end
+                    CsrGroupOffsetForRingbufTailPointer: begin
+                        if (regAddr.isH2c) begin
+                            retData = zeroExtend(pack(h2cMetas[regAddr.queueIndex].tail));
+                        end 
+                        else begin
+                            retData = zeroExtend(pack(c2hMetas[regAddr.queueIndex].tail));
+                        end
+                    end
+                    default: begin 
+                        $display("CSR read unknown addr: %x", readReqQ.first.addr);
+                        $finish;
+                    end
+                endcase
             end
-            CsrIdxRbBaseAddrHigh: begin
-                if (regAddr.isH2c) begin
-                    retData = zeroExtend(pack(h2cMetas[regAddr.queueIndex].addr[63:32]));
-                end 
-                else begin
-                    retData = zeroExtend(pack(c2hMetas[regAddr.queueIndex].addr[63:32]));
-                end
-            end 
-            CsrIdxRbHead: begin
-                if (regAddr.isH2c) begin
-                    retData = zeroExtend(pack(h2cMetas[regAddr.queueIndex].head));
-                end 
-                else begin
-                    retData = zeroExtend(pack(c2hMetas[regAddr.queueIndex].head));
-                end
-            end
-            CsrIdxRbTail: begin
-                if (regAddr.isH2c) begin
-                    retData = zeroExtend(pack(h2cMetas[regAddr.queueIndex].tail));
-                end 
-                else begin
-                    retData = zeroExtend(pack(c2hMetas[regAddr.queueIndex].tail));
-                end
+            CsrGroupIdxHardwareConsts: begin
+                case (unpack(addrRaw.groupOffset)) matches
+                    CsrGroupOffsetForHardwareConstHwVersion: begin
+                        retData = fromInteger(valueOf(HARDWARE_VERSION));
+                    end
+                    default: begin 
+                        $display("CSR read unknown addr: %x", readReqQ.first.addr);
+                        $finish;
+                    end
+                endcase
             end
             default: begin 
                 $display("CSR read unknown addr: %x", readReqQ.first.addr);
                 $finish;
             end
         endcase
-
-
-
         readRespQ.enq(CsrReadResponse{data: retData});
     endrule
 
