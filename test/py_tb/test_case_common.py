@@ -1,3 +1,6 @@
+import os
+import mock_host
+
 TOTAL_MEMORY_SIZE = 1024 * 1024 * 64
 PGT_ENTRY_OFFSET = 0x200
 PGT_ENTRY_CNT = 0x20
@@ -40,3 +43,17 @@ NIC_CONFIG_GATEWAY = 0x00000001
 NIC_CONFIG_IPADDR = 0x11223344
 NIC_CONFIG_NETMASK = 0xFFFFFFFF
 NIC_CONFIG_MACADDR = 0xAABBCCDDEEFF
+
+
+def run_test_case(test_case):
+    shared_mem_file = os.environ.get("MOCK_HOST_SHARE_MEM_FILE", None)
+    host_mem = mock_host.open_shared_mem_to_hw_simulator(
+        TOTAL_MEMORY_SIZE, shared_mem_file)
+    ret = 0
+    try:
+        test_case(host_mem)
+    except:
+        ret = 1
+    finally:
+        host_mem.close()
+    os._exit(ret)

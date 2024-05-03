@@ -31,8 +31,7 @@ SEND_SIDE_PSN = 0x22
 SEND_BYTE_COUNT = 1024*16
 
 
-def test_case():
-    host_mem = MockHostMem("/bluesim1", TOTAL_MEMORY_SIZE)
+def test_case(host_mem):
     mock_nic = MockNicAndHost(host_mem)
     MockNicAndHost.do_self_loopback(mock_nic)
     mock_nic.run()
@@ -101,21 +100,18 @@ def test_case():
     payload_to_send = "abcdefghijk"
     bytes_to_send = bytes(ip_layer/udp_layer/payload_to_send)
 
-    # 3#########################################
+    # #########################################
 
+    # Handle IP header
     ip_header = IP(bytes_to_send)
     print(ip_header)
-
-    # 打印IP包头信息
     print("IP Header:")
     print("Source IP:", ip_header.src)
     print("Destination IP:", ip_header.dst)
     print("Protocol:", ip_header.proto)
 
-    # 获取UDP包头
+    # Handle UDP header
     udp_header = UDP(bytes(ip_header.payload))
-
-    # 打印UDP包头信息
     print("UDP Header:")
     print("Source Port:", udp_header.sport)
     print("Destination Port:", udp_header.dport)
@@ -170,19 +166,16 @@ def test_case():
     eth_header = Ether(dst_mem)
     print(eth_header)
 
+    # Handle IP header
     ip_header = IP(bytes(eth_header.payload))
     print(ip_header)
-
-    # 打印IP包头信息
     print("IP Header:")
     print("Source IP:", ip_header.src)
     print("Destination IP:", ip_header.dst)
     print("Protocol:", ip_header.proto)
 
-    # 获取UDP包头
+    # Handle UDP header
     udp_header = UDP(bytes(ip_header.payload))
-
-    # 打印UDP包头信息
     print("UDP Header:")
     print("Source Port:", udp_header.sport)
     print("Destination Port:", udp_header.dport)
@@ -194,15 +187,13 @@ def test_case():
     if udp_payload != payload_to_send.encode("utf-8"):
         print(
             f"Error: recv payload not match, send={payload_to_send}, recv={udp_payload}")
-        raise SystemError
+        raise SystemExit
 
     else:
         print("PASS")
-
-    mock_nic.stop()
 
 
 if __name__ == "__main__":
     # must wrap test case in a function, so when the function returned, the memory view will be cleaned
     # otherwise, there will be an warning at program exit.
-    test_case()
+    run_test_case(test_case)

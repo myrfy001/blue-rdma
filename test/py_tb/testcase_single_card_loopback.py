@@ -12,8 +12,8 @@ SEND_SIDE_PSN = 0x22
 SEND_BYTE_COUNT = 1024*16
 
 
-def test_case():
-    host_mem = MockHostMem("/bluesim1", TOTAL_MEMORY_SIZE)
+def test_case(host_mem):
+    raise SystemExit
     mock_nic = MockNicAndHost(host_mem, tx_packet_accumulate_cnt=230)
     MockNicAndHost.do_self_loopback(mock_nic)
     mock_nic.run()
@@ -72,17 +72,6 @@ def test_case():
     for _ in range(3):
         cmd_resp_queue.deq_blocking()
 
-    # move send queue head to send WQE
-    # sgl = [
-    #     SendQueueReqDescFragSGE(
-    #         F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR),
-    #     SendQueueReqDescFragSGE(
-    #         F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR+1),
-    #     SendQueueReqDescFragSGE(
-    #         F_LKEY=SEND_SIDE_KEY, F_LEN=1, F_LADDR=REQ_SIDE_VA_ADDR+2),
-    #     SendQueueReqDescFragSGE(
-    #         F_LKEY=SEND_SIDE_KEY, F_LEN=SEND_BYTE_COUNT-3, F_LADDR=REQ_SIDE_VA_ADDR+3),
-    # ]
     sgl = [
         SendQueueReqDescFragSGE(
             F_LKEY=SEND_SIDE_KEY, F_LEN=SEND_BYTE_COUNT, F_LADDR=REQ_SIDE_VA_ADDR),
@@ -125,6 +114,7 @@ def test_case():
                       "src: ", hex(src_mem[idx]),
                       "dst: ", hex(dst_mem[idx])
                       )
+        raise SystemExit
     else:
         print("PASS")
 
@@ -134,4 +124,4 @@ def test_case():
 if __name__ == "__main__":
     # must wrap test case in a function, so when the function returned, the memory view will be cleaned
     # otherwise, there will be an warning at program exit.
-    test_case()
+    run_test_case(test_case)

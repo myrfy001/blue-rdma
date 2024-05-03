@@ -1,10 +1,11 @@
 # coding:utf-8
+import os
+import gc
 import socket
 from ctypes import *
 from enum import IntEnum
 from multiprocessing import shared_memory
 import threading
-import atexit
 import time
 from hw_consts import *
 from ringbufs import *
@@ -154,10 +155,6 @@ class BluesimRpcServer:
                     client_socket, raw_req_buf)
 
 
-HOST = '127.0.0.1'
-PORT = 9874
-
-
 class MockHostMem:
     def __init__(self, shared_mem_name, shared_mem_size) -> None:
         self.shared_mem_name = shared_mem_name
@@ -171,12 +168,20 @@ class MockHostMem:
                 shared_mem_name, False, shared_mem_size)
 
         self.buf = self.shared_mem_obj.buf
-        atexit.register(self.__deinit__)
 
         self.buf[:] = b"\0" * shared_mem_size
 
-    def __deinit__(self):
+    def close(self):
+        gc.collect()
+        self.shared_mem_obj.close()
         self.shared_mem_obj.unlink()
+
+
+def open_shared_mem_to_hw_simulator(mem_size, shared_mem_file=None):
+    if shared_mem_file is None:
+        shared_mem_file = "/bluesim1"
+    host_mem = MockHostMem(shared_mem_file, mem_size)
+    return host_mem
 
 
 class NetworkDataAgent:
@@ -286,9 +291,18 @@ CUbyteArray8 = c_ubyte * 8
 # rx simulator's point of view, the packet received from network interface is non-continous (has bulbs). if we want to test is
 # reveive logic is fully-pipelined, we need to make sure RQ reveive packet continous. So we can buffer some packet.
 
+HOST = '127.0.0.1'
+PORT = 9874
+
 
 class MockNicAndHost:
-    def __init__(self, main_memory: MockHostMem, host=HOST, port=PORT, tx_packet_accumulate_cnt=0) -> None:
+    def __init__(self, main_memory: MockHostMem, host=None, port=None, tx_packet_accumulate_cnt=0) -> None:
+
+        if host is None:
+            host = os.environ.get("MOCK_HOST_SERVER_HOST", HOST)
+        if port is None:
+            port = os.environ.get("MOCK_HOST_SERVER_PORT", PORT)
+
         self.main_memory = main_memory
         self.bluesim_rpc_server = BluesimRpcServer(host, port)
         self.bluesim_rpc_server.register_opcode(
@@ -324,6 +338,8 @@ class MockNicAndHost:
         self.pcie_tlp_read_tag_counter = 0
         self.tx_packet_accumulate_cnt = tx_packet_accumulate_cnt
         self.is_accumulating = tx_packet_accumulate_cnt != 0
+
+        self.running = True
 
     def run(self):
         self.bluesim_rpc_server.run()
@@ -457,11 +473,12 @@ class MockNicAndHost:
 
     @ staticmethod
     def do_self_loopback(nic):
-        def _self_loopback_thread():
-            while True:
+        def _self_loopback_thread(self):
+            while self.running:
                 data = nic.get_net_ifc_tx_data_from_nic_blocking()
                 nic.put_net_ifc_rx_data_to_nic(data)
-        loopback_thread = threading.Thread(target=_self_loopback_thread)
+        loopback_thread = threading.Thread(
+            target=_self_loopback_thread, args=(nic,))
         loopback_thread.start()
 
     @ staticmethod
@@ -524,17 +541,17 @@ class MockNicAndHost:
 
     @ staticmethod
     def connect_two_card(nic_a, nic_b):
-        def _forward_a():
+        def _forward_a(self):
             # client_to_buf = dict()
-            while True:
+            while self.running:
                 data = nic_a.get_net_ifc_tx_data_from_nic_blocking()
                 nic_b.put_net_ifc_rx_data_to_nic(data)
 
-        def _forward_b():
-            while True:
+        def _forward_b(self):
+            while self.running:
                 data = nic_b.get_net_ifc_tx_data_from_nic_blocking()
                 nic_a.put_net_ifc_rx_data_to_nic(data)
-        forward_thread_a = threading.Thread(target=_forward_a)
-        forward_thread_b = threading.Thread(target=_forward_b)
+        forward_thread_a = threading.Thread(target=_forward_a, args=(nic_a,))
+        forward_thread_b = threading.Thread(target=_forward_b, args=(nic_b,))
         forward_thread_a.start()
         forward_thread_b.start()

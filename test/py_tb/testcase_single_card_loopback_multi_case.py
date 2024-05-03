@@ -12,9 +12,8 @@ SEND_SIDE_PSN_INIT_VAL = 0x0
 SEND_BYTE_COUNT = 1024*16
 
 
-def test_case():
+def test_case(host_mem):
     send_psn = SEND_SIDE_PSN_INIT_VAL
-    host_mem = MockHostMem("/bluesim1", TOTAL_MEMORY_SIZE)
     mock_nic = MockNicAndHost(host_mem)
     MockNicAndHost.do_self_loopback(mock_nic)
     mock_nic.run()
@@ -115,6 +114,7 @@ def test_case():
 
     if src_mem[0] != dst_mem[0] or src_mem[1] == dst_mem[1]:
         print("Error: Error at single byte write test")
+        raise SystemExit
     else:
         print("PASS-1")
 
@@ -154,6 +154,7 @@ def test_case():
     if src_mem[0:5] != dst_mem[0:5]:
         print("Error: Error at 5 byte write test")
         print_mem_diff(dst_mem[0:5], src_mem[0:5])
+        raise SystemExit
     else:
         print("PASS-2")
 
@@ -192,6 +193,7 @@ def test_case():
         print(f"Error: Error at 1 byte read test, read request opcode not right, "
               f"received=0x{hex(parsed_report.F_BTH.F_OPCODE)},",
               f"expected={hex(RdmaOpCode.RDMA_READ_REQUEST)}")
+        raise SystemExit
     else:
         print("PASS-3")
 
@@ -201,6 +203,7 @@ def test_case():
         print(f"Error: Error at 1 byte read test, read request second RETH addr not right, "
               f"received=0x{hex(parsed_report.F_SEC_RETH.F_ADDR)},",
               f"expected={hex(sgl[0].F_LADDR)}")
+        raise SystemExit
     else:
         print("PASS-4")
 
@@ -244,10 +247,10 @@ def test_case():
     report = meta_report_queue.deq_blocking()  # ack packet report
     assert_descriptor_ack(report)
 
-
     if src_mem[0:1024] != dst_mem[0:1024]:
         print("Error: Error at 1024 byte write test")
         print_mem_diff(dst_mem[0:1024], src_mem[0:1024])
+        raise SystemExit
     else:
         print("PASS-5")
 
@@ -256,15 +259,15 @@ def test_case():
     # ================================
     # 5th case, read const CSR
     # ================================
-    
 
     expected_hw_ver = 2024042901
     hw_ver = mock_nic.read_csr_blocking(CSR_ADDR_HARDWARE_CONST_HW_VERSION)
     if hw_ver != expected_hw_ver:
-        print("Error: Error at read HW version CSR, expected=", expected_hw_ver, ", got ", hw_ver)
+        print("Error: Error at read HW version CSR, expected=",
+              expected_hw_ver, ", got ", hw_ver)
+        raise SystemExit
     else:
         print("PASS-6")
-
 
     mock_nic.stop()
 
@@ -272,4 +275,4 @@ def test_case():
 if __name__ == "__main__":
     # must wrap test case in a function, so when the function returned, the memory view will be cleaned
     # otherwise, there will be an warning at program exit.
-    test_case()
+    run_test_case(test_case)

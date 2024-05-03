@@ -15,10 +15,9 @@ PACKET_CNT = 32
 SEND_BYTE_COUNT = PMTU_VAL * PACKET_CNT
 
 
-def test_case():
+def test_case(host_mem):
     send_psn = SEND_SIDE_PSN_INIT_VAL
     send_msn = SEND_SIDE_MSN_INIT_VAL
-    host_mem = MockHostMem("/bluesim1", TOTAL_MEMORY_SIZE)
     mock_nic = MockNicAndHost(host_mem)
     pkt_agent = NetworkDataAgent(mock_nic)
     mock_nic.run()
@@ -373,10 +372,8 @@ def test_case():
 
     print("Pass-4")
 
-    mock_nic.stop()
-
 
 if __name__ == "__main__":
     # must wrap test case in a function, so when the function returned, the memory view will be cleaned
     # otherwise, there will be an warning at program exit.
-    test_case()
+    run_test_case(test_case)
