@@ -88,8 +88,8 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
     FIFOF#(UserLogicDmaC2hWideReq) dmaWriteReqQ <- mkFIFOF;
     let dmaWriteRespQ   <- mkFIFOF;
 
-    FIFOF#(UserLogicDmaH2cReq) readReqProcessingQ   <- mkFIFOF;
-    FIFOF#(UserLogicDmaC2hWideReq) writeReqProcessingQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cReq) readReqProcessingQ   <- mkSizedFIFOF(12);
+    FIFOF#(UserLogicDmaC2hWideReq) writeReqProcessingQ <- mkSizedFIFOF(12);
 
     Wire#(Bool) h2cDescBypRdyWire <- mkBypassWire;
     Reg#(Bool) h2cNextBeatIsFirst <- mkReg(True);
@@ -98,7 +98,7 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
     Reg#(Bool) c2hNextBeatIsFirst   <- mkReg(True);
     Wire#(Bool) c2hDescBypDoneWire  <- mkBypassWire;
     
-    Bool h2cDescHandshakeWillSuccess = h2cDescBypRdyWire && dmaReadReqQ.notEmpty;
+    Bool h2cDescHandshakeWillSuccess = h2cDescBypRdyWire && dmaReadReqQ.notEmpty && readReqProcessingQ.notFull;
 
     rule forwardH2cDesc;
         if (h2cDescHandshakeWillSuccess) begin

@@ -42,8 +42,8 @@ module top#(
     output [CMAC_GT_LANE_WIDTH - 1 : 0] qsfp2_txp_out,
 
     input qsfp2_fault_in,
-    (*mark_debug*) output qsfp2_lpmode_out,
-    (*mark_debug*) output qsfp2_resetl_out
+    output qsfp2_lpmode_out,
+    output qsfp2_resetl_out
 );
 
   localparam AXIL_ADDR_WIDTH = 20;
@@ -59,7 +59,7 @@ module top#(
    //----------------------------------------------------------------------------------------------------------------//
    
    wire 					   user_clk_250;
-   wire 					   user_resetn;
+   (*mark_debug, mark_debug_clock="user_clk_250" *) wire 					   user_resetn;
 
 
 
@@ -106,9 +106,9 @@ module top#(
 
     // AXI streaming ports
     wire [C_DATA_WIDTH-1:0]	m_axis_h2c_tdata_0;
-    wire 			m_axis_h2c_tlast_0;
-    wire 			m_axis_h2c_tvalid_0;
-    wire 			m_axis_h2c_tready_0;
+    (*mark_debug, mark_debug_clock="user_clk_250" *)wire 			m_axis_h2c_tlast_0;
+    (*mark_debug, mark_debug_clock="user_clk_250" *)wire 			m_axis_h2c_tvalid_0;
+    (*mark_debug, mark_debug_clock="user_clk_250" *)wire 			m_axis_h2c_tready_0;
     wire [C_DATA_WIDTH/8-1:0]	m_axis_h2c_tkeep_0;
     
     wire [C_DATA_WIDTH-1:0] s_axis_c2h_tdata_0; 
@@ -133,12 +133,12 @@ module top#(
   wire [27 : 0] c2h_dsc_byp_len_0;
   wire [4 : 0] c2h_dsc_byp_ctl_0;
   wire c2h_dsc_byp_load_0;
-  wire h2c_dsc_byp_ready_0;
-  wire [63 : 0] h2c_dsc_byp_src_addr_0;
+  (*mark_debug, mark_debug_clock="user_clk_250" *)wire h2c_dsc_byp_ready_0;
+  (*mark_debug, mark_debug_clock="user_clk_250" *)wire [63 : 0] h2c_dsc_byp_src_addr_0;
   wire [63 : 0] h2c_dsc_byp_dst_addr_0;
-  wire [27 : 0] h2c_dsc_byp_len_0;
-  wire [4 : 0] h2c_dsc_byp_ctl_0;
-  wire h2c_dsc_byp_load_0;
+  (*mark_debug, mark_debug_clock="user_clk_250" *)wire [27 : 0] h2c_dsc_byp_len_0;
+  (*mark_debug, mark_debug_clock="user_clk_250" *)wire [4 : 0] h2c_dsc_byp_ctl_0;
+  (*mark_debug, mark_debug_clock="user_clk_250" *)wire h2c_dsc_byp_load_0;
 
 
 // GT Signals
@@ -187,9 +187,9 @@ module top#(
     wire [8:0]      gt_ctl_rx_pause_ack;
     wire [8:0]      gt_ctl_rx_pause_enable;
 
-    wire            gt_tx_axis_tready;
-    wire            gt_tx_axis_tvalid;
-    wire            gt_tx_axis_tlast;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *) wire            gt_tx_axis_tready;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *) wire            gt_tx_axis_tvalid;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *) wire            gt_tx_axis_tlast;
     wire [CMAC_AXIS_TDATA_WIDTH - 1 : 0] gt_tx_axis_tdata;
     wire [CMAC_AXIS_TKEEP_WIDTH - 1 : 0] gt_tx_axis_tkeep;
     wire [CMAC_AXIS_TUSER_WIDTH - 1 : 0] gt_tx_axis_tuser;
@@ -224,11 +224,19 @@ module top#(
 
 
     // CMAC CTRL STATE
-    (*mark_debug*)  wire [3:0]      cmac_ctrl_tx_state;
-    (*mark_debug*)  wire [3:0]      cmac_ctrl_rx_state;
-    (*mark_debug*)  wire            is_cmac_rx_aligned;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)  wire [3:0]      cmac_ctrl_tx_state;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)  wire [3:0]      cmac_ctrl_rx_state;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *)  wire            is_cmac_rx_aligned;
+
+
+    reg qsfp_reset_flag_reg;
+
+    always @ (negedge user_resetn) begin
+      qsfp_reset_flag_reg <= !qsfp_reset_flag_reg;
+    end
 
     assign qsfp2_lpmode_out = 1'b0;
+    // assign qsfp2_resetl_out = qsfp_reset_flag_reg ? 1'b1 : user_resetn;
     assign qsfp2_resetl_out = 1'b1;
 
     xdma_0 xdma_0_i
