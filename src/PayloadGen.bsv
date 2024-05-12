@@ -1098,7 +1098,7 @@ module mkMergePayloadEachSGE#(
             !isZeroR(remainingPktNumReg),
             "remainingPktNumReg assertion @ mkMergePayloadEachSGE",
             $format(
-                "remainingPktNumReg=%0d", fshow(remainingPktNumReg),
+                "remainingPktNumReg=", fshow(remainingPktNumReg),
                 " should > 0 when stateReg=", fshow(stateReg)
             )
         );

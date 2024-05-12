@@ -97,7 +97,7 @@ def test_case(host_mem):
     ip_layer = IP(dst="17.34.51.68")
     udp_layer = UDP(dport=1111, sport=2222)
 
-    payload_to_send = "abcdefghijk"
+    payload_to_send = "abcdefghijk" * 8
     bytes_to_send = bytes(ip_layer/udp_layer/payload_to_send)
 
     # #########################################

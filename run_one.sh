@@ -17,6 +17,7 @@ truncate -s 0 $TEST_LOG
 FILES=`ls TestTop.bsv`
 # TESTCASES="mkTestRdmaAndUserLogicWithoutUdp"
 TESTCASES="mkTestTop"
+# TESTCASES="mkTestInjectStreamToCmacControllerWrapper"
 # FILES=`ls TestMockHost.bsv`
 # FILES=`ls TestRdmaUtils.bsv`
 # FILES=`ls TestMockXdma.bsv`

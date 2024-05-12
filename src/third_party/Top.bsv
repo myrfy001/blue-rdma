@@ -6,6 +6,7 @@ import Clocks :: * ;
 import Vector :: *;
 import PAClib :: *;
 import AlignedFIFOs :: * ;
+import Probe::*;
 
 import Axi4LiteTypes :: *;
 import XilinxCmacController :: *;
@@ -15,6 +16,7 @@ import SemiFifo :: *;
 import StreamHandler :: *;
 import XilinxAxiStreamAsyncFifo :: *;
 import UdpIpEthCmacRxTx :: *;
+import UdpIpEthBypassCmacRxTx :: *;
 
 import Settings :: *;
 import RQ :: *;
@@ -463,7 +465,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     mkConnection(toGet(udpTxMacMetaBufQ), udp.netTxRxIfc.macMetaDataTxIn);
     mkConnection(toGet(udpRxStreamBufQ), rdma.rqInputDataStream);
 
-    mkConnection(toGet(rdma.setNetworkParamReqOut), toPut(udp.netTxRxIfc.udpConfig));
+    // mkConnection(toGet(rdma.setNetworkParamReqOut), toPut(udp.netTxRxIfc.udpConfig));
+
 
     // rule debug;
     //     // if (!udpTxStreamBufQ.notFull) begin
@@ -484,6 +487,24 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: udpRxStreamBufQ");
     //     end
     // endrule
+
+    Reg#(Bool) udpConfigInitedReg <- mkReg(False);
+    rule initAndFOrwardUdpConfig;
+        udpConfigInitedReg <= True;
+        if (udpConfigInitedReg) begin
+            let cfg <- rdma.setNetworkParamReqOut.get;
+            udp.netTxRxIfc.udpConfig.put(cfg);
+        end
+        else begin
+            // set some fake value to prevent UDP block
+            udp.netTxRxIfc.udpConfig.put(UdpConfig{
+                macAddr: 'hAABBCCDDEEFF,
+                ipAddr: 'h7F000003,
+                netMask: 0,
+                gateWay: 0
+            } );
+        end
+    endrule
 
     rule forwardTxStream;
         rdma.sqRdmaDataStreamPipeOut.deq;
@@ -533,58 +554,43 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     endrule
 
+    // rule ttt1;
+    //     udp.netTxRxIfc.udpIpMetaDataRxOut.deq;
+    // endrule
+    // rule ttt2;
+    //     udp.netTxRxIfc.macMetaDataRxOut.deq;
+    // endrule
+    // rule ttt3;
+    //     udp.netTxRxIfc.dataStreamRxOut.deq;
+    // endrule
 
-    rule forwardRdmaRxStream;
-        if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateIdle) begin
-            if (udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
-                let srcMacIpIdx <- recvMacIpStorage.allocSlotIdx.get;
-                udp.netTxRxIfc.udpIpMetaDataRxOut.deq;
-                udp.netTxRxIfc.macMetaDataRxOut.deq;
 
-                recvMacIpStorage.saveData.put(tuple2(srcMacIpIdx, RecvPacketSrcMacIpBufferEntry{
-                    ip     : tagged IPv4 unpack(pack(udp.netTxRxIfc.udpIpMetaDataRxOut.first.ipAddr)),
-                    macAddr: unpack(pack(udp.netTxRxIfc.macMetaDataRxOut.first.macAddr))
-                }));
+    Probe#(Bool) probeE1 <- mkProbe;
+    Probe#(Bool) probeE2 <- mkProbe;
+    Probe#(Bool) probeE3 <- mkProbe;
+    Probe#(Bool) probeF1 <- mkProbe;
 
-                let data = udp.netTxRxIfc.dataStreamRxOut.first;
-                udp.netTxRxIfc.dataStreamRxOut.deq;
-                let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
-                    data: swapEndian(data.data),
-                    byteEn: swapEndianBit(data.byteEn),
-                    isLast: data.isLast,
-                    isFirst: data.isFirst
-                });
-                udpRxStreamBufQ.enq(tuple3(outData, False, srcMacIpIdx));
-                $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData), ", origin data = ", fshow(data));
+    rule doProbe;
+        probeE1 <= udp.netTxRxIfc.dataStreamRxOut.notEmpty;
+        probeE2 <= udp.netTxRxIfc.udpIpMetaDataRxOut.notEmpty;
+        probeE3 <= udp.netTxRxIfc.macMetaDataRxOut.notEmpty;
+        probeF1 <= udpRxStreamBufQ.notFull;
 
-                if (!data.isLast) begin
-                    isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRdmaData;
-                end
-            end
-            else if (udp.netTxRxIfc.rawPktStreamRxOut.notEmpty) begin
-                let srcMacIpIdx <- recvMacIpStorage.allocSlotIdx.get;
-                recvMacIpStorage.saveData.put(tuple2(srcMacIpIdx, RecvPacketSrcMacIpBufferEntry{
-                    ip     : tagged IPv4 unpack(0),
-                    macAddr: unpack(0)
-                }));
+    endrule
 
-                let data = udp.netTxRxIfc.rawPktStreamRxOut.first;
-                udp.netTxRxIfc.rawPktStreamRxOut.deq;
-                let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
-                    data: swapEndian(data.data),
-                    byteEn: swapEndianBit(data.byteEn),
-                    isLast: data.isLast,
-                    isFirst: data.isFirst
-                });
-                udpRxStreamBufQ.enq(tuple3(outData, True, srcMacIpIdx));
-                $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData), ", origin data = ", fshow(data));
+    
+    rule forwardRdmaRxStreamIdle if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateIdle);
+        
+        if (udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
+            let srcMacIpIdx <- recvMacIpStorage.allocSlotIdx.get;
+            udp.netTxRxIfc.udpIpMetaDataRxOut.deq;
+            udp.netTxRxIfc.macMetaDataRxOut.deq;
 
-                if (!data.isLast) begin
-                    isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRawData;
-                end
-            end
-        end
-        else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRdmaData) begin
+            recvMacIpStorage.saveData.put(tuple2(srcMacIpIdx, RecvPacketSrcMacIpBufferEntry{
+                ip     : tagged IPv4 unpack(pack(udp.netTxRxIfc.udpIpMetaDataRxOut.first.ipAddr)),
+                macAddr: unpack(pack(udp.netTxRxIfc.macMetaDataRxOut.first.macAddr))
+            }));
+
             let data = udp.netTxRxIfc.dataStreamRxOut.first;
             udp.netTxRxIfc.dataStreamRxOut.deq;
             let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
@@ -593,13 +599,20 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isLast: data.isLast,
                 isFirst: data.isFirst
             });
-            udpRxStreamBufQ.enq(tuple3(outData, False, ?));
+            udpRxStreamBufQ.enq(tuple3(outData, False, srcMacIpIdx));
             $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData), ", origin data = ", fshow(data));
-            if (data.isLast) begin
-                isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
+
+            if (!data.isLast) begin
+                isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRdmaData;
             end
         end
-        else if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRawData) begin
+        else if (udp.netTxRxIfc.rawPktStreamRxOut.notEmpty) begin
+            let srcMacIpIdx <- recvMacIpStorage.allocSlotIdx.get;
+            recvMacIpStorage.saveData.put(tuple2(srcMacIpIdx, RecvPacketSrcMacIpBufferEntry{
+                ip     : tagged IPv4 unpack(0),
+                macAddr: unpack(0)
+            }));
+
             let data = udp.netTxRxIfc.rawPktStreamRxOut.first;
             udp.netTxRxIfc.rawPktStreamRxOut.deq;
             let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
@@ -608,11 +621,46 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
                 isLast: data.isLast,
                 isFirst: data.isFirst
             });
-            udpRxStreamBufQ.enq(tuple3(outData, True, ?));
+            udpRxStreamBufQ.enq(tuple3(outData, True, srcMacIpIdx));
             $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData), ", origin data = ", fshow(data));
-            if (data.isLast) begin
-                isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
+
+            if (!data.isLast) begin
+                isReceivingRawPacketReg <= UdpReceivingChannelSelectStateRecvRawData;
             end
+        end
+    endrule
+
+    rule forwardRdmaRxStreamRdmaData if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRdmaData);
+       
+        let data = udp.netTxRxIfc.dataStreamRxOut.first;
+        udp.netTxRxIfc.dataStreamRxOut.deq;
+        let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
+            data: swapEndian(data.data),
+            byteEn: swapEndianBit(data.byteEn),
+            isLast: data.isLast,
+            isFirst: data.isFirst
+        });
+        udpRxStreamBufQ.enq(tuple3(outData, False, ?));
+        $display("time=%0t: ", $time,"udp put to rqWrapper rdmaData = ", fshow(outData), ", origin data = ", fshow(data));
+        if (data.isLast) begin
+            isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
+        end
+    endrule
+
+    rule forwardRdmaRxStreamRawData if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateRecvRawData);
+
+        let data = udp.netTxRxIfc.rawPktStreamRxOut.first;
+        udp.netTxRxIfc.rawPktStreamRxOut.deq;
+        let outData = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
+            data: swapEndian(data.data),
+            byteEn: swapEndianBit(data.byteEn),
+            isLast: data.isLast,
+            isFirst: data.isFirst
+        });
+        udpRxStreamBufQ.enq(tuple3(outData, True, ?));
+        $display("time=%0t: ", $time,"udp put to rqWrapper rawData = ", fshow(outData), ", origin data = ", fshow(data));
+        if (data.isLast) begin
+            isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
         end
     endrule
 

@@ -15,7 +15,7 @@ DEBUGFLAGS = -check-assert \
 	-warn-method-urgency \
 	-promote-warnings ALL \
 	-demote-errors S0015:G0020:G0023
-VERILOGFLAGS = -verilog -remove-dollar -remove-unused-modules # -use-dpi -verilog-filter cmd
+VERILOGFLAGS = -verilog -remove-dollar # -use-dpi -verilog-filter cmd
 BLUESIMFLAGS = -parallel-sim-link 16 # -systemc
 BUILDDIR = build
 OUTDIR = -bdir $(BUILDDIR) -info-dir $(BUILDDIR) -simdir $(BUILDDIR) -vdir $(BUILDDIR)

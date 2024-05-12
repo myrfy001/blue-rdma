@@ -30,6 +30,8 @@ import XdmaWrapper :: *;
 import UserLogicTypes :: *;
 import RegisterBlock :: *;
 import EthernetTypes :: *;
+import XilinxCmacController::*;
+import AxiStreamTypes::*;
 
 
 import Top :: *;
@@ -300,3 +302,107 @@ module mkTestRdmaAndUserLogicWithoutUdp(Empty);
 endmodule
 
 
+(* doc = "testcase" *)
+module mkTestInjectStreamToCmacControllerWrapper(Empty);
+    Clock clk <- mkAbsoluteClock(0, 10);
+    Reset r <- mkInitialReset (2, clocked_by clk);
+    let dut <- mkTestInjectStreamToCmacController(clocked_by clk, reset_by r);
+
+endmodule
+
+module mkTestInjectStreamToCmacController(Empty);
+    Clock rdmaClock <- exposeCurrentClock;
+    Reset rdmaReset <- exposeCurrentReset;
+
+    Clock dmacClock <- exposeCurrentClock;
+    Reset dmacReset <- exposeCurrentReset;
+
+    Clock udpClock <- exposeCurrentClock;
+    Reset udpReset <- exposeCurrentReset;
+
+    Clock cmacRxTxClk <- mkAbsoluteClock(0, 7);  // about 322 MHz
+    // Clock cmacRxTxClk <- mkAbsoluteClock(0, 10);
+    Reset cmacRxTxRst <- mkSyncReset(2, udpReset, cmacRxTxClk);
+
+    let topA <- mkBsvTop(cmacRxTxClk, cmacRxTxRst, cmacRxTxRst);
+
+    Reg#(Bit#(5)) cntReg <- mkReg(0, clocked_by cmacRxTxClk, reset_by cmacRxTxRst);
+
+    Reg#(Bit#(20)) resetCnt <- mkReg(0, clocked_by cmacRxTxClk, reset_by cmacRxTxRst);
+
+    let streamIfc = topA.cmacController.cmacRxController.rxRawAxiStreamIn;
+
+
+
+    rule dealWithAlwaysEnable1;
+        let regBlockIfc = topA.axilRegBlock;
+        regBlockIfc.rdSlave.arValidData(unpack(0),unpack(0),unpack(0));
+        regBlockIfc.rdSlave.rReady(unpack(0));
+        regBlockIfc.wrSlave.awValidData(unpack(0),unpack(0),unpack(0));
+        regBlockIfc.wrSlave.bReady(unpack(0));
+        regBlockIfc.wrSlave.wValidData(unpack(0),unpack(0),unpack(0)); 
+
+        topA.xdmaChannel.c2hDescByp.descDone(unpack(0));
+        topA.xdmaChannel.c2hDescByp.ready(unpack(0));
+        topA.xdmaChannel.h2cDescByp.descDone(unpack(0));
+        topA.xdmaChannel.h2cDescByp.ready(unpack(0));
+        topA.xdmaChannel.rawC2hAxiStream.tReady(unpack(0));
+        topA.xdmaChannel.rawH2cAxiStream.tValid(unpack(0),unpack(0),unpack(0),unpack(0),unpack(0));
+    endrule
+
+    rule dealWithAlwaysEnable2;
+        topA.cmacController.cmacRxController.cmacRxStatus(True, unpack(0));
+        topA.cmacController.cmacTxController.cmacTxStatus(False, False, True);
+        topA.cmacController.cmacTxController.rawCmacAxiStreamOut.tReady(True);
+    endrule
+
+    rule cnt;
+        if (resetCnt < 1024) begin
+            resetCnt <= resetCnt + 1;
+        end
+    endrule
+
+    rule injectdata;
+
+        let data = case (cntReg)
+            'h00: 'h4001000060a7127f000000000000020000000000000600002804b712b7120300007f0200007fab781140000001003c0400450008feeeddccbbaaffeeddccbbaa;
+            'h01: 'h393837363534333231302f2e2d2c2b2a292827262524232221201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100000001001a25;
+            'h02: 'h797877767574737271706f6e6d6c6b6a696867666564636261605f5e5d5c5b5a595857565554535251504f4e4d4c4b4a494847464544434241403f3e3d3c3b3a;
+            'h03: 'hb9b8b7b6b5b4b3b2b1b0afaeadacabaaa9a8a7a6a5a4a3a2a1a09f9e9d9c9b9a999897969594939291908f8e8d8c8b8a898887868584838281807f7e7d7c7b7a;
+            'h04: 'hf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0dfdedddcdbdad9d8d7d6d5d4d3d2d1d0cfcecdcccbcac9c8c7c6c5c4c3c2c1c0bfbebdbcbbba;
+            'h05: 'h393837363534333231302f2e2d2c2b2a292827262524232221201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100fffefdfcfbfa;
+            'h06: 'h797877767574737271706f6e6d6c6b6a696867666564636261605f5e5d5c5b5a595857565554535251504f4e4d4c4b4a494847464544434241403f3e3d3c3b3a;
+            'h07: 'hb9b8b7b6b5b4b3b2b1b0afaeadacabaaa9a8a7a6a5a4a3a2a1a09f9e9d9c9b9a999897969594939291908f8e8d8c8b8a898887868584838281807f7e7d7c7b7a;
+            'h08: 'hf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0dfdedddcdbdad9d8d7d6d5d4d3d2d1d0cfcecdcccbcac9c8c7c6c5c4c3c2c1c0bfbebdbcbbba;
+            'h09: 'h393837363534333231302f2e2d2c2b2a292827262524232221201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100fffefdfcfbfa;
+            'h0A: 'h797877767574737271706f6e6d6c6b6a696867666564636261605f5e5d5c5b5a595857565554535251504f4e4d4c4b4a494847464544434241403f3e3d3c3b3a;
+            'h0B: 'hb9b8b7b6b5b4b3b2b1b0afaeadacabaaa9a8a7a6a5a4a3a2a1a09f9e9d9c9b9a999897969594939291908f8e8d8c8b8a898887868584838281807f7e7d7c7b7a;
+            'h0C: 'hf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0dfdedddcdbdad9d8d7d6d5d4d3d2d1d0cfcecdcccbcac9c8c7c6c5c4c3c2c1c0bfbebdbcbbba;
+            'h0D: 'h393837363534333231302f2e2d2c2b2a292827262524232221201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100fffefdfcfbfa;
+            'h0E: 'h797877767574737271706f6e6d6c6b6a696867666564636261605f5e5d5c5b5a595857565554535251504f4e4d4c4b4a494847464544434241403f3e3d3c3b3a;
+            'h0F: 'hb9b8b7b6b5b4b3b2b1b0afaeadacabaaa9a8a7a6a5a4a3a2a1a09f9e9d9c9b9a999897969594939291908f8e8d8c8b8a898887868584838281807f7e7d7c7b7a;
+            'h10: 'hf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0dfdedddcdbdad9d8d7d6d5d4d3d2d1d0cfcecdcccbcac9c8c7c6c5c4c3c2c1c0bfbebdbcbbba;
+            'h11: 'h00000000000000000000636e41d94f9d0eabfffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e20000636e41d94f9d0eabfffefdfcfbfa;
+        endcase;
+        
+        let byteEn = cntReg == 'h11 ? 'h3FFF: -1;
+
+        let tLast = cntReg == 'h11;
+
+        let canHandshake = resetCnt == 1024 && streamIfc.tReady;
+
+        if (canHandshake) begin
+            if (!tLast) begin
+                cntReg <= cntReg + 1;
+            end 
+            else begin
+                cntReg <= 0;
+            end
+        end
+
+        streamIfc.tValid(canHandshake, data, byteEn, tLast, 0);
+        
+    endrule
+    
+
+endmodule
