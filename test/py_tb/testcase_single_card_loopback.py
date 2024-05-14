@@ -13,7 +13,6 @@ SEND_BYTE_COUNT = 1024*16
 
 
 def test_case(host_mem):
-    raise SystemExit
     mock_nic = MockNicAndHost(host_mem, tx_packet_accumulate_cnt=230)
     MockNicAndHost.do_self_loopback(mock_nic)
     mock_nic.run()

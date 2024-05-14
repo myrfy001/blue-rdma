@@ -94,11 +94,12 @@ def test_case(host_mem):
         cmd_resp_queue.deq_blocking()
 
     # generate raw packet data
+    eth_layer = Ether(dst="AA:BB:CC:DD:EE", src="AA:BB:CC:DD:FF")
     ip_layer = IP(dst="17.34.51.68")
     udp_layer = UDP(dport=1111, sport=2222)
 
     payload_to_send = "abcdefghijk" * 8
-    bytes_to_send = bytes(ip_layer/udp_layer/payload_to_send)
+    bytes_to_send = bytes(eth_layer/ip_layer/udp_layer/payload_to_send)
 
     # #########################################
 
@@ -150,8 +151,7 @@ def test_case(host_mem):
         meta_report_queue.deq_blocking())
     print("receive meta report: ", report_meta)
 
-    # 14 is ETH header
-    expected_receive_len = len(bytes_to_send) + 14  # 14 is ETH header
+    expected_receive_len = len(bytes_to_send)
     received_len = report_meta.F_RETH.F_DLEN
     if received_len != expected_receive_len:
         print(

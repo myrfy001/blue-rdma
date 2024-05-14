@@ -10,9 +10,9 @@ for testcase_fn in glob.glob("testcase_*.py"):
     # print("=-=-=-=-=-=--=-=-=-=-")
     # print(testcase_fn)
     proc_tb = subprocess.Popen(["python3", testcase_fn], bufsize=0)
-    # time.sleep(1)
-    # # proc_simulator = subprocess.Popen(
-    # #     ["../build/mkTestTop.sh"], cwd="../build")
+    time.sleep(1)
+    proc_simulator = subprocess.Popen(
+        ["../build/mkTestTop.sh"], cwd="../build")
 
     ret = proc_tb.wait(10)
 
