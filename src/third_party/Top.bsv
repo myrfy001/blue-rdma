@@ -43,6 +43,7 @@ import UserLogicUtils :: *;
 import RegisterBlock :: *;
 import CmdQueue :: *;
 import WorkQueueRingbuf :: *;
+import SoftReset :: *;
 
 import PrimUtils :: *;
 
@@ -61,6 +62,9 @@ interface BsvTop#(numeric type dataSz, numeric type userSz);
     // Interface with CMAC IP
     (* prefix = "" *)
     interface XilinxCmacController cmacController;
+
+    (* prefix = "", always_enabled *)
+    method Bool csrSoftResetSignal;
 endinterface
 
 
@@ -69,6 +73,10 @@ module mkBsvTop(
     (* osc   = "cmac_rxtx_clk" *) Clock cmacRxTxClk,
     (* reset = "cmac_rx_resetn" *) Reset cmacRxReset,
     (* reset = "cmac_tx_resetn" *) Reset cmacTxReset,
+
+    (* osc = "global_reset_100mhz_clk" *) Clock globalResetClk,
+    (* reset = "global_reset_resetn" *) Reset globalResetReset,
+
     BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc
 );
 
@@ -121,27 +129,19 @@ module mkBsvTop(
         clocked_by cmacRxTxClk
     );
 
+    let globalSoftReset <- mkGlobalSoftReset( globalResetClk,  globalResetReset);
+    rule handleDoGlobalSoftReset;
+        if (udpAndRdma.csrSoftResetSignal) begin
+            globalSoftReset.doReset;
+        end
+    endrule
+
     interface xdmaChannel = xdmaWrap.xdmaChannel;
     interface axilRegBlock = xdmaAxiLiteWrap.cntrlAxil;
     interface cmacController = xilinxCmacCtrl;
+
+    method csrSoftResetSignal = globalSoftReset.resetOut;
 endmodule
-
-
-interface RdmaUserLogicWithoutXdmaAndCmacWrapper;
-    interface AxiStream512FifoOut axiStreamTxOutUdp;
-    interface Put#(AxiStream512)   axiStreamRxInUdp;
-    
-    interface UserLogicDmaReadWideClt dmaReadClt;
-    interface UserLogicDmaWriteWideClt dmaWriteClt;
-
-    interface Server#(CsrWriteRequest#(CsrAddr, CsrData), CsrWriteResponse) csrWriteSrv;
-    interface Server#(CsrReadRequest#(CsrAddr), CsrReadResponse#(CsrData)) csrReadSrv;
-
-endinterface
-
-
-
-
 
 interface UdpWrapper;
     interface UdpIpEthBypassRxTx netTxRxIfc;
@@ -270,6 +270,7 @@ interface RdmaUserLogicWithoutXdmaAndUdpCmacWrapper;
     // CSR related
     interface Server#(CsrWriteRequest#(CsrAddr, CsrData), CsrWriteResponse)     csrWriteSrv;
     interface Server#(CsrReadRequest#(CsrAddr), CsrReadResponse#(CsrData))      csrReadSrv;
+    method Bool csrSoftResetSignal;
 
     // UDP config related
     interface Get#(UdpConfig)    setNetworkParamReqOut;
@@ -420,6 +421,7 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
 
     interface setNetworkParamReqOut = cmdQController.setNetworkParamReqOut;
 
+    method csrSoftResetSignal = csrBlock.csrSoftResetSignal;
 endmodule
 
 typedef enum {
@@ -427,6 +429,23 @@ typedef enum {
     UdpReceivingChannelSelectStateRecvRdmaData  = 1,
     UdpReceivingChannelSelectStateRecvRawData   = 2
 } UdpReceivingChannelSelectState deriving(Bits, Eq);
+
+
+
+
+interface RdmaUserLogicWithoutXdmaAndCmacWrapper;
+    interface AxiStream512FifoOut axiStreamTxOutUdp;
+    interface Put#(AxiStream512)   axiStreamRxInUdp;
+    
+    interface UserLogicDmaReadWideClt dmaReadClt;
+    interface UserLogicDmaWriteWideClt dmaWriteClt;
+
+    interface Server#(CsrWriteRequest#(CsrAddr, CsrData), CsrWriteResponse) csrWriteSrv;
+    interface Server#(CsrReadRequest#(CsrAddr), CsrReadResponse#(CsrData)) csrReadSrv;
+    
+    method Bool csrSoftResetSignal;
+endinterface
+
 
 (* synthesize *)
 module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
@@ -554,31 +573,6 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     endrule
 
-    // rule ttt1;
-    //     udp.netTxRxIfc.udpIpMetaDataRxOut.deq;
-    // endrule
-    // rule ttt2;
-    //     udp.netTxRxIfc.macMetaDataRxOut.deq;
-    // endrule
-    // rule ttt3;
-    //     udp.netTxRxIfc.dataStreamRxOut.deq;
-    // endrule
-
-
-    Probe#(Bool) probeE1 <- mkProbe;
-    Probe#(Bool) probeE2 <- mkProbe;
-    Probe#(Bool) probeE3 <- mkProbe;
-    Probe#(Bool) probeF1 <- mkProbe;
-
-    rule doProbe;
-        probeE1 <= udp.netTxRxIfc.dataStreamRxOut.notEmpty;
-        probeE2 <= udp.netTxRxIfc.udpIpMetaDataRxOut.notEmpty;
-        probeE3 <= udp.netTxRxIfc.macMetaDataRxOut.notEmpty;
-        probeF1 <= udpRxStreamBufQ.notFull;
-
-    endrule
-
-    
     rule forwardRdmaRxStreamIdle if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateIdle);
         
         if (udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
@@ -717,4 +711,6 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     interface dmaWriteClt = rdma.dmaWriteClt;
     interface csrWriteSrv = rdma.csrWriteSrv;
     interface csrReadSrv = rdma.csrReadSrv;
+
+    method csrSoftResetSignal = rdma.csrSoftResetSignal;
 endmodule

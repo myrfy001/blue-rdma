@@ -163,7 +163,7 @@ module mkExpectedPsnManager(ExpectedPsnManager);
 
         // Since the max outstanding packet number is MAX_PSN / 2
         // if the minus result is smaller than MAX_PSN / 2, it menas (req.newIncomingPSN > storedExpectedPSN)
-        let isCurPsnGreaterOrEqualThanExpectedPSN       = msb(req.newIncomingPSN - storedExpectedPSN)    == 1'b0;
+        let isCurPsnGreaterOrEqualThanExpectedPSN = msb(req.newIncomingPSN - storedExpectedPSN) == 1'b0;
 
         let isAdjacentPsnContinous = False;
         if (req.isPacketStateAbnormal) begin

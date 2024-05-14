@@ -8,12 +8,17 @@ OUTPUTDIR ?= output
 LOGFILE ?= run.log
 RUNTOPHASE ?= all # synth place route all
 PARTNAME = xcvu13p-fhgb2104-2-i
+# PARTNAME = xcvu23p-vsva1365-2L-e
+
 # TARGETFILE ?= ../src/SendQ.bsv
 # TOPMODULE ?= mkSQ
 # TARGETFILE ?= ../src/QueuePair.bsv
 # TOPMODULE ?= mkQP
+# TARGETFILE ?= ../test/TestTop.bsv
+# TOPMODULE ?= mkTestInjectStreamToCmacControllerWrapper
 TARGETFILE ?= ../src/third_party/Top.bsv
 TOPMODULE ?= mkBsvTop
+
 BACKENDDIR ?= .
 MAX_NET_PATH_NUM ?= 10000
 VERILOG_TOPMODULE ?= top
@@ -42,7 +47,7 @@ gen_udp_crc_tab:
 	mkdir -p $(DIR_BSV_GENERATED)
 	
 	python3 $(BLUE_CRC_DIR)/scripts/gen_crc_tab.py \
-			$(BLUE_UDP_CRC_TABLE_GEN_INFO_DIR)/crc_ieee_32_256.json \
+			$(BLUE_UDP_CRC_TABLE_GEN_INFO_DIR)/crc_ieee_32_512.json \
 			$(DIR_BSV_GENERATED)
 compile:
 	mkdir -p $(BUILDDIR)

@@ -324,7 +324,7 @@ module mkTestInjectStreamToCmacController(Empty);
     // Clock cmacRxTxClk <- mkAbsoluteClock(0, 10);
     Reset cmacRxTxRst <- mkSyncReset(2, udpReset, cmacRxTxClk);
 
-    let topA <- mkBsvTop(cmacRxTxClk, cmacRxTxRst, cmacRxTxRst);
+    let topA <- mkBsvTop(cmacRxTxClk, cmacRxTxRst, cmacRxTxRst, cmacRxTxClk, cmacRxTxRst);
 
     Reg#(Bit#(5)) cntReg <- mkReg(0, clocked_by cmacRxTxClk, reset_by cmacRxTxRst);
 

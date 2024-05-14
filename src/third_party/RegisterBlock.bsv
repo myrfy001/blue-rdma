@@ -25,16 +25,18 @@ Group Idx     Desc
 0x009         H2C Queue 1
 
 0x020         Hardware Const Block (Read Only)
+0x021         Hardware Global Control Block
 */
 
 
 typedef enum {
-    CsrGroupIdxC2hQueue0 = 'h000,
-    CsrGroupIdxC2hQueue1 = 'h001,
-    CsrGroupIdxH2cQueue0 = 'h008,
-    CsrGroupIdxH2cQueue1 = 'h009,
-    CsrGroupIdxHardwareConsts = 'h020,
-    CsrGroupIdxMaxGuard = 'h0FF
+    CsrGroupIdxC2hQueue0                = 'h000,
+    CsrGroupIdxC2hQueue1                = 'h001,
+    CsrGroupIdxH2cQueue0                = 'h008,
+    CsrGroupIdxH2cQueue1                = 'h009,
+    CsrGroupIdxHardwareConsts           = 'h020,
+    CsrGroupIdxHardwareGlobalControl    = 'h021,
+    CsrGroupIdxMaxGuard                 = 'h0FF
 } CsrGroupIndex deriving(Bits, Eq, FShow);
 
 typedef struct {
@@ -53,8 +55,13 @@ typedef enum {
 
 typedef enum {
     CsrGroupOffsetForHardwareConstHwVersion = 'h0,
-    CsrGroupOffsetForRingbufMaxGuard = 'h3FF
+    CsrGroupOffsetForHardwareConstMaxGuard = 'h3FF
 } CsrGroupOffsetForHardwareConst deriving(Bits, Eq, FShow);
+
+typedef enum {
+    CsrGroupOffsetForHardwareGlobalControlSoftReset = 'h0,
+    CsrGroupOffsetForHardwareGlobalControlMaxGuard = 'h3FF
+} CsrGroupOffsetForHardwareGlobalControl deriving(Bits, Eq, FShow);
 
 typedef struct {
     Bool isH2c;
@@ -66,18 +73,22 @@ typedef struct {
 interface RegisterBlock#(type t_addr, type t_data);
     interface Server#(CsrWriteRequest#(t_addr, t_data), CsrWriteResponse) csrWriteSrv;
     interface Server#(CsrReadRequest#(t_addr), CsrReadResponse#(t_data)) csrReadSrv;
+    method Bool csrSoftResetSignal;
 endinterface
 
 
 module mkRegisterBlock(
     Vector#(h2cCount, RingbufH2cMetadata) h2cMetas, 
     Vector#(c2hCount, RingbufC2hMetadata) c2hMetas,
-     RegisterBlock#(CsrAddr, CsrData) ifc
+    RegisterBlock#(CsrAddr, CsrData) ifc
 );
     FIFOF#(CsrWriteRequest#(CsrAddr, CsrData)) writeReqQ <- mkFIFOF;
     FIFOF#(CsrWriteResponse) writeRespQ <- mkFIFOF;
     FIFOF#(CsrReadRequest#(CsrAddr)) readReqQ <- mkFIFOF;
     FIFOF#(CsrReadResponse#(CsrData)) readRespQ <- mkFIFOF;
+
+
+    Reg#(Bool) softResetSignalReg <- mkReg(False);
 
     rule ruleHandleWrite;
         CsrAddrRawLayout addrRaw = unpack(truncate(writeReqQ.first.addr));
@@ -122,6 +133,17 @@ module mkRegisterBlock(
                         else begin
                             c2hMetas[regAddr.queueIndex].tail <= unpack(truncate(data));
                         end
+                    end
+                    default: begin 
+                        $display("CSR write unknown addr: %x", writeReqQ.first.addr);
+                        $finish;
+                    end
+                endcase
+            end
+            CsrGroupIdxHardwareGlobalControl: begin
+                case (unpack(addrRaw.groupOffset)) matches
+                    CsrGroupOffsetForHardwareGlobalControlSoftReset: begin
+                        softResetSignalReg <= True;
                     end
                     default: begin 
                         $display("CSR write unknown addr: %x", writeReqQ.first.addr);
@@ -210,4 +232,5 @@ module mkRegisterBlock(
 
     interface csrWriteSrv = toGPServer(writeReqQ, writeRespQ);
     interface csrReadSrv = toGPServer(readReqQ, readRespQ);
+    method csrSoftResetSignal = softResetSignalReg;
 endmodule

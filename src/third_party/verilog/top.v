@@ -17,12 +17,9 @@ module top#(
     input 					 sys_clk_n,
     input 					 sys_rst_n,
 
+    input            board_sys_clk_n,
+    input            board_sys_clk_p,
 
-    input gt_ref_clk_p,
-    input gt_ref_clk_n,
-    input gt_sys_reset,
-
-    
 
     // CMAC
     // input qsfp1_ref_clk_p,
@@ -69,6 +66,7 @@ module top#(
 
     wire                                    sys_clk;
     wire                                    sys_clk_gt;
+    (*mark_debug, mark_debug_clock="user_clk_250" *) wire                                    global_reset_100mhz_clk;
     wire                                    sys_rst_n_c;
 
 
@@ -125,6 +123,13 @@ module top#(
   IBUFDS_GTE4 # (.REFCLK_HROW_CK_SEL(2'b00)) refclk_ibuf (.O(sys_clk_gt), .ODIV2(sys_clk), .I(sys_clk_p), .CEB(1'b0), .IB(sys_clk_n));
   // Reset buffer
   IBUF   sys_reset_n_ibuf (.O(sys_rst_n_c), .I(sys_rst_n));
+  
+
+  IBUFDS IBUFDS_inst (
+      .O(global_reset_100mhz_clk),    // 1-bit output: Buffer output
+      .I(board_sys_clk_p),            // 1-bit input: Diff_p buffer input (connect directly to top-level port)
+      .IB(board_sys_clk_n)            // 1-bit input: Diff_n buffer input (connect directly to top-level port)
+  );
 
 // Descriptor Bypass Control Logic
   wire c2h_dsc_byp_ready_0;
@@ -133,12 +138,14 @@ module top#(
   wire [27 : 0] c2h_dsc_byp_len_0;
   wire [4 : 0] c2h_dsc_byp_ctl_0;
   wire c2h_dsc_byp_load_0;
-  (*mark_debug, mark_debug_clock="user_clk_250" *)wire h2c_dsc_byp_ready_0;
-  (*mark_debug, mark_debug_clock="user_clk_250" *)wire [63 : 0] h2c_dsc_byp_src_addr_0;
+  wire h2c_dsc_byp_ready_0;
+  wire [63 : 0] h2c_dsc_byp_src_addr_0;
   wire [63 : 0] h2c_dsc_byp_dst_addr_0;
-  (*mark_debug, mark_debug_clock="user_clk_250" *)wire [27 : 0] h2c_dsc_byp_len_0;
-  (*mark_debug, mark_debug_clock="user_clk_250" *)wire [4 : 0] h2c_dsc_byp_ctl_0;
-  (*mark_debug, mark_debug_clock="user_clk_250" *)wire h2c_dsc_byp_load_0;
+  wire [27 : 0] h2c_dsc_byp_len_0;
+  wire [4 : 0] h2c_dsc_byp_ctl_0;
+  wire h2c_dsc_byp_load_0;
+
+  //  (*mark_debug, mark_debug_clock="user_clk_250" *)
 
 
 // GT Signals
@@ -146,9 +153,9 @@ module top#(
     wire            gt_usr_tx_reset;
     wire            gt_usr_rx_reset;
 
-    wire            gt_rx_axis_tvalid;
-    wire            gt_rx_axis_tready;
-    wire            gt_rx_axis_tlast;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *) wire            gt_rx_axis_tvalid;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *) wire            gt_rx_axis_tready;
+    (*mark_debug, mark_debug_clock="gt_txusrclk2" *) wire            gt_rx_axis_tlast;
     wire [CMAC_AXIS_TDATA_WIDTH - 1 : 0] gt_rx_axis_tdata;
     wire [CMAC_AXIS_TKEEP_WIDTH - 1 : 0] gt_rx_axis_tkeep;
     wire [CMAC_AXIS_TUSER_WIDTH - 1 : 0] gt_rx_axis_tuser;
@@ -222,6 +229,7 @@ module top#(
     wire            gt_ctl_rx_rsfec_enable_correction;
     wire            gt_ctl_rx_rsfec_enable_indication;
 
+    wire    global_soft_reset;
 
     // CMAC CTRL STATE
     (*mark_debug, mark_debug_clock="gt_txusrclk2" *)  wire [3:0]      cmac_ctrl_tx_state;
@@ -245,6 +253,8 @@ module top#(
 
       .sys_clk         ( sys_clk ),
       .sys_clk_gt      ( sys_clk_gt),
+
+      .dma_bridge_resetn(global_soft_reset),
       
       // Tx
       .pci_exp_txn     ( pci_exp_txn ),
@@ -332,6 +342,9 @@ module top#(
       .cmac_tx_resetn(~gt_usr_tx_reset),
       .CLK(user_clk_250),
       .RST_N(user_resetn),
+      .global_reset_100mhz_clk(global_reset_100mhz_clk),
+      .global_reset_resetn(sys_rst_n_c),
+      .csrSoftResetSignal(global_soft_reset),
 
       .xdmaChannel_rawH2cAxiStream_tvalid(m_axis_h2c_tvalid_0),
       .xdmaChannel_rawH2cAxiStream_tdata(m_axis_h2c_tdata_0),
