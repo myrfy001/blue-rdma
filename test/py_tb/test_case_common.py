@@ -52,7 +52,10 @@ def run_test_case(test_case):
     ret = 0
     try:
         test_case(host_mem)
-    except:
+    except Exception as e:
+        print(e)
+        import traceback
+        traceback.print_exc()
         ret = 1
     finally:
         host_mem.close()

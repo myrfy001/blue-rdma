@@ -808,7 +808,9 @@ module mkRawPacketFakeHeaderStreamInsert#(PipeOut#(RqDataStreamWithExtraInfo) st
         end 
         else begin
             let writeAddr = addrAddPsnMultiplyPMTU(rawPacketWriteBaseAddrReg, zeroExtend(pack(rawPacketBufferIndexReg)), IBV_MTU_4096);
-            rawPacketBufferIndexReg <= rawPacketBufferIndexReg + 1;
+            if (isInsertingFakeHeaderReg) begin 
+                rawPacketBufferIndexReg <= rawPacketBufferIndexReg + 1;
+            end
             let insertStreamFrag = genFakeHeaderSingleBeatStreamForRawPacketReceiveProcessingRightAlign(writeAddr, rawPacketWriteMrKeyReg);
 
             let shiftCnt = ?;
@@ -822,7 +824,8 @@ module mkRawPacketFakeHeaderStreamInsert#(PipeOut#(RqDataStreamWithExtraInfo) st
             endcase
             
             let streamToModify = stream;
-            streamToModify.byteNum = streamToModify.byteNum - fromInteger(shiftCnt * valueOf(FAKE_HEADER_BYTE_LENGTH_FOR_RAW_PACKET));
+            let prevStreamByteNum = isInsertingFakeHeaderReg ? fromInteger(valueOf(FAKE_HEADER_BYTE_LENGTH_FOR_RAW_PACKET)) : tpl_1(previousFragReg).byteNum;
+            streamToModify.byteNum = prevStreamByteNum + stream.byteNum - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
             let modifiedFrag = tuple3(streamToModify, isRawPacket, srcMacIpIdx);
             previousFragReg <= modifiedFrag;
 
@@ -834,12 +837,14 @@ module mkRawPacketFakeHeaderStreamInsert#(PipeOut#(RqDataStreamWithExtraInfo) st
             if (isByteSumOverflow) begin
                 if (stream.isLast) begin
                     stateReg <= RawPacketFakeHeaderStreamInsertStateExtraBeat;
+                    isInsertingFakeHeaderReg <= True; 
                 end
                 else begin
                     isInsertingFakeHeaderReg <= False;
                 end
             end
             else begin
+                isInsertingFakeHeaderReg <= True;
                 immAssert(
                     stream.isLast,
                     "frag isLast assertion @ mkRawPacketFakeHeaderStreamInsert",
@@ -866,8 +871,6 @@ module mkRawPacketFakeHeaderStreamInsert#(PipeOut#(RqDataStreamWithExtraInfo) st
     endrule
 
     rule forwardRawPacketFrag if (stateReg == RawPacketFakeHeaderStreamInsertStateExtraBeat);
-
-        isInsertingFakeHeaderReg <= True; 
         stateReg <= RawPacketFakeHeaderStreamInsertStateNormal;
 
         let shiftCnt = ?;
@@ -883,7 +886,7 @@ module mkRawPacketFakeHeaderStreamInsert#(PipeOut#(RqDataStreamWithExtraInfo) st
         let prevStream  = tpl_1(previousFragReg);
         let srcMacIpIdx = tpl_3(previousFragReg);
         let tmpData = prevStream.data << (shiftCnt * valueOf(FAKE_HEADER_BYTE_LENGTH_FOR_RAW_PACKET) * valueOf(BYTE_WIDTH));
-        let tmpByteNum = prevStream.byteNum - fromInteger(valueOf(FAKE_HEADER_BYTE_LENGTH_FOR_RAW_PACKET));
+        let tmpByteNum = prevStream.byteNum;
 
         let outStream = DataStream {
             data: truncateLSB(tmpData),
