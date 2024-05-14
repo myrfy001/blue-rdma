@@ -289,17 +289,6 @@ class MockNicInterface(ABC):
 
         pass
 
-    @abstractmethod
-    def is_contain_host(self) -> bool:
-        """
-        Check if the mock NIC interface contains a host.
-
-        Returns:
-            bool: True if the mock NIC interface contains a host, False otherwise.
-        """
-
-        return False
-
 
 class NicManager:
     def __init__(self):
@@ -331,11 +320,6 @@ class NicManager:
         forward_thread_a.start()
         forward_thread_b.start()
 
-# tx_packet_accumulate_cnt can be used to mimic line-rate receive, the MockHost will not output tx packet until it accumulated
-# more than tx_packet_accumulate_cnt. This is because network clock is async with rdma clock, so from
-# rx simulator's point of view, the packet received from network interface is non-continous (has bulbs). if we want to test is
-# reveive logic is fully-pipelined, we need to make sure RQ reveive packet continous. So we can buffer some packet.
-
 
 HOST = '127.0.0.1'
 PORT = 9874
@@ -344,16 +328,13 @@ PORT = 9874
 
 
 class EmulatorMockNicAndHost(MockNicInterface):
-    """
-    rx_packet_wait_time can be used to mimic line-rate receive, the MockHost will block simulator and wait
-    up to rx_packet_wait_time seconds. This is because tx simulator may run slower than rx simulator, so from
-    rx simulator's point of view, the packet received from network interface is non-continous. if we try to
-    block rx simulator, then it may see continous input packet data at every
-    clock-cycle
-    """
+    '''
+    # tx_packet_accumulate_cnt can be used to mimic line-rate receive, the MockHost will not output tx packet until it accumulated
+    # more than tx_packet_accumulate_cnt. This is because network clock is async with rdma clock, so from
+    # rx simulator's point of view, the packet received from network interface is non-continous (has bulbs). if we want to test is
+    # reveive logic is fully-pipelined, we need to make sure RQ reveive packet continous. So we can buffer some packet.
+    '''
 
-
-class MockNicAndHost(MockNicInterface):
     def __init__(self, main_memory: MockHostMem, host=None, port=None, tx_packet_accumulate_cnt=0) -> None:
 
         if host is None:
@@ -529,12 +510,6 @@ class MockNicAndHost(MockNicInterface):
 
     def put_net_ifc_rx_data_to_nic(self, frag):
         return self.pending_network_packet_rx.append(frag)
-
-    def driver_listen_port(self) -> Optional[int]:
-        return self.driver_listen_port
-
-    def simulator_listen_port(self) -> Optional[int]:
-        return self.driver_listen_port
 
 
 class RawsocketMockNicAndHost(MockNicInterface):

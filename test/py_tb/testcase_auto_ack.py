@@ -18,7 +18,7 @@ SEND_BYTE_COUNT = PMTU_VAL * PACKET_CNT
 def test_case(host_mem):
     send_psn = SEND_SIDE_PSN_INIT_VAL
     send_msn = SEND_SIDE_MSN_INIT_VAL
-    mock_nic = MockNicAndHost(host_mem)
+    mock_nic = EmulatorMockNicAndHost(host_mem)
     pkt_agent = NetworkDataAgent(mock_nic)
     mock_nic.run()
 
