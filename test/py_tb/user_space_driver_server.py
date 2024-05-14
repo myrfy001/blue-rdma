@@ -20,7 +20,7 @@ class UserspaceDriverServer:
         self.mock_nic_b = nic_b
 
     def run(self):
-        mock_host.EmulatorMockNicAndHost.connect_two_card(
+        mock_host.NicManager.connect_two_card(
             self.mock_nic_a, self.mock_nic_b)
         self.mock_nic_a.run()
         self.mock_nic_b.run()
