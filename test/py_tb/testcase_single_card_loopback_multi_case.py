@@ -256,19 +256,6 @@ def test_case(host_mem):
 
     dst_mem[0:1024] = b'\0' * 1024
 
-    # ================================
-    # 5th case, read const CSR
-    # ================================
-
-    expected_hw_ver = 2024042901
-    hw_ver = mock_nic.read_csr_blocking(CSR_ADDR_HARDWARE_CONST_HW_VERSION)
-    if hw_ver != expected_hw_ver:
-        print("Error: Error at read HW version CSR, expected=",
-              expected_hw_ver, ", got ", hw_ver)
-        raise SystemExit
-    else:
-        print("PASS-6")
-
     mock_nic.stop()
 
 

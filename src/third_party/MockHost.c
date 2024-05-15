@@ -14,6 +14,8 @@
 int rpc_socket_fd = 0;
 pthread_mutex_t mutex;
 
+uint64_t handle = 0;
+
 int connect_to_server(const char *ip_addr, uint16_t port) {
   int sock = 0;
   struct sockaddr_in serv_addr;
@@ -48,6 +50,14 @@ uint32_t isPowerOfTwo(int num) {
 }
 
 uint64_t c_createBRAM(uint32_t word_width, uint64_t memory_size) {
+
+  // check if connection is already exist. This is useful if simulator wants to
+  // do soft reset from CSR
+  if (handle != 0) {
+    fprintf(stdout, "Already connected to MockHost\n");
+    return handle;
+  }
+
   if (word_width < 8 || !isPowerOfTwo(word_width)) {
     fprintf(stderr, "ERROR: word must be multi of 8 bits\n");
     exit(EXIT_FAILURE);
@@ -79,6 +89,7 @@ uint64_t c_createBRAM(uint32_t word_width, uint64_t memory_size) {
 
   pthread_mutex_init(&mutex, NULL);
 
+  handle = (uint64_t)p;
   return (uint64_t)p;
 }
 

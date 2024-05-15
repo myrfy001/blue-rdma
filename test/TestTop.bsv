@@ -35,7 +35,8 @@ import AxiStreamTypes::*;
 
 
 import Top :: *;
-import SendQ::*;
+import SendQ  ::*;
+import SoftReset :: *;
 
 `define TEST_QPN_IDX_PART 'h3
 `define TEST_QPN_KEY_PART 'h611
@@ -54,8 +55,47 @@ import SendQ::*;
 `define TEST_WR_LEN  1023
 
 
+
+
 (* doc = "testcase" *)
 module mkTestTop(Empty);
+    
+
+    Clock sysClk <- mkAbsoluteClock(0, 10);
+    Clock resetManagerClock <- mkAbsoluteClock(0, 1);
+    let rst1 <- mkAsyncResetFromCR(0, sysClk);
+
+    let dutReset <- mkReset(1, False, sysClk, clocked_by sysClk, reset_by rst1);
+    
+    let globalSoftReset <- mkGlobalSoftReset( resetManagerClock, noReset, clocked_by sysClk, reset_by rst1);
+    
+    let dutRst <- mkResetEither(dutReset.new_rst, rst1, clocked_by sysClk, reset_by rst1);
+    let dut <- mkTestTopInner(clocked_by sysClk, reset_by dutRst);
+
+    let crossWire <- mkNullCrossingWire(sysClk, dut.csrSoftResetSignal);
+
+    rule doDoGlobalSoftReset;
+        
+        if (crossWire) begin
+            $display("crossWire=", fshow(crossWire));
+            globalSoftReset.doReset;
+        end
+    endrule
+
+    rule mockSoftResetAction;
+        if (globalSoftReset.resetOut == False) begin
+            dutReset.assertReset;
+        end
+    endrule
+endmodule
+
+interface TestTopInner;
+    (* prefix = "", always_enabled *)
+    method Bool csrSoftResetSignal;
+endinterface
+
+(* doc = "testcase" *)
+module mkTestTopInner(TestTopInner);
 
     Clock rdmaClock <- exposeCurrentClock;
     Reset rdmaReset <- exposeCurrentReset;
@@ -175,9 +215,8 @@ module mkTestTop(Empty);
         csrWriteRespSyncFifo.enq(outResp);
     endrule
 
-    Reg#(Bool) stopReg <- mkReg(False);
-    Reg#(UInt#(32)) idx <- mkReg(0);
 
+    method Bool csrSoftResetSignal = topA.csrSoftResetSignal;
 endmodule
 
 
@@ -295,9 +334,6 @@ module mkTestRdmaAndUserLogicWithoutUdp(Empty);
         let outResp = True;
         csrWriteRespSyncFifo.enq(outResp);
     endrule
-
-    Reg#(Bool) stopReg <- mkReg(False);
-    Reg#(UInt#(32)) idx <- mkReg(0);
 
 endmodule
 

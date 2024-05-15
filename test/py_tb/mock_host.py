@@ -426,7 +426,10 @@ class EmulatorMockNicAndHost(MockNicInterface):
             raise Exception(
                 "pcie write tag conflict, maybe too many outstanding requests")
         self.pending_bar_write_resp[resp.payload.pci_tag] = resp
-        self.pending_bar_write_req_waiting_dict[resp.payload.pci_tag].set()
+
+        if resp.payload.pci_tag in self.pending_bar_write_req_waiting_dict:
+            # only for write csr blocking case, non-blocking version doesn't have event
+            self.pending_bar_write_req_waiting_dict[resp.payload.pci_tag].set()
 
         # this Op doesn't send response
 
@@ -469,6 +472,11 @@ class EmulatorMockNicAndHost(MockNicInterface):
         self.pending_network_packet_tx.append(req.payload)
         self.pending_network_packet_tx_sema.release()
         # this Op doesn't send response
+
+    def write_csr_non_blocking(self, addr, value):
+        tag = self._get_next_pcie_tlp_tag()
+        self.pending_bar_write_req.append(
+            CStructBarIoInfo(valid=1, addr=addr, value=value, pci_tag=tag))
 
     def write_csr_blocking(self, addr, value):
         tag = self._get_next_pcie_tlp_tag()

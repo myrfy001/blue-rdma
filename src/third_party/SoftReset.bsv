@@ -20,13 +20,17 @@ module mkGlobalSoftReset#(Clock boardSysCLk, Reset boardSysReset)(GlobalSoftRese
     SyncBitIfc#(Bool) resetReqSyncBit <- mkSyncBitFromCC(boardSysCLk);
     SyncBitIfc#(Bool) resetSignalOutSyncBit <- mkSyncBitToCC(boardSysCLk, boardSysReset);
 
+    Wire#(Bool) sendResetReqWire <- mkDWire (False);
+
     rule doCounter if (isResetingReg[1]);
         if (delayCounteReg == 0) begin
             isResetingReg[1] <= False;
             delayCounteReg <= fromInteger(valueOf(BOARD_SOFT_RESET_COUNTER_VALUE));
+            $display("finish soft reset count down");
         end
         else begin
             delayCounteReg <= delayCounteReg - 1;
+            // $display("soft reset count down = ", fshow(delayCounteReg));
         end
     endrule
 
@@ -35,6 +39,7 @@ module mkGlobalSoftReset#(Clock boardSysCLk, Reset boardSysReset)(GlobalSoftRese
         if (!isResetingReg[0]) begin
             if (resetReqSyncBit.read) begin
                 isResetingReg[0] <= True;
+                $display("begin soft reset count down");
             end
         end
     endrule
@@ -44,8 +49,14 @@ module mkGlobalSoftReset#(Clock boardSysCLk, Reset boardSysReset)(GlobalSoftRese
         resetSignalOutSyncBit.send(isResetingReg[0]);
     endrule
 
+    rule forwardResetReq;
+        // Send a pluse. prevent deadlock
+        resetReqSyncBit.send(sendResetReqWire);
+    endrule
+
     method Action doReset;
-        resetReqSyncBit.send(True);
+        sendResetReqWire <= True;
     endmethod
+
     method Bool resetOut = !(resetSignalOutSyncBit.read);
 endmodule

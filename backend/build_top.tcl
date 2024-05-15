@@ -16,17 +16,26 @@ set_param general.maxthreads 24
 set device [get_parts $part]; # xcvu13p-fhgb2104-2-i; #
 set_part $device
 
+set ooc_module_names { \
+    mkInputRdmaPktBufAndHeaderValidation \
+}
+
+# set ooc_module_names { \
+#     mkTLB \
+#     mkMemRegionTable \
+#     mkDmaReadReqAddrTranslator \
+#     mkExtractHeaderFromRdmaPktPipeOut \
+#     mkMrAndPgtManager \
+#     mkQPContext \
+#     mkRQ \
+#     mkRqWrapper \
+#     mkXdmaGearbox \
+#     mkXdmaWrapper \
+
+# }
 
 set ooc_module_names { \
-    mkTLB \
-    mkMemRegionTable \
-    mkDmaReadReqAddrTranslator \
-    mkExtractHeaderFromRdmaPktPipeOut \
-    mkMrAndPgtManager \
-    mkQPContext \
-    mkRQ \
-    mkXdmaGearbox \
-    mkXdmaWrapper \
+    mkQueuePair \
 }
 
 proc runGenerateIP {args} {
@@ -75,11 +84,13 @@ proc addExtFiles {args} {
     read_ip [glob $dir_ip_gen/**/*.xci]
     read_verilog [ glob $dir_rtl/*.v ]
     read_verilog [ glob $dir_bsv_gen/*.v ]
+    add_files -norecurse [glob $dir_bsv_gen/*.mem]
     # foreach ooc_top $ooc_module_names {
     #     remove_files ${ooc_top}.v
     # }
     # read_checkpoint ${dir_output}/ooc/mkTLB/mkTLB.dcp
     # read_checkpoint ${dir_output}/ooc/mkMemRegionTable/mkMemRegionTable.dcp
+
     read_xdc [ glob $dir_xdc/*.xdc ]
 }
 
@@ -87,12 +98,15 @@ proc addExtFiles {args} {
 proc runSynthDesign {args} {
     global dir_output top_module max_net_path_num
 
-    synth_design -top $top_module -retiming -flatten_hierarchy none
+    synth_design -top $top_module -flatten_hierarchy none
+
+    source batch_insert_ila.tcl
+    batch_insert_ila 1024
+
     write_checkpoint -force $dir_output/post_synth_design.dcp
     write_xdc -force -exclude_physical $dir_output/post_synth.xdc
 
-    # source batch_insert_ila.tcl
-    # batch_insert_ila 8192
+
 }
 
 
@@ -103,6 +117,8 @@ proc runPostSynthReport {args} {
         open_checkpoint $dir_output/post_synth_design.dcp
     }
 
+    xilinx::designutils::report_failfast -max_paths 10000 -detailed_reports synth -file $dir_output/post_synth_failfast.rpt
+    
     # Check 1) slack, 2) requirement, 3) src and dst clocks, 4) datapath delay, 5) logic level, 6) skew and uncertainty.
     report_timing_summary -report_unconstrained -warn_on_violation -file $dir_output/post_synth_timing_summary.rpt
 ######report_timing -of_objects [get_timing_paths -setup -to [get_clocks $target_clks] -max_paths $max_net_path_num -filter { LOGIC_LEVELS >= 4 && LOGIC_LEVELS <= 40 }] -file $dir_output/post_synth_long_paths.rpt
@@ -120,7 +136,7 @@ proc runPostSynthReport {args} {
     report_design_analysis -logic_level_dist_paths $max_net_path_num -logic_level_distribution -file $dir_output/post_synth_design_logic_level_dist.rpt
 
     report_datasheet -file $dir_output/post_synth_datasheet.rpt
-    xilinx::designutils::report_failfast -detailed_reports synth -file $dir_output/post_synth_failfast.rpt
+    
 
     report_drc -file $dir_output/post_synth_drc.rpt
     report_drc -ruledeck methodology_checks -file $dir_output/post_synth_drc_methodology.rpt
@@ -176,29 +192,34 @@ proc runPlacement {args} {
     #     phys_opt_design
     # }
 
-    file mkdir $dir_output/${current_time}_${directive}
-    write_checkpoint -force $dir_output/${current_time}_${directive}/post_place.dcp
-    write_xdc -force -exclude_physical $dir_output/${current_time}_${directive}/post_place.
+
+
+
+
+
+    # file mkdir $dir_output/${current_time}_${directive}
+    # write_checkpoint -force $dir_output/${current_time}_${directive}/post_place.dcp
+    # write_xdc -force -exclude_physical $dir_output/${current_time}_${directive}/post_place.
     
-    xilinx::designutils::report_failfast -by_slr -detailed_reports impl -file $dir_output/${current_time}_${directive}/post_place_failfast.rpt
-    set slr_nets [xilinx::designutils::get_inter_slr_nets]
-    set slr_nets_exclude_clock [filter $slr_nets "TYPE != GLOBAL_CLOCK"]
-    set slr_net_exclude_clock_num [llength $slr_nets_exclude_clock]
-    if {$slr_net_exclude_clock_num > 0} {
-        report_timing -through $slr_nets_exclude_clock -nworst 1 -max $slr_net_exclude_clock_num -unique_pins -file $dir_output/${current_time}_${directive}/post_place_slr_nets.rpt
-    }
+    # xilinx::designutils::report_failfast -by_slr -detailed_reports impl -file $dir_output/${current_time}_${directive}/post_place_failfast.rpt
+    # set slr_nets [xilinx::designutils::get_inter_slr_nets]
+    # set slr_nets_exclude_clock [filter $slr_nets "TYPE != GLOBAL_CLOCK"]
+    # set slr_net_exclude_clock_num [llength $slr_nets_exclude_clock]
+    # if {$slr_net_exclude_clock_num > 0} {
+    #     report_timing -through $slr_nets_exclude_clock -nworst 1 -max $slr_net_exclude_clock_num -unique_pins -file $dir_output/${current_time}_${directive}/post_place_slr_nets.rpt
+    # }
 
-    report_timing_summary -report_unconstrained -warn_on_violation -file $dir_output/${current_time}_${directive}/post_place_timing_summary.rpt
-    ######report_timing -of_objects [get_timing_paths -hold -to [get_clocks $target_clks] -max_paths $max_net_path_num -filter { LOGIC_LEVELS >= 4 && LOGIC_LEVELS <= 40 }] -file $dir_output/${current_time}_${directive}/post_place_long_paths.rpt
-    report_methodology -file $dir_output/${current_time}_${directive}/post_place_methodology.rpt
-    report_timing -max $max_net_path_num -slack_less_than 0 -file $dir_output/${current_time}_${directive}/post_place_timing.rpt
+    # report_timing_summary -report_unconstrained -warn_on_violation -file $dir_output/${current_time}_${directive}/post_place_timing_summary.rpt
+    # ######report_timing -of_objects [get_timing_paths -hold -to [get_clocks $target_clks] -max_paths $max_net_path_num -filter { LOGIC_LEVELS >= 4 && LOGIC_LEVELS <= 40 }] -file $dir_output/${current_time}_${directive}/post_place_long_paths.rpt
+    # report_methodology -file $dir_output/${current_time}_${directive}/post_place_methodology.rpt
+    # report_timing -max $max_net_path_num -slack_less_than 0 -file $dir_output/${current_time}_${directive}/post_place_timing.rpt
 
-    report_route_status -file $dir_output/${current_time}_${directive}/post_place_status.rpt
-    report_drc -file $dir_output/${current_time}_${directive}/post_place_drc.rpt
-    report_drc -ruledeck methodology_checks -file $dir_output/${current_time}_${directive}/post_place_drc_methodology.rpt
-    report_drc -ruledeck timing_checks -file $dir_output/${current_time}_${directive}/post_place_drc_timing.rpt
-    # Check unique control sets < 7.5% of total slices, at most 15%
-    report_control_sets -verbose -file $dir_output/${current_time}_${directive}/post_place_control_sets.rpt
+    # report_route_status -file $dir_output/${current_time}_${directive}/post_place_status.rpt
+    # report_drc -file $dir_output/${current_time}_${directive}/post_place_drc.rpt
+    # report_drc -ruledeck methodology_checks -file $dir_output/${current_time}_${directive}/post_place_drc_methodology.rpt
+    # report_drc -ruledeck timing_checks -file $dir_output/${current_time}_${directive}/post_place_drc_timing.rpt
+    # # Check unique control sets < 7.5% of total slices, at most 15%
+    # report_control_sets -verbose -file $dir_output/${current_time}_${directive}/post_place_control_sets.rpt
 }
 
 
@@ -300,6 +321,9 @@ proc runWriteBitStream {args} {
         open_checkpoint $dir_output/post_route.dcp
     }
 
+    set_property CONFIG_MODE SPIx4 [current_design]
+    set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4 [current_design]
+
     write_bitstream -force $dir_output/top.bit
 }
 
@@ -322,17 +346,21 @@ proc runProgramDevice {args} {
 # runGenerateIP -open_checkpoint false
 # runSynthIP -open_checkpoint false
 # runSynthOOC
-# addExtFiles -open_checkpoint false
-# runSynthDesign -open_checkpoint false
+addExtFiles -open_checkpoint false
+runSynthDesign -open_checkpoint false
 # runPostSynthReport -open_checkpoint false
 # runPlacement -open_checkpoint true -directive ExtraNetDelay_high
-runPlacement -open_checkpoint true -directive WLDrivenBlockPlacement
+# runPlacement -open_checkpoint true -directive WLDrivenBlockPlacement
 # runPlacement -open_checkpoint true -directive Explore
 # runPlacement -open_checkpoint true -directive Auto_1
 # runPlacement -open_checkpoint true -directive EarlyBlockPlacement
-# runPlacement -open_checkpoint true
+
+# runPlacement -open_checkpoint true -directive WLDrivenBlockPlacement
+
+runPlacement -open_checkpoint false -directive ExtraNetDelay_high
+
 # runPostPlacementReport -open_checkpoint false
-# runRoute -open_checkpoint false
+runRoute -open_checkpoint false
 # runPostRouteReport -open_checkpoint false
-# runWriteBitStream -open_checkpoint false
+runWriteBitStream -open_checkpoint false
 # runProgramDevice -open_checkpoint false

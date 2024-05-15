@@ -91,8 +91,17 @@ module mkBsvTop(
     RdmaUserLogicWithoutXdmaAndCmacWrapper udpAndRdma <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(udpClock, udpReset, dmacClock, dmacReset);
     mkConnection(xdmaAxiLiteWrap.csrWriteClt, udpAndRdma.csrWriteSrv);
     mkConnection(xdmaAxiLiteWrap.csrReadClt, udpAndRdma.csrReadSrv);
+
+`ifdef DO_BANDWIDTH_TEST
+    let midLayer <- mkDmaReqMiddleLayerForBandwidthTest;
+    mkConnection(midLayer.dmaReadSrv, udpAndRdma.dmaReadClt);
+    mkConnection(midLayer.dmaWriteSrv, udpAndRdma.dmaWriteClt);
+    mkConnection(xdmaWrap.dmaReadSrv, midLayer.dmaReadClt);
+    mkConnection(xdmaWrap.dmaWriteSrv, midLayer.dmaWriteClt);
+`else    
     mkConnection(xdmaWrap.dmaReadSrv, udpAndRdma.dmaReadClt);
     mkConnection(xdmaWrap.dmaWriteSrv, udpAndRdma.dmaWriteClt);
+`endif
 
 
     Bool isCmacTxWaitRxAligned = True;
@@ -425,9 +434,10 @@ module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
 endmodule
 
 typedef enum {
-    UdpReceivingChannelSelectStateIdle          = 0,
-    UdpReceivingChannelSelectStateRecvRdmaData  = 1,
-    UdpReceivingChannelSelectStateRecvRawData   = 2
+    UdpReceivingChannelSelectStateNotInit       = 0,
+    UdpReceivingChannelSelectStateIdle          = 1,
+    UdpReceivingChannelSelectStateRecvRdmaData  = 2,
+    UdpReceivingChannelSelectStateRecvRawData   = 3
 } UdpReceivingChannelSelectState deriving(Bits, Eq);
 
 
@@ -464,7 +474,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     // let udpGearbox <- mkUdpGearbox(rdmaClock, rdmaReset, udpClock, udpReset);
 
-    Reg#(UdpReceivingChannelSelectState)  isReceivingRawPacketReg <- mkReg(UdpReceivingChannelSelectStateIdle);
+    Reg#(UdpReceivingChannelSelectState)  isReceivingRawPacketReg <- mkReg(UdpReceivingChannelSelectStateNotInit);
 
     RingbufStorage#(RecvPacketSrcMacIpBufferEntry, RecvPacketSrcMacIpBufferIdx) recvMacIpStorage <- mkRingbufStorage("recvMacIpStorage");
 
@@ -508,20 +518,38 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     // endrule
 
     Reg#(Bool) udpConfigInitedReg <- mkReg(False);
-    rule initAndFOrwardUdpConfig;
+    rule initAndForwardUdpConfig;
+        let cfg <- rdma.setNetworkParamReqOut.get;
+        udp.netTxRxIfc.udpConfig.put(cfg);
         udpConfigInitedReg <= True;
-        if (udpConfigInitedReg) begin
-            let cfg <- rdma.setNetworkParamReqOut.get;
-            udp.netTxRxIfc.udpConfig.put(cfg);
+    endrule
+
+    rule changeRxChannelStateToInit if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateNotInit);
+
+        Maybe#(Bool) isLast = tagged Invalid;
+
+        if (udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
+            let data = udp.netTxRxIfc.dataStreamRxOut.first;
+            if (data.isFirst) begin
+                udp.netTxRxIfc.macMetaDataRxOut.deq;
+                udp.netTxRxIfc.dataStreamRxOut.deq;
+            end
+            udp.netTxRxIfc.udpIpMetaDataRxOut.deq;
+            isLast = tagged Valid data.isLast;
         end
-        else begin
-            // set some fake value to prevent UDP block
-            udp.netTxRxIfc.udpConfig.put(UdpConfig{
-                macAddr: 'hAABBCCDDEEFF,
-                ipAddr: 'h7F000003,
-                netMask: 0,
-                gateWay: 0
-            } );
+        else if (udp.netTxRxIfc.rawPktStreamRxOut.notEmpty) begin
+            let data = udp.netTxRxIfc.rawPktStreamRxOut.first;
+            udp.netTxRxIfc.rawPktStreamRxOut.deq;
+            isLast = tagged Valid data.isLast;
+        end
+
+        if (!isValid(isLast)) begin
+            isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
+        end
+        else if (isLast matches tagged Valid .value) begin
+            if (value == True) begin
+                isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
+            end
         end
     endrule
 

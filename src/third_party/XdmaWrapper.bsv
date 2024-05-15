@@ -260,6 +260,186 @@ module mkXdmaWrapper(XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TU
 endmodule
 
 
+interface DmaReqMiddleLayerForBandwidthTest;
+    interface UserLogicDmaReadWideSrv dmaReadSrv;
+    interface UserLogicDmaWriteWideSrv dmaWriteSrv;
+    interface UserLogicDmaReadWideClt dmaReadClt;
+    interface UserLogicDmaWriteWideClt dmaWriteClt;
+endinterface
+
+typedef 8 BANDWIDTH_TEST_TRIGGER_MARK_ADDR_BIT_WIDTH;
+typedef 'hAA BANDWIDTH_TEST_TRIGGER_ADDR_BIT_VALUE;
+typedef Bit#(BANDWIDTH_TEST_TRIGGER_MARK_ADDR_BIT_WIDTH) BandwidthTriggerMark;
+
+(* synthesize *)
+module mkDmaReqMiddleLayerForBandwidthTest(DmaReqMiddleLayerForBandwidthTest);
+
+    FIFOF#(UserLogicDmaH2cReq) dmaReadReqSrvQ     <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cWideResp) dmaReadRespSrvQ   <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hWideReq) dmaWriteReqSrvQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hResp) dmaWriteRespSrvQ   <- mkFIFOF;
+
+    FIFOF#(UserLogicDmaH2cReq) dmaReadReqCltQ     <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cWideResp) dmaReadRespCltQ    <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hWideReq) dmaWriteReqCltQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hResp) dmaWriteRespCltQ   <- mkFIFOF;
+
+    FIFOF#(UserLogicDmaH2cReq) dmaReadReqFakeQ     <- mkFIFOF;
+    FIFOF#(UserLogicDmaH2cWideResp) dmaReadRespFakeQ    <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hWideReq) dmaWriteReqFakeQ <- mkFIFOF;
+    FIFOF#(UserLogicDmaC2hResp) dmaWriteRespFakeQ   <- mkFIFOF;
+
+
+
+    Reg#(Byte) readGenCounter  <- mkRegU;
+    Reg#(Byte) writeGenCounter <- mkRegU;
+
+    FIFOF#(Bool) readReqKeepOrderQ  <- mkFIFOF;
+    FIFOF#(Bool) writeReqKeepOrderQ <- mkFIFOF;
+
+    Reg#(UserLogicDmaLen) fakeReadLengthReg <- mkRegU;
+    Reg#(Byte) fakeReadDataReg <- mkRegU;
+    Reg#(Bool) fakeReadisFirstBeatReg <- mkReg(True);
+
+    Reg#(Byte) fakeWriteDataReg <- mkRegU;
+    Reg#(Bool) fakeWriteCheckHasErrorReg <- mkReg(False);
+
+    Bool is_FAKE = True;
+
+    function DATA_WIDE fillDataStreamWithByte(Byte value);
+        DATA_WIDE outData = ?;
+        for (Integer idx = 0; idx < valueOf(DATA_BUS_BYTE_WIDTH); idx=idx+1) begin
+            outData[(idx+1) * valueOf(BYTE_WIDTH) - 1 : idx * valueOf(BYTE_WIDTH)] = value;
+        end
+        return outData;
+    endfunction
+
+    rule genFakeReadData;
+        let curLeftLen = fakeReadisFirstBeatReg ? dmaReadReqFakeQ.first.len : fakeReadLengthReg;
+        Byte curData = fakeReadisFirstBeatReg ? truncate(dmaReadReqFakeQ.first.addr) : fakeReadDataReg;
+        let data = fillDataStreamWithByte(curData);
+
+        if (fakeReadisFirstBeatReg) begin
+            fakeReadLengthReg <= curLeftLen - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        end
+
+        let ds = ?;
+        if (curLeftLen > fromInteger(valueOf(DATA_BUS_BYTE_WIDTH))) begin
+            ds = DataStreamWideEn {
+                isFirst: fakeReadisFirstBeatReg,
+                isLast: False,
+                data: data,
+                byteEn: -1
+            };
+            fakeReadisFirstBeatReg <= False;
+            fakeReadDataReg <= curData + 1;
+        end
+        else begin
+            ds = DataStreamWideEn {
+                isFirst: fakeReadisFirstBeatReg,
+                isLast: True,
+                data: data,
+                byteEn: (1 << curLeftLen) - 1
+            };
+            dmaReadReqFakeQ.deq;
+            fakeReadisFirstBeatReg <= True;
+        end
+        dmaReadRespFakeQ.enq(UserLogicDmaH2cWideResp{dataStream:ds});
+    endrule
+
+
+    rule checkFakeWriteData;
+        let req = dmaWriteReqFakeQ.first;
+        let reqDs = req.dataStream;
+        dmaWriteReqFakeQ.deq;
+        
+        Byte curData = reqDs.isFirst ? truncate(req.addr) : fakeWriteDataReg;
+        fakeWriteDataReg <= curData + 1;
+
+        if (truncate(reqDs.data) != curData || truncateLSB(reqDs.data) != curData) begin
+            fakeWriteCheckHasErrorReg <= True;
+        end
+
+        if (reqDs.isLast) begin
+            dmaWriteRespFakeQ.enq(UserLogicDmaC2hResp{});
+        end
+    endrule
+
+    rule forwardReadReq;
+        let req = dmaReadReqSrvQ.first;
+        dmaReadReqSrvQ.deq;
+        BandwidthTriggerMark triggerMark = truncateLSB(req.addr);
+        if (triggerMark == fromInteger(valueOf(BANDWIDTH_TEST_TRIGGER_ADDR_BIT_VALUE))) begin
+            dmaReadReqFakeQ.enq(req);
+            readReqKeepOrderQ.enq(is_FAKE);
+        end
+        else begin
+            dmaReadReqCltQ.enq(req);
+            readReqKeepOrderQ.enq(!is_FAKE);
+        end
+    endrule
+
+    rule forwardReadResp;
+        let isFake = readReqKeepOrderQ.first;
+        if (isFake) begin
+            let resp = dmaReadRespFakeQ.first;
+            dmaReadRespFakeQ.deq;
+            dmaReadRespSrvQ.enq(resp);
+            if (resp.dataStream.isLast) begin
+                readReqKeepOrderQ.deq;
+            end
+        end
+        else begin
+            let resp = dmaReadRespCltQ.first;
+            dmaReadRespCltQ.deq;
+            dmaReadRespSrvQ.enq(resp);
+            if (resp.dataStream.isLast) begin
+                readReqKeepOrderQ.deq;
+            end
+        end
+    endrule
+
+    rule forwardWriteReq;
+        let req = dmaWriteReqSrvQ.first;
+        dmaWriteReqSrvQ.deq;
+        BandwidthTriggerMark triggerMark = truncateLSB(req.addr);
+        if (triggerMark == fromInteger(valueOf(BANDWIDTH_TEST_TRIGGER_ADDR_BIT_VALUE))) begin
+            dmaWriteReqFakeQ.enq(req);
+            if (req.dataStream.isFirst) begin
+                writeReqKeepOrderQ.enq(is_FAKE);
+            end
+        end
+        else begin
+            dmaWriteReqCltQ.enq(req);
+            if (req.dataStream.isFirst) begin
+                writeReqKeepOrderQ.enq(!is_FAKE);
+            end
+        end
+    endrule
+
+    rule forwardWriteResp;
+        let isFake = writeReqKeepOrderQ.first;
+        if (isFake) begin
+            let resp = dmaWriteRespFakeQ.first;
+            dmaWriteRespFakeQ.deq;
+            dmaWriteRespSrvQ.enq(resp);
+            writeReqKeepOrderQ.deq;
+        end
+        else begin
+            let resp = dmaWriteRespCltQ.first;
+            dmaWriteRespCltQ.deq;
+            dmaWriteRespSrvQ.enq(resp);
+            writeReqKeepOrderQ.deq;
+        end
+    endrule
+
+    interface dmaReadSrv = toGPServer(dmaReadReqSrvQ, dmaReadRespSrvQ);
+    interface dmaWriteSrv = toGPServer(dmaWriteReqSrvQ, dmaWriteRespSrvQ);
+
+    interface dmaReadClt = toGPClient(dmaReadReqCltQ, dmaReadRespCltQ);
+    interface dmaWriteClt = toGPClient(dmaWriteReqCltQ, dmaWriteRespCltQ);
+endmodule
+
 
 
 

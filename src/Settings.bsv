@@ -13,7 +13,11 @@ typedef 250000000 RDMA_FREQ;
 typedef 250000000 DMAC_FREQ;
 
 typedef 100000000 BOARD_SYS_CLK_FREQ;
-typedef 5000000   BOARD_SOFT_RESET_COUNTER_VALUE;  // 50ms @ BOARD_SYS_CLK_FREQ
+`ifdef IS_DEBUG
+    typedef 5   BOARD_SOFT_RESET_COUNTER_VALUE;
+`else
+    typedef 5000000   BOARD_SOFT_RESET_COUNTER_VALUE;  // 50ms @ BOARD_SYS_CLK_FREQ
+`endif
 
 // RDMA device attributes
 // Must be power of 2
