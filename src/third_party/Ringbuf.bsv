@@ -151,8 +151,8 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
     );
 
     Reg#(ADDR) baseAddrReg <- mkReg(0);
-    Reg#(Fix4kBRingBufPointer) headReg <- mkConfigReg(unpack(0));
-    Reg#(Fix4kBRingBufPointer) tailReg <- mkConfigReg(unpack(0));
+    Reg#(Fix4kBRingBufPointer) headReg[2] <- mkCReg(2, unpack(0));
+    Reg#(Fix4kBRingBufPointer) tailReg[2] <- mkCReg(2, unpack(0));
     Reg#(Fix4kBRingBufPointer) tailShadowReg <- mkConfigReg(unpack(0));
     FIFOF#(UserLogicDmaH2cReq) dmaReqQ <- mkFIFOF;
     FIFOF#(UserLogicDmaH2cResp) dmaRespQ <- mkFIFOF;
@@ -168,7 +168,7 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
         Fix4kBRingBufPointer ringbufReadBlockInnerOffsetMask = 0;
         ringbufReadBlockInnerOffsetMask.idx = ~((1 << valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK))) - 1); 
 
-        if (isRingbufNotEmpty(headReg, tailShadowReg) && !fifoCntrl.notEmpty) begin
+        if (isRingbufNotEmpty(headReg[0], tailShadowReg) && !fifoCntrl.notEmpty) begin
             let {curReadBlockStartAddrPgn, _} = getPageNumberAndOffset4k(baseAddrReg);
 
             PageOffset4k curReadBlockStartAddrOff = zeroExtend(
@@ -179,7 +179,7 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
             let readBlockAlignedTailShadow = tailShadowReg + fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK));
             readBlockAlignedTailShadow.idx = readBlockAlignedTailShadow.idx & ringbufReadBlockInnerOffsetMask.idx;
 
-            let availableEntryCnt = headReg - tailShadowReg;
+            let availableEntryCnt = headReg[0] - tailShadowReg;
             let avaliableSlotInReadBlock = fromInteger(valueOf(RINGBUF_DESC_ENTRY_PER_READ_BLOCK)) - pack(tailShadowReg.idx)[valueOf(TLog#(RINGBUF_DESC_ENTRY_PER_READ_BLOCK))-1:0];
             
             Fix4kBRingBufPointer newTailShadow;
@@ -187,7 +187,7 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
                 newTailShadow = readBlockAlignedTailShadow;
             end 
             else begin
-                newTailShadow = headReg;
+                newTailShadow = headReg[0];
             end
 
             dmaReqQ.enq(UserLogicDmaH2cReq{
@@ -195,7 +195,7 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
                     len: fromInteger(valueOf(RINGBUF_BLOCK_READ_LEN))
             });
             // $display("h2c ringbuf send new dma request");
-            tailPosInReadBlockReg <= truncate(pack(tailReg));
+            tailPosInReadBlockReg <= truncate(pack(tailReg[0]));
 
             tailShadowReg <= newTailShadow;
             ruleState <= True;
@@ -229,18 +229,18 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
             // $display("skip already handled...tailPosInReadBlockReg=", tailPosInReadBlockReg);
         end 
         else begin
-            let newTail = tailReg;
-            if (tailReg != tailShadowReg) begin
+            let newTail = tailReg[0];
+            if (tailReg[0] != tailShadowReg) begin
                 // the end of read block may contain invalid descriptors, don't handle descriptors beyond tailShadowReg
                 t_elem t = unpack(pack(desc));
                 // $display("Ringbuf H2c enqueue descriptor, qIdx=", fshow(qIdx), fshow(t));
                 fifoCntrl.fillBuf(t);
-                newTail = tailReg + 1;
-                tailReg <= newTail;
-                // $display("tail incr...old tailReg=%h, new=%x", tailReg, newTail);
+                newTail = tailReg[0] + 1;
+                tailReg[0] <= newTail;
+                // $display("tail incr...old tailReg=%h, new=%x", tailReg[0], newTail);
             end 
             else begin
-                // $display("skip invalid...tailReg=%h", tailReg);
+                // $display("skip invalid...tailReg=%h", tailReg[0]);
             end
 
             if (isLast) begin
@@ -260,8 +260,8 @@ module mkRingbufH2cController(RingbufNumber qIdx, H2CRingBufFifoCntrlIfc#(t_elem
 
     interface RingbufH2cMetadata metadata;
         interface addr = baseAddrReg;
-        interface head = headReg;
-        interface tail = tailReg;
+        interface head = headReg[1];
+        interface tail = tailReg[1];
         interface tailShadow = tailShadowReg;
     endinterface
     interface dmaClt = toGPClient(dmaReqQ, dmaRespQ);
@@ -290,8 +290,8 @@ module mkRingbufC2hController(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, Ri
     );
 
     Reg#(ADDR) baseAddrReg <- mkReg(0);
-    Reg#(Fix4kBRingBufPointer) headReg <- mkConfigReg(unpack(0));
-    Reg#(Fix4kBRingBufPointer) tailReg <- mkConfigReg(unpack(0));
+    Reg#(Fix4kBRingBufPointer) headReg[2] <- mkCReg(2, unpack(0));
+    Reg#(Fix4kBRingBufPointer) tailReg[2] <- mkCReg(2, unpack(0));
     Reg#(Fix4kBRingBufPointer) headShadowReg <- mkConfigReg(unpack(0));
     FIFOF#(UserLogicDmaC2hReq) dmaReqQ <- mkFIFOF;
     FIFOF#(UserLogicDmaC2hResp) dmaRespQ <- mkFIFOF;
@@ -302,7 +302,7 @@ module mkRingbufC2hController(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, Ri
     
     rule sendDmaReq;
 
-        if (isRingbufNotFull(headShadowReg, tailReg) && fifoCntrl.notEmpty) begin
+        if (isRingbufNotFull(headShadowReg, tailReg[0]) && fifoCntrl.notEmpty) begin
 
             let {curWriteBlockStartAddrPgn, _} = getPageNumberAndOffset4k(baseAddrReg);
 
@@ -334,16 +334,16 @@ module mkRingbufC2hController(RingbufNumber qIdx, PipeOut#(t_elem) fifoCntrl, Ri
     rule recvDmaResp;
         dmaRespQ.deq;
         let resp = dmaRespQ.first;
-        // $display("recvDmaResp @ Q=%d -- head = %x, tail = %x, head_shadow = %x", qIdx, headReg, tailReg, headShadowReg);
-        let newHead = headReg + 1;
-        headReg <= newHead;
-        // $display("head incr...old tailReg=%h, new=%x", headReg, newHead);
+        // $display("recvDmaResp @ Q=%d -- head = %x, tail = %x, head_shadow = %x", qIdx, headReg[0], tailReg[0], headShadowReg);
+        let newHead = headReg[0] + 1;
+        headReg[0] <= newHead;
+        // $display("head incr...old headReg=%h, new=%x", headReg[0], newHead);
     endrule
 
     interface RingbufC2hMetadata metadata;
         interface addr = baseAddrReg;
-        interface head = headReg;
-        interface tail = tailReg;
+        interface head = headReg[1];
+        interface tail = tailReg[1];
         interface headShadow = headShadowReg;
     endinterface
     interface dmaClt = toGPClient(dmaReqQ, dmaRespQ);

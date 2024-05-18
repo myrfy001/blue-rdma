@@ -81,6 +81,7 @@ typedef TLog#(PAGE_SIZE_CAP)                          PAGE_OFFSET_WIDTH;
 typedef TSub#(PHYSICAL_ADDR_WIDTH, PAGE_OFFSET_WIDTH) PAGE_NUMBER_WIDTH;   // 48-21=27
 typedef Bit#(PAGE_OFFSET_WIDTH)  PageOffset;
 typedef Bit#(PAGE_NUMBER_WIDTH)  PageNumber;
+typedef Bit#(PHYSICAL_ADDR_WIDTH) PADDR;
 
 typedef TExp#(14) TLB_CACHE_SIZE; // TLB cache size 16K
 typedef TLog#(TLB_CACHE_SIZE) TLB_CACHE_INDEX_WIDTH; // 14

@@ -114,8 +114,17 @@ module mkTestTopInner(TestTopInner);
 
     FakeXdma fakeXdmaA <- mkFakeXdma(1, cmacRxTxClk, cmacRxTxRst);
 
+
+`ifdef DO_BANDWIDTH_TEST
+    let midLayer <- mkDmaReqMiddleLayerForBandwidthTest;
+    mkConnection(midLayer.dmaReadSrv, topA.dmaReadClt);
+    mkConnection(midLayer.dmaWriteSrv, topA.dmaWriteClt);
+    mkConnection(fakeXdmaA.xdmaH2cSrv, midLayer.dmaReadClt);
+    mkConnection(fakeXdmaA.xdmaC2hSrv, midLayer.dmaWriteClt);
+`else    
     mkConnection(fakeXdmaA.xdmaH2cSrv, topA.dmaReadClt);
     mkConnection(fakeXdmaA.xdmaC2hSrv, topA.dmaWriteClt);
+`endif
 
     SyncFIFOIfc#(CsrAddr) csrReadReqSyncFifo <- mkSyncFIFO(2, dmacClock, dmacReset, rdmaClock);
     mkConnection(fakeXdmaA.barReadClt.request, toPut(csrReadReqSyncFifo)); 

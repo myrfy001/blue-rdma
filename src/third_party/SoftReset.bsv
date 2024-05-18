@@ -16,11 +16,31 @@ module mkGlobalSoftReset#(Clock boardSysCLk, Reset boardSysReset)(GlobalSoftRese
         reset_by boardSysReset
     );
     Reg#(Bool) isResetingReg[2] <- mkCReg(2, False, clocked_by boardSysCLk, reset_by boardSysReset);
+    Reg#(Bool) isDoingTriggerDelay[2] <- mkCReg(2, False, clocked_by boardSysCLk, reset_by boardSysReset);
+
+    Reg#(UInt#(TLog#(BOARD_SOFT_RESET_COUNTER_VALUE))) triggerDelayCounteReg <- mkReg(
+        fromInteger(valueOf(BOARD_SOFT_RESET_COUNTER_VALUE)),
+        clocked_by boardSysCLk,
+        reset_by boardSysReset
+    );
 
     SyncBitIfc#(Bool) resetReqSyncBit <- mkSyncBitFromCC(boardSysCLk);
     SyncBitIfc#(Bool) resetSignalOutSyncBit <- mkSyncBitToCC(boardSysCLk, boardSysReset);
 
     Wire#(Bool) sendResetReqWire <- mkDWire (False);
+
+    rule handleTriggerDelay if (isDoingTriggerDelay[1]);
+        if (triggerDelayCounteReg == 0) begin
+            isResetingReg[0] <= True;
+            isDoingTriggerDelay[1] <= False;
+            triggerDelayCounteReg <= fromInteger(valueOf(BOARD_SOFT_RESET_COUNTER_VALUE));
+            $display("trigger delay count down done");
+        end
+        else begin
+            triggerDelayCounteReg <= triggerDelayCounteReg - 1;
+        end
+        
+    endrule
 
     rule doCounter if (isResetingReg[1]);
         if (delayCounteReg == 0) begin
@@ -38,7 +58,7 @@ module mkGlobalSoftReset#(Clock boardSysCLk, Reset boardSysReset)(GlobalSoftRese
     rule forwardResetReqCDC;
         if (!isResetingReg[0]) begin
             if (resetReqSyncBit.read) begin
-                isResetingReg[0] <= True;
+                isDoingTriggerDelay[0] <= True;
                 $display("begin soft reset count down");
             end
         end

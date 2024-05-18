@@ -181,7 +181,7 @@ module mkRqWrapper(RqWrapper);
     // TODO try remove this proxy.
     BluerdmaDmaProxyForRQ bluerdmaDmaProxyForRQ <- mkBluerdmaDmaProxyForRQ;
 
-    RingbufStorage#(DATA, InputStreamFragBufferIdx) recvStreamFragStorage <- mkRingbufStorage("recvStreamFragStorage");
+    RingbufStorage#(DATA, InputStreamFragBufferIdx) recvStreamFragStorage <- mkRingbufStorage("recvStreamFragStorage", True);
     RQ rqCore <- mkRQ;
     let inputRdmaPktBufAndHeaderValidation <- mkInputRdmaPktBufAndHeaderValidation;
     QPContext qpc <- mkQPContext;
@@ -288,15 +288,6 @@ endinterface
 
 
 (* synthesize *)
-// TODO: refactor ringbuf module to get rid of these compiler attributes.
-(* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_0.recvDmaResp" *) 
-(* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_0.recvDmaResp_1" *) 
-(* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp" *) 
-(* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_1.recvDmaResp_1" *) 
-// (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp" *)
-// (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_2.recvDmaResp_1" *) 
-// (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp" *)
-// (* preempts = "csrBlock.ruleHandleWrite, ringbufPool.controller_3.recvDmaResp_1" *) 
 module mkRdmaUserLogicWithoutXdmaAndUdpCmacWrapper(
     Clock dmacClock, 
     Reset dmacReset, 
@@ -476,7 +467,7 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     Reg#(UdpReceivingChannelSelectState)  isReceivingRawPacketReg <- mkReg(UdpReceivingChannelSelectStateNotInit);
 
-    RingbufStorage#(RecvPacketSrcMacIpBufferEntry, RecvPacketSrcMacIpBufferIdx) recvMacIpStorage <- mkRingbufStorage("recvMacIpStorage");
+    RingbufStorage#(RecvPacketSrcMacIpBufferEntry, RecvPacketSrcMacIpBufferIdx) recvMacIpStorage <- mkRingbufStorage("recvMacIpStorage", False);
 
     FIFOF#(Ports::DataStream) udpTxStreamBufQ <- mkFIFOF;
     FIFOF#(UdpIpMetaData) udpTxIpMetaBufQ <- mkFIFOF;
@@ -521,6 +512,12 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
     rule initAndForwardUdpConfig;
         let cfg <- rdma.setNetworkParamReqOut.get;
         udp.netTxRxIfc.udpConfig.put(cfg);
+        // udp.netTxRxIfc.udpConfig.put(UdpConfig{
+        //     macAddr: 'hAABBCCDDEEFF,
+        //     ipAddr:     'h7F000003,
+        //     netMask:  'h0,
+        //     gateWay:  'h0
+        // } );
         udpConfigInitedReg <= True;
     endrule
 
@@ -530,11 +527,11 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
         if (udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
             let data = udp.netTxRxIfc.dataStreamRxOut.first;
+            udp.netTxRxIfc.dataStreamRxOut.deq;
             if (data.isFirst) begin
                 udp.netTxRxIfc.macMetaDataRxOut.deq;
-                udp.netTxRxIfc.dataStreamRxOut.deq;
+                udp.netTxRxIfc.udpIpMetaDataRxOut.deq;
             end
-            udp.netTxRxIfc.udpIpMetaDataRxOut.deq;
             isLast = tagged Valid data.isLast;
         end
         else if (udp.netTxRxIfc.rawPktStreamRxOut.notEmpty) begin
@@ -543,15 +540,19 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             isLast = tagged Valid data.isLast;
         end
 
-        if (!isValid(isLast)) begin
-            isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
-        end
-        else if (isLast matches tagged Valid .value) begin
-            if (value == True) begin
+        if (udpConfigInitedReg) begin
+            if (!isValid(isLast)) begin
                 isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
+            end
+            else if (isLast matches tagged Valid .value) begin
+                if (value == True) begin
+                    isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
+                end
             end
         end
     endrule
+
+    Reg#(Bit#(14)) forwardTxStreamCntReg <- mkReg(0);
 
     rule forwardTxStream;
         rdma.sqRdmaDataStreamPipeOut.deq;
@@ -563,6 +564,9 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             isFirst:    data.isFirst,
             isLast:     data.isLast
         });
+        if (data.isFirst) begin
+            forwardTxStreamCntReg <= forwardTxStreamCntReg + 1;
+        end
     endrule
 
     rule forwardTxMeta;

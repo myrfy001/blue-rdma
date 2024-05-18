@@ -2050,7 +2050,7 @@ interface RingbufStorage#(type t_data, type t_idx);
 endinterface
 
 
-module mkRingbufStorage#(String name)(RingbufStorage#(t_data, t_idx)) provisos (
+module mkRingbufStorage#(String name, Bool checkOverflow)(RingbufStorage#(t_data, t_idx)) provisos (
     Bits#(t_data, sz_data),
     Bits#(t_idx, sz_idx),
     Alias#(Bit#(sz_idxNoGuard), t_idxNoGuard),
@@ -2113,13 +2113,15 @@ module mkRingbufStorage#(String name)(RingbufStorage#(t_data, t_idx)) provisos (
             });
     
             // if the substruct result's highest bit is one, the overflow
-            immAssert(
-                ((idx - lastConsumeIdxReg) >> valueOf(sz_idxNoGuard)) == 0,
-                "buf overfllow @ RingbufStorage",
-                $format(
-                    "ringbufName=", fshow(name), "idx=", fshow(idx), " lastConsumeIdxReg=", fshow(lastConsumeIdxReg)
-                )
-            );
+            if (checkOverflow) begin
+                immAssert(
+                    ((idx - lastConsumeIdxReg) >> valueOf(sz_idxNoGuard)) == 0,
+                    "buf overfllow @ RingbufStorage",
+                    $format(
+                        "ringbufName=", fshow(name), "idx=", fshow(idx), " lastConsumeIdxReg=", fshow(lastConsumeIdxReg)
+                    )
+                );
+            end
     
             $display(
                 "time=%0t:", $time, "RingbufStorage new input entry",

@@ -6,6 +6,8 @@ DIR_BSV_GENERATED ?= $(BUILDDIR)
 
 SIMSCRIPT_NAME = ./$(TOPMODULE).sh
 
+MISCFLAGS += -D IS_DEBUG=True
+
 gen_udp_crc_tab:
 	python3 $(BLUE_CRC_DIR)/scripts/gen_crc_tab.py \
 			$(BLUE_UDP_CRC_TABLE_GEN_INFO_DIR)/crc_ieee_32_512.json \

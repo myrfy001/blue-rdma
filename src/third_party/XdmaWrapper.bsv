@@ -306,6 +306,11 @@ module mkDmaReqMiddleLayerForBandwidthTest(DmaReqMiddleLayerForBandwidthTest);
 
     Bool is_FAKE = True;
 
+    Reg#(Bool) startTimCounterReg[2] <- mkCReg(2, False);
+    Reg#(Bit#(32)) timCounterReg <- mkReg(0);
+    Reg#(Bit#(32)) timCounterSnapshotReg <- mkReg(0);
+    Reg#(Bit#(32)) packetCounterReg <- mkReg(0);
+
     function DATA_WIDE fillDataStreamWithByte(Byte value);
         DATA_WIDE outData = ?;
         for (Integer idx = 0; idx < valueOf(DATA_BUS_BYTE_WIDTH); idx=idx+1) begin
@@ -314,13 +319,24 @@ module mkDmaReqMiddleLayerForBandwidthTest(DmaReqMiddleLayerForBandwidthTest);
         return outData;
     endfunction
 
+    rule runFreeCounter if (startTimCounterReg[1]);
+        timCounterReg <= timCounterReg + 1;
+    endrule
+
     rule genFakeReadData;
         let curLeftLen = fakeReadisFirstBeatReg ? dmaReadReqFakeQ.first.len : fakeReadLengthReg;
         Byte curData = fakeReadisFirstBeatReg ? truncate(dmaReadReqFakeQ.first.addr) : fakeReadDataReg;
         let data = fillDataStreamWithByte(curData);
 
         if (fakeReadisFirstBeatReg) begin
+            $display("updateing read gen curData to curData=", fshow(curData));
+        end
+
+        if (fakeReadisFirstBeatReg) begin
             fakeReadLengthReg <= curLeftLen - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
+        end
+        else begin
+            fakeReadLengthReg <= fakeReadLengthReg - fromInteger(valueOf(DATA_BUS_BYTE_WIDTH));
         end
 
         let ds = ?;
@@ -344,6 +360,10 @@ module mkDmaReqMiddleLayerForBandwidthTest(DmaReqMiddleLayerForBandwidthTest);
             dmaReadReqFakeQ.deq;
             fakeReadisFirstBeatReg <= True;
         end
+        $display("time=%0t: ", $time, 
+                 ", mkDmaReqMiddleLayerForBandwidthTest, send dma Read Resp=", fshow(ds),
+                 ", req=", fshow(dmaReadReqFakeQ.first));
+
         dmaReadRespFakeQ.enq(UserLogicDmaH2cWideResp{dataStream:ds});
     endrule
 
@@ -354,21 +374,46 @@ module mkDmaReqMiddleLayerForBandwidthTest(DmaReqMiddleLayerForBandwidthTest);
         dmaWriteReqFakeQ.deq;
         
         Byte curData = reqDs.isFirst ? truncate(req.addr) : fakeWriteDataReg;
+        if (reqDs.isFirst) begin
+            $display("updateing write check curData to curData=", fshow(curData));
+            startTimCounterReg[0] <= True;
+        end
         fakeWriteDataReg <= curData + 1;
 
         if (truncate(reqDs.data) != curData || truncateLSB(reqDs.data) != curData) begin
             fakeWriteCheckHasErrorReg <= True;
+            $display("Error: bandwidth test check error, expect ", fshow(curData), "got ", fshow(reqDs.data));
+            $finish;
         end
 
+        packetCounterReg <= packetCounterReg + 1;
+        
         if (reqDs.isLast) begin
             dmaWriteRespFakeQ.enq(UserLogicDmaC2hResp{});
+            
+            timCounterSnapshotReg <= timCounterReg;
+
+            Bit#(64) bw = zeroExtend(packetCounterReg);
+            bw = bw * fromInteger(valueOf(DATA_BUS_WIDTH));
+            bw = bw / (zeroExtend(timCounterReg) * 4);
+            $display("time=%0t: ", $time, 
+                 ", mkDmaReqMiddleLayerForBandwidthTest, time_pass = %d ns", timCounterReg * 4,
+                 ", packet_cnt = %d", packetCounterReg+1,
+                 ", bandwidth = %d Gbps", bw
+                 );
         end
+
+        $display("time=%0t: ", $time, 
+                 ", mkDmaReqMiddleLayerForBandwidthTest, recv dma Write Req=", fshow(req));
     endrule
 
     rule forwardReadReq;
         let req = dmaReadReqSrvQ.first;
         dmaReadReqSrvQ.deq;
-        BandwidthTriggerMark triggerMark = truncateLSB(req.addr);
+        PADDR phyAddr = truncate(req.addr);
+        
+        BandwidthTriggerMark triggerMark = truncateLSB(phyAddr);
+        $display("req.addr=", fshow(req.addr), "phyAddr=", fshow(phyAddr), "triggerMark=", fshow(triggerMark));
         if (triggerMark == fromInteger(valueOf(BANDWIDTH_TEST_TRIGGER_ADDR_BIT_VALUE))) begin
             dmaReadReqFakeQ.enq(req);
             readReqKeepOrderQ.enq(is_FAKE);
@@ -402,7 +447,9 @@ module mkDmaReqMiddleLayerForBandwidthTest(DmaReqMiddleLayerForBandwidthTest);
     rule forwardWriteReq;
         let req = dmaWriteReqSrvQ.first;
         dmaWriteReqSrvQ.deq;
-        BandwidthTriggerMark triggerMark = truncateLSB(req.addr);
+        PADDR phyAddr = truncate(req.addr);
+        BandwidthTriggerMark triggerMark = truncateLSB(phyAddr);
+        $display("req.addr=", fshow(req.addr), "phyAddr=", fshow(phyAddr), "triggerMark=", fshow(triggerMark));
         if (triggerMark == fromInteger(valueOf(BANDWIDTH_TEST_TRIGGER_ADDR_BIT_VALUE))) begin
             dmaWriteReqFakeQ.enq(req);
             if (req.dataStream.isFirst) begin
