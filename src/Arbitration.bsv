@@ -246,6 +246,9 @@ module mkClientArbiter#(
             $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " respQ");
         end
 
+        if (!grantReqKeepOrderQ.notEmpty) begin
+            $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " grantReqKeepOrderQ");
+        end
 
         if (!grantReqKeepOrderQ.notFull) begin
             $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: mkClientArbiter ", fshow(name) , " grantReqKeepOrderQ");
