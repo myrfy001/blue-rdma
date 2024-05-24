@@ -118,7 +118,7 @@ module mkExpectedPsnManager(ExpectedPsnManager);
     cfg.outFIFODepth = 4;
     BRAM2Port#(IndexQP, ExpectedPsnContextEntry) psnStorage <- mkBRAM2Server(cfg);
 
-    PrioritySearchableFifo#(PSN_CONTINOUS_CHECK_CACHE_SIZE, IndexQP, ExpectedPsnContextEntry) psnCache <- mkPrioritySearchableFifo(valueOf(PSN_CONTINOUS_CHECK_CACHE_SIZE));
+    PrioritySearchBuffer#(PSN_CONTINOUS_CHECK_CACHE_SIZE, IndexQP, ExpectedPsnContextEntry) psnCache <- mkPrioritySearchBuffer(valueOf(PSN_CONTINOUS_CHECK_CACHE_SIZE));
 
 
     rule handlePsnQueryReq;
@@ -279,14 +279,14 @@ endmodule
 
 
 
-interface PrioritySearchableFifo#(numeric type depth, type t_tag, type t_val);
+interface PrioritySearchBuffer#(numeric type depth, type t_tag, type t_val);
     method Action enq(t_tag tag, t_val value);
     method ActionValue#(Maybe#(t_val)) search(t_tag tag);
 endinterface
 
-// the fifo has limit size, if fifo is full, new enq will lead to deq of the oldest element.
-// if the same tags exist in the queue, the newest enququed element will be returned.
-module mkPrioritySearchableFifo#(numeric depth)(PrioritySearchableFifo#(depth, t_tag, t_val)) provisos (
+// A fifo like buffer, if buffer is full, new enq will lead to deq of the oldest element.
+// if the same tags exist in the buffer, the newest enququed element will be returned.
+module mkPrioritySearchBuffer#(numeric depth)(PrioritySearchBuffer#(depth, t_tag, t_val)) provisos (
     Bits#(t_tag, sz_tag),
     Bits#(t_val, sz_val),
     Eq#(t_tag),
