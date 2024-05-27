@@ -3,6 +3,24 @@ import ClientServer :: *;
 import Vector :: *;
 import SpecialFIFOs :: *;
 import Connectable :: *;
+import FIFOF :: *;
+
+
+function Action immAssert(Bool condition, String assertName, Fmt assertFmtMsg);
+    action
+        let pos = printPosition(getStringPosition(assertName));
+        // let pos = printPosition(getEvalPosition(condition));
+        if (!condition) begin
+            $error(
+                "ImmAssert failed in %m @time=%0t: %s-- %s: ",
+                $time, pos, assertName, assertFmtMsg
+            );
+            $finish(1);
+        end
+    endaction
+endfunction
+
+
 
 typedef struct {
     tAddr addr;
@@ -14,26 +32,6 @@ typedef struct {
     Maybe#(tValue) value;
 } CsrReadWriteResp#(type tValue) deriving(Bits, FShow);
 
-
-// interface GetR#(type tData);
-//     method Bool ready;
-//     method ActionValue#(tData) get;
-// endinterface
-
-// interface PutR#(type tData);
-//     method Bool ready;
-//     method Action put(tData value);
-// endinterface
-
-// interface ServerR#(type tReq, type tResp);
-//     interface PutR#(tReq) request;
-//     interface GetR#(tResp) response;
-// endinterface
-
-// interface ClientR#(type tReq, type tResp);
-//     interface GetR#(tReq) request;
-//     interface PutR#(tResp) response;
-// endinterface
 
 
 typedef Server#(CsrReadWriteReq#(tAddr, tValue), CsrReadWriteResp#(tValue)) CsrReadWriteSrvIfc#(type tAddr, type tValue);
@@ -58,20 +56,15 @@ module mkPutToGetProxy(PutToGetProxy#(tData)) provisos (
 );
 
     Wire#(tData) relayWire <- mkWire;
-    PulseWire putCalledWire <- mkPulseWire;
 
     interface Put in;
-        // method Bool ready = True;
         
         method Action put(tData value);
             relayWire <= value;
-            putCalledWire.send;
         endmethod
     endinterface
 
     interface Get out;
-        // method Bool ready = putCalledWire;
-        
         method ActionValue#(tData) get;
             return relayWire;
         endmethod
@@ -80,7 +73,7 @@ endmodule
 
 
 
-module mkCombinationalSwitch(CsrSwitch#(tAddr, tValue, downStreamPortCnt)) provisos (
+module mkCombinationalCsrSwitch(CsrSwitch#(tAddr, tValue, downStreamPortCnt)) provisos (
     Bits#(tAddr, szAddr),
     Bits#(tValue, szValue)
 );
@@ -97,18 +90,6 @@ module mkCombinationalSwitch(CsrSwitch#(tAddr, tValue, downStreamPortCnt)) provi
         endinterface;
     end
 
-
-    // function Bool isAllDownstreamPortRespReady;
-    //     Bool ret = True;
-    //     for (Integer idx = 0; idx < valueOf(downStreamPortCnt); idx = idx + 1) begin
-    //         if (!busOutputCltVec[idx].response.ready) begin
-    //             ret = False;
-    //         end
-    //     end
-    //     return ret;
-    // endfunction
-
-
     interface CsrReadWriteSrvIfc busInputSrv;
         interface Put request;
             method Action put(CsrReadWriteReq#(tAddr, tValue) req);
@@ -116,18 +97,72 @@ module mkCombinationalSwitch(CsrSwitch#(tAddr, tValue, downStreamPortCnt)) provi
                     reqRelayVec[portIdx].in.put(req);
                 end
             endmethod
-            // method Bool ready = True;
         endinterface
 
         interface Get response;
-
             method ActionValue#(CsrReadWriteResp#(tValue)) get;
                 Bool foundValidResp = False;
                 CsrReadWriteResp#(tValue) finalResp = CsrReadWriteResp{value: tagged Invalid};
 
                 for (Integer portIdx = 0; portIdx < valueOf(downStreamPortCnt); portIdx = portIdx + 1) begin
                     let resp <- respRelayVec[portIdx].out.get;
-                    if (isValid(resp.value) && !foundValidResp) begin
+                    if (isValid(resp.value)) begin
+                        immAssert(
+                            !foundValidResp,
+                            "More than one CSR generate response to the same address @ mkPipelineCsrSwitch",
+                            $format("port index = %x", portIdx)
+                        );
+
+                        foundValidResp = True;
+                        finalResp = resp;
+                    end
+                end
+                return finalResp;
+            endmethod
+        endinterface
+    endinterface
+
+    interface busOutputCltVecIfc = busOutputCltVec;
+endmodule
+
+
+module mkPipelineCsrSwitch(CsrSwitch#(tAddr, tValue, downStreamPortCnt)) provisos (
+        Bits#(tAddr, szAddr),
+        Bits#(tValue, szValue)
+    );
+
+    Vector#(downStreamPortCnt, FIFOF#(CsrReadWriteReq#(tAddr, tValue))) reqRelayVec <- replicateM(mkPipelineFIFOF);
+    Vector#(downStreamPortCnt, FIFOF#(CsrReadWriteResp#(tValue))) respRelayVec <- replicateM(mkPipelineFIFOF);
+    Vector#(downStreamPortCnt, CsrReadWriteCltIfc#(tAddr, tValue)) busOutputCltVec = newVector;
+
+    for (Integer idx = 0; idx < valueOf(downStreamPortCnt); idx = idx + 1) begin
+        busOutputCltVec[idx] = toGPClient(reqRelayVec[idx], respRelayVec[idx]);
+    end
+
+    interface CsrReadWriteSrvIfc busInputSrv;
+        interface Put request;
+            method Action put(CsrReadWriteReq#(tAddr, tValue) req);
+                for (Integer portIdx = 0; portIdx < valueOf(downStreamPortCnt); portIdx = portIdx + 1) begin
+                    reqRelayVec[portIdx].enq(req);
+                end
+            endmethod
+        endinterface
+
+        interface Get response;
+            method ActionValue#(CsrReadWriteResp#(tValue)) get;
+                Bool foundValidResp = False;
+                CsrReadWriteResp#(tValue) finalResp = CsrReadWriteResp{value: tagged Invalid};
+
+                for (Integer portIdx = 0; portIdx < valueOf(downStreamPortCnt); portIdx = portIdx + 1) begin
+                    let resp = respRelayVec[portIdx].first; 
+                    respRelayVec[portIdx].deq;
+                    if (isValid(resp.value)) begin
+                        immAssert(
+                            !foundValidResp,
+                            "More than one CSR generate response to the same address @ mkPipelineCsrSwitch",
+                            $format("port index = %x", portIdx)
+                        );
+
                         foundValidResp = True;
                         finalResp = resp;
                     end
@@ -135,12 +170,11 @@ module mkCombinationalSwitch(CsrSwitch#(tAddr, tValue, downStreamPortCnt)) provi
                 return finalResp;
             endmethod
 
-
-            // method Bool ready = isAllDownstreamPortRespReady;
         endinterface
     endinterface
 
     interface busOutputCltVecIfc = busOutputCltVec;
+
 
 endmodule
 
@@ -152,9 +186,10 @@ interface CsrLeaf#(type tAddr, type tValue);
     method ActionValue#(tValue) readWithSideEffecct;
 endinterface
 
-module mkCsrLeaf#(tAddr myAddr) (CsrLeaf#(tAddr, tValue)) provisos (
+module mkCsrLeaf#(Integer myAddr) (CsrLeaf#(tAddr, tValue)) provisos (
     Bits#(tAddr, szAddr),
     Bits#(tValue, szData),
+    Literal#(tAddr),
     Eq#(tAddr)
 );
 
@@ -162,11 +197,12 @@ module mkCsrLeaf#(tAddr myAddr) (CsrLeaf#(tAddr, tValue)) provisos (
     RWire#(tValue) userWriteReqWire <- mkRWire;
     RWire#(tValue) busWriteReqWire <- mkRWire;
 
-    RWire#(Bool) busReqIsReadWire <- mkRWire;
+    PulseWire busReqIsReadWire <- mkPulseWire;
+    PulseWire busReqOccured <- mkPulseWire;
 
 
 
-    rule handleWrite;
+    rule arbitUserAndBusWrite;
         if (busWriteReqWire.wget matches tagged Valid .value) begin
             storageReg <= value;
         end
@@ -188,63 +224,149 @@ module mkCsrLeaf#(tAddr myAddr) (CsrLeaf#(tAddr, tValue)) provisos (
     interface CsrReadWriteSrvIfc busInputSrv;
         interface Put request;
             method Action put(CsrReadWriteReq#(tAddr, tValue) req);
-                Bool isAddrHit = req.addr == myAddr;
+                busReqOccured.send;
+
+                Bool isAddrHit = req.addr == fromInteger(myAddr);
+
+                $display("leaf node get req, addr=%x", req.addr, "my addr=%x", myAddr);
 
                 if (isAddrHit) begin
                     if (req.isWrite) begin
                         busWriteReqWire.wset(req.value);
                     end
                     else begin
-                        busReqIsReadWire.wset(True);
+                        busReqIsReadWire.send;
                     end
                 end
             endmethod
-            // method Bool ready = True;
         endinterface
 
         interface Get response;
 
-            method ActionValue#(CsrReadWriteResp#(tValue)) get;
-                if (isValid(busReqIsReadWire.wget)) begin
+            method ActionValue#(CsrReadWriteResp#(tValue)) get if (busReqOccured);
+                if (busReqIsReadWire) begin
                     return CsrReadWriteResp{value: tagged Valid storageReg};
                 end
                 else begin
                     return CsrReadWriteResp{value: tagged Invalid};
                 end
             endmethod
-            // method Bool ready = True;
         endinterface
     endinterface
 
 endmodule
 
+typedef 1 FirstLevelSwitchInstCnt;
+typedef 2 FirstLevelSwitchPortCnt;
+
+typedef 2 SecondLevelSwitchPortCnt;
+typedef TMul#(FirstLevelSwitchInstCnt, FirstLevelSwitchPortCnt) SecondLevelSwitchInstCnt;  // 2
+
+typedef 2 ThirdOneLevelSwitchPortCnt;
+typedef 2 ThirdTwoLevelSwitchPortCnt;
+typedef TMul#(SecondLevelSwitchInstCnt, SecondLevelSwitchPortCnt) ThirdLevelTotalSwitchInstCnt;  // 4
+typedef 2 ThirdOneLevelSwitchInstCnt;
+typedef TSub#(ThirdLevelTotalSwitchInstCnt, ThirdOneLevelSwitchInstCnt) ThirdTwoLevelSwitchInstCnt;  // 2
+typedef TMul#(ThirdOneLevelSwitchInstCnt, ThirdOneLevelSwitchPortCnt) ThirdOneLevelTotalSwitchPortCnt;  // 4
+typedef ThirdOneLevelTotalSwitchPortCnt ThirdLevelPartOneLeafCsrInstCnt;  // 4
+
+typedef 2 FourthLevelSwitchPortCnt;
+typedef TMul#(ThirdTwoLevelSwitchInstCnt, ThirdTwoLevelSwitchPortCnt) FourthLevelSwitchInstCnt;  // 4
+typedef TMul#(FourthLevelSwitchInstCnt, FourthLevelSwitchPortCnt) FourthLevelTotalSwitchPortCnt;  // 8
+
+
+typedef TAdd#(ThirdLevelPartOneLeafCsrInstCnt, FourthLevelTotalSwitchPortCnt) TotalLeafCsrInstCnt;  // 12
+
+import StmtFSM :: *;
+
 module mkTb(Empty);
-    CsrSwitch#(Bit#(32), Bit#(16), 3) dut <- mkCombinationalSwitch;
-    CsrLeaf#(Bit#(32), Bit#(16)) csr1 <- mkCsrLeaf(1);
-    CsrLeaf#(Bit#(32), Bit#(16)) csr2 <- mkCsrLeaf(2);
-    CsrLeaf#(Bit#(32), Bit#(16)) csr3 <- mkCsrLeaf(3);
+    
+    CsrSwitch#(Bit#(32), Bit#(32), FirstLevelSwitchPortCnt) firstLevelSwitch <- mkPipelineCsrSwitch;
+    Vector#(SecondLevelSwitchInstCnt, CsrSwitch#(Bit#(32), Bit#(32), SecondLevelSwitchPortCnt)) secondLevelSwitches <- replicateM(mkPipelineCsrSwitch);
+    Vector#(ThirdOneLevelSwitchInstCnt, CsrSwitch#(Bit#(32), Bit#(32), ThirdOneLevelSwitchPortCnt)) thirdOneLevelSwitches <- replicateM(mkCombinationalCsrSwitch);
+    Vector#(ThirdTwoLevelSwitchInstCnt, CsrSwitch#(Bit#(32), Bit#(32), ThirdTwoLevelSwitchPortCnt)) thirdTwoLevelSwitches <- replicateM(mkPipelineCsrSwitch);
+    Vector#(FourthLevelSwitchInstCnt, CsrSwitch#(Bit#(32), Bit#(32), FourthLevelSwitchPortCnt)) fourthLevelSwitches <- replicateM(mkPipelineCsrSwitch);
 
-    mkConnection(csr1.busInputSrv, dut.busOutputCltVecIfc[0]);
-    mkConnection(csr2.busInputSrv, dut.busOutputCltVecIfc[1]);
-    mkConnection(csr3.busInputSrv, dut.busOutputCltVecIfc[2]);
 
-    Reg#(Bit#(32)) addr <- mkReg(0);
+    Vector#(TotalLeafCsrInstCnt, CsrLeaf#(Bit#(32), Bit#(32))) csrLeaves = newVector;
+    for (Integer idx = 0; idx < valueOf(TotalLeafCsrInstCnt); idx = idx + 1) begin
+        csrLeaves[idx] <- mkCsrLeaf(idx);
+    end
 
-    rule setVal;
-        dut.busInputSrv.request.put(CsrReadWriteReq{ addr: addr, value: 1122, isWrite: False });
-        
-        if (addr == 3) begin
-            addr <= 1;
+    // connect level2 to level1
+    for (Integer l2Idx = 0; l2Idx < valueOf(SecondLevelSwitchInstCnt); l2Idx = l2Idx + 1) begin
+        mkConnection(firstLevelSwitch.busOutputCltVecIfc[l2Idx], secondLevelSwitches[l2Idx].busInputSrv);
+    end
+
+    // connect level3 to level2
+    for (Integer l3Idx = 0; l3Idx < valueOf(ThirdLevelTotalSwitchInstCnt); l3Idx = l3Idx + 1) begin
+        let l2Idx = l3Idx / valueOf(SecondLevelSwitchPortCnt);
+        let l2Offset = l3Idx % valueOf(SecondLevelSwitchPortCnt);
+        if (l3Idx < valueOf(ThirdOneLevelSwitchInstCnt)) begin
+            mkConnection(secondLevelSwitches[l2Idx].busOutputCltVecIfc[l2Offset], thirdOneLevelSwitches[l3Idx].busInputSrv);
         end
         else begin
-            addr <= addr + 1;
+            mkConnection(secondLevelSwitches[l2Idx].busOutputCltVecIfc[l2Offset], thirdTwoLevelSwitches[l3Idx-valueOf(ThirdOneLevelSwitchInstCnt)].busInputSrv); 
         end
-        csr2 <= csr2 + 1;
+    end
+
+    // connect level4 to level3 part 2
+    for (Integer l4Idx = 0; l4Idx < valueOf(FourthLevelSwitchInstCnt); l4Idx = l4Idx + 1) begin
+        let l3Idx = l4Idx / valueOf(ThirdTwoLevelSwitchPortCnt);
+        let l3Offset = l4Idx % valueOf(ThirdTwoLevelSwitchPortCnt);
+        mkConnection(thirdTwoLevelSwitches[l3Idx].busOutputCltVecIfc[l3Offset], fourthLevelSwitches[l4Idx].busInputSrv);
+     
+    end
+
+    // connect leaf to switch
+    for (Integer leafIdx = 0; leafIdx < valueOf(TotalLeafCsrInstCnt); leafIdx = leafIdx + 1) begin
+        if (leafIdx < valueOf(ThirdLevelPartOneLeafCsrInstCnt)) begin
+            let switchIdx = leafIdx / valueOf(ThirdOneLevelSwitchPortCnt);
+            let switchOffset = leafIdx % valueOf(ThirdOneLevelSwitchPortCnt);
+            mkConnection(thirdOneLevelSwitches[switchIdx].busOutputCltVecIfc[switchOffset], csrLeaves[leafIdx].busInputSrv);
+        end
+        else begin
+            let switchIdx = (leafIdx - valueOf(ThirdLevelPartOneLeafCsrInstCnt)) / valueOf(FourthLevelSwitchPortCnt);
+            let switchOffset = (leafIdx - valueOf(ThirdLevelPartOneLeafCsrInstCnt)) % valueOf(FourthLevelSwitchPortCnt);
+            mkConnection(fourthLevelSwitches[switchIdx].busOutputCltVecIfc[switchOffset], csrLeaves[leafIdx].busInputSrv);
+        end
+    end
+
+
+    Reg#(Bool) testStartFlagReg <- mkReg(True);
+    Reg#(Bit#(32)) idxReg <- mkReg(0);
+    Stmt stmt = seq
+        for (idxReg <= 0; idxReg < fromInteger(valueOf(TotalLeafCsrInstCnt)); idxReg <= idxReg + 1)
+            seq
+                firstLevelSwitch.busInputSrv.request.put(CsrReadWriteReq{ addr: idxReg, value: idxReg, isWrite: True });
+                action
+                    let resp <- firstLevelSwitch.busInputSrv.response.get;
+                    $display("resp = ", fshow(resp));
+                endaction
+            endseq
+
+        for (idxReg <= 0; idxReg < fromInteger(valueOf(TotalLeafCsrInstCnt)); idxReg <= idxReg + 1)
+            seq
+                firstLevelSwitch.busInputSrv.request.put(CsrReadWriteReq{ addr: idxReg, value: ?, isWrite: False });
+                action
+                    let resp <- firstLevelSwitch.busInputSrv.response.get;
+                    $display("resp = ", fshow(resp));
+                endaction
+            endseq
+    endseq;
+    FSM testFsm <- mkFSM(stmt);
+
+    rule doTest if (testStartFlagReg);
+        testFsm.start;
+        testStartFlagReg <= False;
     endrule
 
-    rule getVal;
-        let ret <- dut.busInputSrv.response.get;
-        $display("read_ret=%d  %d", isValid(ret.value), fromMaybe(0, ret.value));
-        // $display("[1]=%d, [2]=%d, [3]=%d", csr1, csr2, csr3);
-    endrule
+
+
+
+    // rule getVal;
+    //     let ret <- dut.busInputSrv.response.get;
+    //     $display("read_ret=%d  %d", isValid(ret.value), fromMaybe(0, ret.value));
+    //     // $display("[1]=%d, [2]=%d, [3]=%d", csr1, csr2, csr3);
+    // endrule
  endmodule
