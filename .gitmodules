@@ -1,0 +1,9 @@
+[submodule "src/third_party/blue-udp"]
+	path = src/third_party/blue-udp
+	url = https://github.com/datenlord/blue-udp.git
+[submodule "src/third_party/blue-crc"]
+	path = src/third_party/blue-crc
+	url = https://github.com/datenlord/blue-crc.git
+[submodule "src/third_party/blue-wrapper"]
+	path = src/third_party/blue-wrapper
+	url = https://github.com/wengwz/blue-wrapper.git
