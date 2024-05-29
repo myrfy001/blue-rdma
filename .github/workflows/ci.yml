@@ -18,7 +18,7 @@ jobs:
       - name: build and simulate
         run : |
           ./setup.sh
-          ./run.sh
+          ./run_py_tb.sh
       - name: Setup tmate session
         if: ${{ failure() }}
         uses: mxschmitt/action-tmate@v3

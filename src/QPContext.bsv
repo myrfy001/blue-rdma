@@ -120,7 +120,6 @@ module mkExpectedPsnManager(ExpectedPsnManager);
 
     PrioritySearchBuffer#(PSN_CONTINOUS_CHECK_CACHE_SIZE, IndexQP, ExpectedPsnContextEntry) psnCache <- mkPrioritySearchBuffer(valueOf(PSN_CONTINOUS_CHECK_CACHE_SIZE));
 
-
     rule handlePsnQueryReq;
         let req <- psnContextQuerySrvInst.getReq;
         let qpIdx = req.qpnIdx;
@@ -185,7 +184,6 @@ module mkExpectedPsnManager(ExpectedPsnManager);
                 newErrorOccured   = True;
             end
         end
-        
 
         // handle recovery logic
         if (qpReturnToNormalStateReqRegVec[req.qpnIdx] matches tagged Valid .recoveryPSN) begin
@@ -241,7 +239,6 @@ module mkExpectedPsnManager(ExpectedPsnManager);
             psnStorageWriteReqWire <= bramReq;
         end
 
-
         case ({pack(isValid(getRecoveryPsnNotifyWire.wget)), pack(isValid(submitRecoveryReqWire.wget))})
             2'b00: begin
                 // Do nothing
@@ -262,7 +259,6 @@ module mkExpectedPsnManager(ExpectedPsnManager);
         psnStorage.portB.request.put(psnStorageWriteReqWire);
     endrule
 
-
     method Action submitQpReturnToNormalStateRequest(IndexQP qpnIdx, PSN recoveryPointPSN);
         submitRecoveryReqWire.wset(tuple2(qpnIdx, recoveryPointPSN));
     endmethod
@@ -274,10 +270,6 @@ module mkExpectedPsnManager(ExpectedPsnManager);
     interface psnContextQuerySrv = psnContextQuerySrvInst.srv;
 
 endmodule
-
-
-
-
 
 interface PrioritySearchBuffer#(numeric type depth, type t_tag, type t_val);
     method Action enq(t_tag tag, t_val value);
@@ -294,7 +286,6 @@ module mkPrioritySearchBuffer#(numeric depth)(PrioritySearchBuffer#(depth, t_tag
     FShow#(t_val),
     FShow#(Tuple2#(t_tag, t_val))
 );
-
     Vector#(depth, Reg#(Maybe#(Tuple2#(t_tag, t_val)))) bufferVec <- replicateM(mkReg(tagged Invalid));
 
     method Action enq(t_tag tag, t_val value);

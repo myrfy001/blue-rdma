@@ -1,4 +1,7 @@
 import os
+import sys
+import signal
+import time
 import mock_host
 
 TOTAL_MEMORY_SIZE = 1024 * 1024 * 64
@@ -49,14 +52,21 @@ def run_test_case(test_case):
     shared_mem_file = os.environ.get("MOCK_HOST_SHARE_MEM_FILE", None)
     host_mem = mock_host.open_shared_mem_to_hw_simulator(
         TOTAL_MEMORY_SIZE, shared_mem_file)
-    ret = 0
     try:
         test_case(host_mem)
-    except Exception as e:
-        print(e)
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except:
         import traceback
         traceback.print_exc()
-        ret = 1
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.abort()
+
     finally:
-        host_mem.close()
-    os._exit(ret)
+        try:
+            host_mem.close()
+        except:
+            pass
+
+    os._exit(0)

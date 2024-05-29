@@ -17,6 +17,7 @@ set_property IOSTANDARD LVCMOS18 [get_ports sys_rst_n]
 
 # clock
 create_clock -name sys_clk -period 10 [get_ports sys_clk_p]
+create_clock -name board_sys_clk -period 10 [get_ports board_sys_clk_p]
 
 # SLR Partition
 # set_property USER_SLR_ASSIGNMENT SLR2 [get_cells -regexp -hierarchical mmcm_250_to_500.*]

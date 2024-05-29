@@ -14,8 +14,17 @@ BSC_DIR_NAME=`basename $BSC_FILE_NAME .tar.gz`
 BLUESPEC_HOME=`realpath $BSC_DIR_NAME`
 
 BASH_PROFILE=$HOME/.bash_profile
+BASH_RC=$HOME/.bashrc
+
 touch $BASH_PROFILE
 cat <<EOF >> $BASH_PROFILE
+# BSV required env
+export BLUESPECDIR=$BLUESPEC_HOME/lib
+export PATH=$PATH:$BLUESPEC_HOME/bin
+EOF
+
+touch $BASH_RC
+cat <<EOF >> $BASH_RC
 # BSV required env
 export BLUESPECDIR=$BLUESPEC_HOME/lib
 export PATH=$PATH:$BLUESPEC_HOME/bin

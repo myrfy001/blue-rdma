@@ -28,3 +28,4 @@ TESTCASE="mkTestTop"
 mkdir -p $PY_LOG_DIR
 cd ${PY_TEST_DIR}
 python3 ${PY_TEST_DIR}/batch_run.py 2>&1 | tee -a ${PY_ALL_LOG}
+exit ${PIPESTATUS[0]}
